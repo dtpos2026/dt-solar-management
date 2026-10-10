@@ -1,0 +1,51 @@
+{
+  "name": "dt-solar-pro",
+  "productName": "DT Solar Pro",
+  "version": "1.0.0",
+  "description": "Solar Business Management System by Digital Target",
+  "main": "./out/main/index.js",
+  "author": {
+    "name": "Digital Target",
+    "email": "digitaltarget.digital@gmail.com"
+  },
+  "homepage": "https://digitaltarget.pk",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "npm run typecheck && electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dist:win": "npm run build && electron-builder --win --x64 --publish never",
+    "dist:dir": "npm run build && electron-builder --dir --publish never",
+    "license:keygen": "node scripts/license-tool.mjs keygen",
+    "license:issue": "node scripts/license-tool.mjs issue",
+    "icons": "node scripts/build-icons.mjs"
+  },
+  "dependencies": {
+    "better-sqlite3": "13.0.3"
+  },
+  "devDependencies": {
+    "@fontsource-variable/inter": "5.3.0",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/better-sqlite3": "7.6.13",
+    "@types/node": "22.15.30",
+    "@types/react": "19.1.8",
+    "@types/react-dom": "19.1.6",
+    "@vitejs/plugin-react": "5.2.0",
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3",
+    "electron-vite": "5.0.0",
+    "lucide-react": "0.544.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-router-dom": "6.30.6",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "vite": "7.3.7",
+    "vitest": "3.2.7",
+    "zustand": "5.0.15"
+  }
+}

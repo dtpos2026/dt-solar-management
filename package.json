@@ -13,16 +13,17 @@
   "private": true,
   "scripts": {
     "dev": "electron-vite dev",
-    "build": "npm run typecheck && electron-vite build",
+    "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "dist:win": "npm run build && electron-builder --win --x64 --publish never",
-    "dist:dir": "npm run build && electron-builder --dir --publish never",
+    "dist:win": "electron-vite build && electron-builder --win --x64 --publish never",
+    "dist:dir": "electron-vite build && electron-builder --win --dir --publish never",
     "license:keygen": "node scripts/license-tool.mjs keygen",
     "license:issue": "node scripts/license-tool.mjs issue",
-    "icons": "node scripts/build-icons.mjs"
+    "icons": "node scripts/build-icons.mjs",
+    "check": "npm run typecheck && npm test"
   },
   "dependencies": {
     "better-sqlite3": "13.0.3"

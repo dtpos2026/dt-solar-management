@@ -1,0 +1,17 @@
+DT SOLAR PRO — END USER LICENSE AGREEMENT
+Software by Digital Target  |  digitaltarget.digital@gmail.com  |  +92 345 1873354
+
+1. License. Digital Target grants you a non-exclusive, non-transferable license to use DT Solar Pro on the
+   number of computers stated in your license. A 15-day trial is included for evaluation.
+2. Your data. All business data (sales, purchases, stock, projects, accounts) is stored on your own computer and
+   remains your property. Digital Target does not collect or access your business records.
+3. Backups. The software creates automatic backups, but you are responsible for keeping copies of your backups on
+   a USB drive or another safe location.
+4. License checks. The software may connect to the internet to activate or verify the license. If a license
+   expires, is suspended or revoked, the software becomes read-only; your data is never deleted.
+5. Restrictions. You may not copy, resell, reverse engineer or modify the software or bypass its licensing.
+6. No warranty. The software is provided "as is". Digital Target is not liable for business losses arising from
+   its use. Please verify important financial figures and keep regular backups.
+7. Support. Contact Digital Target at digitaltarget.digital@gmail.com or +92 345 1873354.
+
+By installing DT Solar Pro you agree to these terms.

@@ -267,7 +267,7 @@ export function StatCard({ label, value, icon, tone = 'brand', trend, sub, onCli
         {icon && <div className={cx('flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-sm', toneBg[tone])}>{icon}</div>}
         <div className="min-w-0 flex-1">
           <div className="text-[12.5px] font-medium text-muted">{label}</div>
-          <div className="num mt-0.5 truncate text-[19px] font-bold tracking-tight">{value}</div>
+          <div className="num mt-0.5 text-[17px] leading-snug font-bold tracking-tight break-words">{value}</div>
         </div>
       </div>
       {(trend !== undefined || sub) && (

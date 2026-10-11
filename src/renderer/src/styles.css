@@ -164,6 +164,7 @@ button {
   color: inherit;
 }
 
+@layer components {
 .num {
   font-variant-numeric: tabular-nums;
 }
@@ -261,6 +262,8 @@ textarea.input {
   to {
     background-position: -200% 0;
   }
+}
+
 }
 
 /* Print view (A4) */

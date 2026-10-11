@@ -1,0 +1,50 @@
+rules_version = '2';
+// DT Solar Pro licensing — Firebase Spark plan (Firestore + Auth only).
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAdmin() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Super admins. Bootstrap: the owner email may create its own admin record once.
+    match /admins/{uid} {
+      allow get: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      allow list, update, delete: if isAdmin();
+      allow create: if isAdmin() || (request.auth != null && request.auth.uid == uid &&
+        request.auth.token.email == 'digitaltarget.digital@gmail.com');
+    }
+
+    // Full license records (customer info, limits, devices, history): admins only.
+    match /licenses/{licenseId} {
+      allow read, write: if isAdmin();
+      match /{sub=**} { allow read, write: if isAdmin(); }
+    }
+
+    // Public status of one license, read by the desktop app by id (cannot be listed).
+    match /licenseStatus/{licenseId} {
+      allow get: if true;
+      allow list, write: if isAdmin();
+    }
+
+    // Desktop app creates an activation/deactivation request and reads it back by its random id.
+    match /activationRequests/{requestId} {
+      allow get: if true;
+      allow list, update, delete: if isAdmin();
+      allow create: if request.resource.data.status == 'pending'
+        && request.resource.data.keys().hasOnly(['type','licenseKey','licenseId','deviceId',
+             'deviceName','appVersion','os','status','createdAt'])
+        && request.resource.data.type in ['activate', 'deactivate']
+        && request.resource.data.deviceId is string
+        && request.resource.data.deviceId.size() >= 10
+        && request.resource.data.deviceId.size() <= 64
+        && (request.resource.data.type != 'activate' ||
+            (request.resource.data.licenseKey is string &&
+             request.resource.data.licenseKey.matches('^DTSP(-[A-Z0-9]{4}){4}$')))
+        && (!('deviceName' in request.resource.data) || request.resource.data.deviceName.size() <= 200)
+        && (!('os' in request.resource.data) || request.resource.data.os.size() <= 200);
+    }
+
+    match /auditLogs/{id} { allow read, write: if isAdmin(); }
+  }
+}

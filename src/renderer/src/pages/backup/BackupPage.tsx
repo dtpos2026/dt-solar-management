@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ReactNode, useEffect, useState } from 'react'
 import { AlertTriangle, CalendarClock, CheckCircle2, DatabaseBackup, FileUp, FolderOpen, FolderSync, HardDrive, LifeBuoy, Mail, MessageCircle, PlayCircle, RefreshCw, RotateCcw, ShieldCheck, Usb, XCircle } from 'lucide-react'
 import { api } from '../../api'
@@ -320,7 +319,9 @@ export function BackupPage(): JSX.Element {
                   </Field>
                   <Field label="Keep the last" hint="Older automatic backups are deleted (manual ones are kept)">
                     <div className="flex items-center gap-2">
-                      <NumberInput value={keep} disabled={!licenseWritable} onChange={(v) => setKeep(Math.floor(v))} className="w-24" />
+                      <div className="w-24">
+                        <NumberInput value={keep} disabled={!licenseWritable} onChange={(v) => setKeep(Math.floor(v))} />
+                      </div>
                       <span className="text-muted">backups</span>
                       {keep !== keepSaved && (
                         <Button
@@ -562,7 +563,7 @@ export function BackupPage(): JSX.Element {
 
       {restoring && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="card flex items-center gap-3 px-6 py-5 shadow-2xl">
+          <div className="flex items-center gap-3 rounded-[14px] border border-line bg-surface px-6 py-5 shadow-2xl">
             {restored ? <CheckCircle2 className="h-5 w-5 text-ok" /> : <RefreshCw className="h-5 w-5 animate-spin text-brand" />}
             <div>
               <div className="font-semibold">{restored ? 'Backup restored' : 'Restoring backup…'}</div>

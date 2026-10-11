@@ -1,0 +1,36 @@
+appId: digital.digitaltarget.solarpro
+productName: DT Solar Pro
+copyright: Copyright © Digital Target
+directories:
+  output: release/${version}
+  buildResources: build
+files:
+  - out/**
+  - package.json
+  - resources/**
+  - "!**/*.map"
+asarUnpack:
+  - resources/**
+  - "**/*.node"
+npmRebuild: false
+win:
+  executableName: DTSolarPro
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: DT Solar Pro
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  uninstallDisplayName: DT Solar Pro
+  deleteAppDataOnUninstall: false
+  license: build/license.txt
+  artifactName: DT-Solar-Pro-Setup-${version}.${ext}
+publish: null

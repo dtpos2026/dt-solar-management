@@ -52,6 +52,8 @@ export interface EvalInput {
   trialStartedAt: number
   lastSeenAt: number
   remoteStatus: string | null
+  /** Last successful online verification (ms), null if never. */
+  lastCheckAt?: number | null
 }
 
 const DAY = 86400000
@@ -82,6 +84,17 @@ export function evaluate(i: EvalInput): { mode: LicenseMode; message: string; tr
       return { mode: 'grace', message: `Please connect to the internet so the license can be verified (${graceLeft} day(s) left).`, trialDaysLeft: null, daysLeft, graceDaysLeft: graceLeft }
     }
     return { mode: 'lease_expired', message: 'License verification is overdue. Connect to the internet and click "Check license now".', trialDaysLeft: null, daysLeft, graceDaysLeft: 0 }
+  }
+  if (p.checkinDays && p.checkinDays > 0) {
+    const baseline = Math.max(i.lastCheckAt ?? 0, Date.parse(p.issuedAt) || 0)
+    const due = baseline + p.checkinDays * DAY
+    if (i.now > due) {
+      const graceLeft = Math.ceil((due + Math.max(0, p.graceDays) * DAY - i.now) / DAY)
+      if (graceLeft > 0) {
+        return { mode: 'grace', message: `Please connect to the internet so the license can be verified (${graceLeft} day(s) left).`, trialDaysLeft: null, daysLeft, graceDaysLeft: graceLeft }
+      }
+      return { mode: 'lease_expired', message: 'License verification is overdue. Connect to the internet and click "Check license now".', trialDaysLeft: null, daysLeft, graceDaysLeft: 0 }
+    }
   }
   const warn = daysLeft !== null && daysLeft <= 15 ? ` License expires in ${daysLeft} day(s).` : ''
   return { mode: 'active', message: `Licensed to ${p.businessName}.${warn}`, trialDaysLeft: null, daysLeft, graceDaysLeft: null }

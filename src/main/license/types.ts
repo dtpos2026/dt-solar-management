@@ -18,6 +18,12 @@ export interface LicensePayload {
   leaseUntil: string | null
   /** Days the app keeps working after the lease ends without a successful check-in. */
   graceDays: number
+  /**
+   * Online verification interval in days (0/undefined = never required). The app checks the license status in
+   * Firestore whenever internet is available; if no successful check has happened for this many days, the grace
+   * period starts. Lets suspension/revocation reach disconnected computers eventually without a signing server.
+   */
+  checkinDays?: number
 }
 
 export interface LicenseCertificate {
@@ -50,6 +56,8 @@ export interface LicenseStatus {
   daysLeft: number | null
   graceDaysLeft: number | null
   lastCheckAt: string | null
+  lastCheckError: string | null
+  pendingRequestId: string | null
   onlineConfigured: boolean
   signingConfigured: boolean
   maxFirms: number

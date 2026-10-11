@@ -454,6 +454,8 @@ export const routes: Record<string, Route> = {
   /* ---------------- license ---------------- */
   'license.status': { public: true, handler: () => runtime.license!.status(true) },
   'license.activate': { public: true, handler: (_c, a) => runtime.license!.activateOnline(String(a.licenseKey ?? '')) },
+  'license.pollActivation': { public: true, handler: () => runtime.license!.pollActivation() },
+  'license.cancelPending': { public: true, handler: () => runtime.license!.cancelPending() },
   'license.requestCode': { public: true, handler: (_c, a) => runtime.license!.requestCode(String(a.licenseKey ?? '')) },
   'license.install': {
     public: true,

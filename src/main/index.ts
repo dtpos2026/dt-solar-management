@@ -11,9 +11,14 @@ import { initLog, log } from './log'
 import { AppError } from './services/context'
 
 const SPLASH_MIN_MS = 3200
-/** Firebase Cloud Function that issues / renews license certificates (Digital Target project). Override with MAIN_VITE_LICENSE_API_URL. */
-const DEFAULT_LICENSE_API_URL = 'https://us-central1-dt-soalr-mangement.cloudfunctions.net/licenseApi'
-const LICENSE_API_URL = (import.meta.env.MAIN_VITE_LICENSE_API_URL || DEFAULT_LICENSE_API_URL).trim()
+/**
+ * Digital Target licensing on Firebase (free Spark plan: Firestore + Auth only, no Cloud Functions).
+ * The web API key is a public identifier; access is controlled by firestore.rules.
+ */
+const LICENSE_FIRESTORE = {
+  projectId: import.meta.env.MAIN_VITE_FIREBASE_PROJECT_ID || 'dt-soalr-mangement',
+  apiKey: import.meta.env.MAIN_VITE_FIREBASE_API_KEY || 'AIzaSyB44q43NniwQy0K-mh4AnDTZZAtQEy0vYI'
+}
 
 app.setAppUserModelId('digital.digitaltarget.solarpro')
 
@@ -61,7 +66,7 @@ function setupLicense(): void {
   runtime.license = new LicenseService({
     dir: runtime.paths.licenseDir,
     publicKeyPem,
-    apiUrl: LICENSE_API_URL,
+    firestore: LICENSE_FIRESTORE,
     appVersion: runtime.appVersion,
     getDbTrialStart: () => {
       const r = runtime.db?.prepare("SELECT value FROM app_meta WHERE key = 'trial_started_at'").get() as { value: string } | undefined

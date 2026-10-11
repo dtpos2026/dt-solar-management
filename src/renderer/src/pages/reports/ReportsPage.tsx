@@ -268,6 +268,7 @@ export function ReportsPage(): JSX.Element {
 
   const gb = effectiveGroupBy(key, opts)
   const showPeriod = def.period === 'range' && (key !== 'projects' || datedOnly)
+  const badRange = showPeriod && range[0] > range[1]
 
   return (
     <div>
@@ -324,10 +325,10 @@ export function ReportsPage(): JSX.Element {
                 <Button size="sm" variant="ghost" icon={<RefreshCw className={cx('h-4 w-4', busy && 'animate-spin')} />} onClick={() => load(sig)} disabled={busy} title="Reload this report">
                   Refresh
                 </Button>
-                <Button size="sm" icon={<Download className="h-4 w-4" />} onClick={exportCsv} disabled={!model || busy}>
+                <Button size="sm" icon={<Download className="h-4 w-4" />} onClick={exportCsv} disabled={!model || busy || badRange}>
                   Export CSV
                 </Button>
-                <Button size="sm" variant="primary" icon={<Printer className="h-4 w-4" />} onClick={print} disabled={!model || busy}>
+                <Button size="sm" variant="primary" icon={<Printer className="h-4 w-4" />} onClick={print} disabled={!model || busy || badRange}>
                   Print / PDF
                 </Button>
               </div>
@@ -397,7 +398,13 @@ export function ReportsPage(): JSX.Element {
             </div>
           </div>
 
-          {!ready ? (
+          {badRange ? (
+            <Card>
+              <Empty icon={<Info />} title="Check the period">
+                The start date ({date(range[0])}) is after the end date ({date(range[1])}). Pick a valid period to see this report.
+              </Empty>
+            </Card>
+          ) : !ready ? (
             <Card>
               <Loading label="Preparing report…" />
             </Card>

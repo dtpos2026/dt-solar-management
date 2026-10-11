@@ -17,6 +17,9 @@ const LICENSE_API_URL = (import.meta.env.MAIN_VITE_LICENSE_API_URL || DEFAULT_LI
 
 app.setAppUserModelId('digital.digitaltarget.solarpro')
 
+// Optional isolated data folder (portable installs, automated tests). Never points at production data unless set.
+if (process.env.DTSP_USER_DATA) app.setPath('userData', process.env.DTSP_USER_DATA)
+
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {

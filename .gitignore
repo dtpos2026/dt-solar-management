@@ -16,3 +16,5 @@ functions/node_modules/
 functions/lib/
 .firebase/
 coverage/
+e2e-output/
+*.tsbuildinfo

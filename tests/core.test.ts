@@ -200,6 +200,24 @@ describe('sales documents', () => {
     ).toThrow(/Only 6 remain/)
   })
 
+  it('returns against unpaid invoices are absorbed; against paid invoices they become refunds owed', () => {
+    const { ctx, wh, prod, cust, acc } = stocked()
+    const unpaid = createDocument(ctx, { docType: 'sale_invoice', date: '2026-02-01', partyId: cust, warehouseId: wh, lines: [{ productId: prod, description: 'Panel', qty: 10, rate: 300 }] })
+    const l1 = (getDocument(ctx, unpaid).lines as Array<{ id: number }>)[0]
+    const r1 = createDocument(ctx, { docType: 'sale_return', date: '2026-02-02', partyId: cust, warehouseId: wh, refDocId: unpaid, lines: [{ productId: prod, description: 'Panel', qty: 4, rate: 300, refLineId: l1.id }] })
+    expect(docDue(ctx.db, unpaid)).toBe(1800)
+    expect(docDue(ctx.db, r1)).toBe(0)
+
+    const paid = createDocument(ctx, { docType: 'sale_invoice', date: '2026-02-03', partyId: cust, warehouseId: wh, lines: [{ productId: prod, description: 'Panel', qty: 10, rate: 300 }], payment: { amount: 3000, accountId: acc } })
+    const l2 = (getDocument(ctx, paid).lines as Array<{ id: number }>)[0]
+    const r2 = createDocument(ctx, { docType: 'sale_return', date: '2026-02-04', partyId: cust, warehouseId: wh, refDocId: paid, lines: [{ productId: prod, description: 'Panel', qty: 4, rate: 300, refLineId: l2.id }] })
+    expect(Math.max(0, docDue(ctx.db, paid))).toBe(0)
+    expect(docDue(ctx.db, r2)).toBe(1200)
+    createPayment(ctx, { date: '2026-02-05', direction: 'out', partyId: cust, accountId: acc, amount: 1200, allocations: [{ documentId: r2, amount: 1200 }] })
+    expect(docDue(ctx.db, r2)).toBe(0)
+    expect(partyBalance(ctx, cust)).toBe(1800)
+  })
+
   it('cancel restores stock and releases payments as advance', () => {
     const { ctx, wh, prod, cust, acc } = stocked()
     const id = createDocument(ctx, { docType: 'sale_invoice', date: '2026-02-01', partyId: cust, warehouseId: wh, lines: [{ productId: prod, description: 'Panel', qty: 10, rate: 300 }], payment: { amount: 3000, accountId: acc } })

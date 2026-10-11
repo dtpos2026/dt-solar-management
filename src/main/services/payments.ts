@@ -182,14 +182,42 @@ export function docReturned(db: DB, documentId: number): number {
   return round2(r.s)
 }
 
-/** Amount still outstanding on an invoice / bill / return document. */
+/**
+ * Amount still outstanding on an invoice / bill / return document.
+ * - Invoices/bills: total − payments allocated − returns against it (can be negative when goods were returned
+ *   after payment; callers treat negatives as 0 and the matching return then shows the refund owed).
+ * - Returns against an invoice: the part of the return that reduced that invoice's unpaid balance is already
+ *   settled ("absorbed"); only the remainder is a refund owed, less refunds already allocated.
+ */
 export function docDue(db: DB, documentId: number): number {
-  const d = db.prepare('SELECT grand_total, doc_type, status FROM documents WHERE id = ?').get(documentId) as
-    | { grand_total: number; doc_type: string; status: string }
+  const d = db.prepare('SELECT id, grand_total, doc_type, status, ref_doc_id FROM documents WHERE id = ?').get(documentId) as
+    | { id: number; grand_total: number; doc_type: string; status: string; ref_doc_id: number | null }
     | undefined
   if (!d || d.status === 'cancelled') return 0
-  const returned = ['sale_invoice', 'purchase_invoice'].includes(d.doc_type) ? docReturned(db, documentId) : 0
-  return round2(d.grand_total - docAllocated(db, documentId) - returned)
+  if (d.doc_type === 'sale_invoice' || d.doc_type === 'purchase_invoice') {
+    return round2(d.grand_total - docAllocated(db, documentId) - docReturned(db, documentId))
+  }
+  let absorbed = 0
+  if ((d.doc_type === 'sale_return' || d.doc_type === 'purchase_return') && d.ref_doc_id) {
+    const inv = db.prepare("SELECT id, grand_total FROM documents WHERE id = ? AND status <> 'cancelled'").get(d.ref_doc_id) as
+      | { id: number; grand_total: number }
+      | undefined
+    if (inv) {
+      let left = Math.max(0, round2(inv.grand_total - docAllocated(db, inv.id)))
+      const rets = db
+        .prepare("SELECT id, grand_total FROM documents WHERE ref_doc_id = ? AND doc_type = ? AND status <> 'cancelled' ORDER BY id")
+        .all(inv.id, d.doc_type) as Array<{ id: number; grand_total: number }>
+      for (const r of rets) {
+        const a = Math.min(left, r.grand_total)
+        if (r.id === d.id) {
+          absorbed = a
+          break
+        }
+        left = round2(left - a)
+      }
+    }
+  }
+  return round2(d.grand_total - absorbed - docAllocated(db, documentId))
 }
 
 export function expenseAllocated(db: DB, expenseId: number): number {

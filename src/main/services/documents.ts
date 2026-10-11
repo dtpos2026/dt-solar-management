@@ -718,7 +718,10 @@ export function listDocuments(
           : Number(r.paid) + Number(r.returned) > EPS
             ? 'partial'
             : 'unpaid'
-    return { ...r, due: Math.max(0, due), pay_status, cost_total: showCost ? r.cost_total : null }
+    const isReturn = r.doc_type === 'sale_return' || r.doc_type === 'purchase_return'
+    const finalDue = isReturn && r.status !== 'cancelled' ? Math.max(0, docDue(ctx.db, Number(r.id))) : Math.max(0, due)
+    const status2 = isReturn && pay_status && pay_status !== 'cancelled' ? (finalDue <= EPS ? 'paid' : finalDue < Number(r.grand_total) - EPS ? 'partial' : 'unpaid') : pay_status
+    return { ...r, due: finalDue, pay_status: status2, cost_total: showCost ? r.cost_total : null }
   })
   return f.payStatus ? out.filter((r) => r.pay_status === f.payStatus) : out
 }
@@ -787,7 +790,7 @@ export function getDocument(ctx: Ctx, id: number): Record<string, unknown> {
     converted,
     paid,
     returned,
-    due: d.status === 'cancelled' ? 0 : Math.max(0, round2(Number(d.grand_total) - paid - returned)),
+    due: d.status === 'cancelled' ? 0 : Math.max(0, docDue(ctx.db, id)),
     locked: isLocked(ctx, id),
     previous_balance: previousBalance,
     current_balance: currentBalance

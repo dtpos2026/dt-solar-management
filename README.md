@@ -19,40 +19,37 @@ licenses through Firebase on the free Spark plan (Firestore + Auth only, no Clou
 - Offline license with signed certificates, a 15-day trial, online (approval) or offline activation
 
 ## Build the Windows installer (on your Windows PC)
-Requirements: **Node.js 22 LTS** (https://nodejs.org) and Git.
-
-Open **Command Prompt** in the project folder and run:
+Install **Node.js 22 LTS** (https://nodejs.org). Open **Command Prompt** in the project folder:
 
 ```bat
 npm install
-npm run license:keygen
 npm run build
-npm run dist:win
+npm run dist
 ```
 
-- `npm run license:keygen` — run this **only once ever**. It creates your secret signing key `keys\license-private.pem`
-  (keep a backup on a USB drive and never share it) and `resources\license-public.pem`, which is built into the app.
 - The installer is created at **`release\1.0.0\DT-Solar-Pro-Setup-1.0.0.exe`**.
-- Optional: `npm test` runs the automated tests, and `npm run dev` runs the app in development mode.
+- The first `npm run build` creates your license signing key **`keys\license-private.pem`** automatically
+  (only once — it is never overwritten). Load it in the Super Admin panel → *Signing key*.
+  **Keep a backup on a USB drive and never share it.**
 
 ## Super Admin panel (license control)
-```bat
-cd admin-panel
-npm install
-npm run dev
-```
-Open http://localhost:5180, sign in with `digitaltarget.digital@gmail.com` (create this user first in Firebase
-Console → Authentication → Add user), then click **Initialise Super Admin**.
-Go to **Signing key** and load `keys\license-private.pem`.
+One-time setup: `npm install -g firebase-tools` and then `firebase login`.
 
-To host the panel online for free on Firebase Hosting:
+Open Command Prompt in the **admin-panel** folder:
+
 ```bat
-npm install -g firebase-tools
-firebase login
-cd admin-panel && npm run build && cd ..
-firebase deploy --only hosting,firestore:rules,firestore:indexes
+npm install
+npm run build
+firebase deploy --only firestore:rules
+firebase deploy --only hosting
 ```
-The panel will be live at https://dt-soalr-mangement.web.app.
+
+The panel goes live at **https://dt-soalr-mangement.web.app**. To log in:
+1. Create the user `digitaltarget.digital@gmail.com` in Firebase Console → Authentication → **Add user**.
+2. Sign in to the panel and click **Initialise Super Admin**.
+3. Open **Signing key** and load `keys\license-private.pem`.
+
+To run the panel locally instead, use `npm run dev` and open http://localhost:5180.
 
 ## Selling a license
 1. Admin panel → **Licenses → New license** (choose plan, limits and expiry) → copy the **license key**.

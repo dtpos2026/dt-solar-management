@@ -13,8 +13,7 @@
   "private": true,
   "scripts": {
     "dev": "electron-vite dev",
-    "prebuild": "node scripts/ensure-keys.mjs",
-    "build": "electron-vite build",
+    "build": "node scripts/ensure-keys.mjs && electron-vite build",
     "dist": "npm run build && electron-builder --win --x64 --publish never",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",

@@ -10,7 +10,7 @@
  * Even when parties are shared between firms, each firm has its own ledger.
  */
 import { num, round2 } from '../../shared/money'
-import { AppError, Ctx, audit, getSetting, like, optText, requirePerm, requireText, visibleTo } from './context'
+import { AppError, Ctx, audit, can, getSetting, like, optText, requirePerm, requireText, visibleTo } from './context'
 import { nextNumber } from './firms'
 
 /** One row per ledger event; parameters: none (filter outside). */
@@ -90,7 +90,11 @@ export function listParties(
   ctx: Ctx,
   f: { type?: 'customer' | 'supplier'; q?: string; active?: 'all' | 'active' | 'inactive'; withBalance?: boolean; onlyDue?: boolean } = {}
 ): unknown[] {
-  if (f.type) requirePerm(ctx, permFor(f.type, 'view'))
+  if (f.type && !can(ctx, permFor(f.type, 'view'))) {
+    // Users who create transactions may pick parties even without full customer/supplier access.
+    const pickers = ['sales.create', 'purchases.create', 'quotations.manage', 'projects.manage', 'expenses.manage', 'accounts.manage']
+    if (!pickers.some((p) => can(ctx, p))) requirePerm(ctx, permFor(f.type, 'view'))
+  }
   const where = [visibleTo('p')]
   const params: Record<string, unknown> = { firmId: ctx.firmId }
   if (f.type === 'customer') where.push("p.type IN ('customer','both')")

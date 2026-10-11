@@ -1,0 +1,34 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; background: transparent; overflow: hidden; font-family: 'Inter Variable', 'Segoe UI', sans-serif; user-select: none; }
+body { display: flex; align-items: center; justify-content: center; }
+.card {
+  width: 540px; height: 340px; border-radius: 22px; position: relative; overflow: hidden; color: #fff;
+  background: radial-gradient(120% 120% at 100% 0%, #1b6fc2 0%, #2a1b8f 45%, #3d096d 100%);
+  box-shadow: 0 30px 60px -20px rgba(20, 8, 60, .65); animation: pop .7s cubic-bezier(.2,.9,.3,1.2) both;
+}
+@keyframes pop { from { transform: scale(.86) translateY(14px); opacity: 0 } to { transform: none; opacity: 1 } }
+.sky { position: absolute; inset: 0; }
+.sun { position: absolute; right: 46px; top: 34px; width: 96px; height: 96px; animation: rise 1.4s ease-out both; }
+@keyframes rise { from { transform: translateY(70px) scale(.6); opacity: 0 } to { transform: none; opacity: 1 } }
+.sun .core { position: absolute; inset: 22px; border-radius: 50%; background: radial-gradient(circle, #ffe27a 0%, #ffb12b 65%, #f7931e 100%); box-shadow: 0 0 40px 12px rgba(255, 177, 43, .55); }
+.sun .rays { position: absolute; inset: 0; border-radius: 50%; background: repeating-conic-gradient(from 0deg, #f7931e 0deg 7deg, transparent 7deg 30deg); -webkit-mask: radial-gradient(circle, transparent 36px, #000 37px, #000 47px, transparent 48px); mask: radial-gradient(circle, transparent 36px, #000 37px, #000 47px, transparent 48px); animation: spin 9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg) } }
+.panels { position: absolute; left: -30px; right: -30px; bottom: -26px; height: 120px; display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; transform: perspective(420px) rotateX(58deg); opacity: .22; }
+.panels span { background: linear-gradient(135deg, #cfe0ff, #6f8fe0); border-radius: 3px; animation: shine 2.4s ease-in-out infinite; }
+.panels span:nth-child(odd) { animation-delay: .4s }
+@keyframes shine { 0%, 100% { filter: brightness(.8) } 50% { filter: brightness(1.4) } }
+.brand { position: absolute; left: 38px; top: 72px; display: flex; align-items: center; gap: 16px; animation: slide .9s .25s ease-out both; }
+@keyframes slide { from { transform: translateX(-24px); opacity: 0 } to { transform: none; opacity: 1 } }
+.brand .icon { width: 74px; height: 74px; border-radius: 18px; box-shadow: 0 10px 25px rgba(0, 0, 0, .35); }
+.product { font-size: 34px; font-weight: 800; letter-spacing: -.5px; }
+.product b { color: #ffc24a; font-weight: 800; }
+.tag { margin-top: 2px; font-size: 13.5px; opacity: .85; letter-spacing: .3px; }
+.loader { position: absolute; left: 40px; right: 40px; top: 214px; height: 6px; border-radius: 6px; background: rgba(255, 255, 255, .16); overflow: hidden; }
+.loader .bar { height: 100%; width: 0; border-radius: 6px; background: linear-gradient(90deg, #ffb12b, #ffe27a, #8bf00a); animation: load 3s cubic-bezier(.4, .1, .2, 1) forwards; }
+@keyframes load { 0% { width: 0 } 60% { width: 72% } 100% { width: 100% } }
+.status { position: absolute; left: 40px; top: 230px; font-size: 12.5px; opacity: .8; }
+.status.fade { animation: fade .45s ease both; }
+@keyframes fade { from { opacity: 0; transform: translateY(4px) } to { opacity: .8; transform: none } }
+.vendor { position: absolute; left: 40px; right: 40px; bottom: 22px; display: flex; align-items: center; gap: 10px; font-size: 12px; opacity: .9; animation: slide .9s .6s ease-out both; }
+.vendor .mark { width: 22px; height: 22px; color: #fff; }
+.vendor b { letter-spacing: 1.5px; }

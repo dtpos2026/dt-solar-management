@@ -8,7 +8,7 @@ export const APP_DB_MARKER = 'dt-solar-pro'
 
 export interface OpenOptions {
   /** Called with the current version before pending migrations run on an existing database. */
-  beforeMigrate?: (fromVersion: number, toVersion: number) => void
+  beforeMigrate?: (db: DB, fromVersion: number, toVersion: number) => void
 }
 
 export function openDatabase(file: string, opts: OpenOptions = {}): DB {
@@ -50,7 +50,7 @@ export function migrate(db: DB, opts: OpenOptions = {}): void {
   }
   const pending = MIGRATIONS.filter((m) => m.version > current)
   if (pending.length === 0) return
-  if (current > 0 && opts.beforeMigrate) opts.beforeMigrate(current, LATEST_SCHEMA_VERSION)
+  if (current > 0 && opts.beforeMigrate) opts.beforeMigrate(db, current, LATEST_SCHEMA_VERSION)
   for (const m of pending) {
     const run = db.transaction(() => {
       db.exec(m.sql)

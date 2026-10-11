@@ -173,7 +173,7 @@ export function projectFinancials(db: DB, projectId: number): ProjectFinancials 
   const totalDirectCost = round2(materialCost + laborCost + otherCost)
   const grossProfit = round2(revenue - totalDirectCost)
 
-  const method = getSetting(db, 'overhead_method', 'none')
+  const method = getSetting<string>(db, 'overhead_method', 'none')
   let overheads = 0
   if (method === 'manual') overheads = round2(pr.overhead_amount)
   else if (method === 'percent_revenue') overheads = round2((revenue * num(getSetting(db, 'overhead_percent', 0))) / 100)

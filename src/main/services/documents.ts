@@ -16,6 +16,7 @@
  */
 import { DOC_TYPES, DocType } from '../../shared/docTypes'
 import { EPS, num, round2, round3, round4 } from '../../shared/money'
+import { computeTotals, ComputedTotals } from '../../shared/totals'
 import {
   AppError,
   Ctx,
@@ -108,57 +109,8 @@ interface ComputedLine {
   product: ReturnType<typeof getProductRow> | null
 }
 
-export interface ComputedTotals {
-  subtotal: number
-  lineDiscountTotal: number
-  docDiscount: number
-  taxTotal: number
-  otherCharges: number
-  roundOff: number
-  netTotal: number
-  grandTotal: number
-}
-
-/** Pure totals calculation — also used by tests and mirrored in the UI. */
-export function computeTotals(
-  lines: Array<{ qty: number; rate: number; discountPct?: number; discountAmt?: number; taxRate?: number }>,
-  docDiscount = 0,
-  otherCharges = 0,
-  roundOff = 0
-): { lines: Array<{ gross: number; discount: number; net: number; tax: number; total: number }>; totals: ComputedTotals } {
-  const out = lines.map((l) => {
-    const qty = round3(num(l.qty))
-    const rate = round4(num(l.rate))
-    const gross = round2(qty * rate)
-    const discAmt = num(l.discountAmt)
-    const discount = round2(discAmt > 0 ? discAmt : (gross * num(l.discountPct)) / 100)
-    const net = round2(gross - discount)
-    const tax = round2((net * num(l.taxRate)) / 100)
-    return { gross, discount, net, tax, total: round2(net + tax) }
-  })
-  const subtotal = round2(out.reduce((a, l) => a + l.gross, 0))
-  const lineDiscountTotal = round2(out.reduce((a, l) => a + l.discount, 0))
-  const netSum = round2(out.reduce((a, l) => a + l.net, 0))
-  const dd = round2(Math.min(Math.max(0, num(docDiscount)), netSum))
-  const factor = netSum > 0 ? (netSum - dd) / netSum : 1
-  const taxTotal = round2(out.reduce((a, l) => a + l.tax, 0) * factor)
-  const oc = round2(num(otherCharges))
-  const ro = round2(num(roundOff))
-  const netTotal = round2(netSum - dd + oc + ro)
-  return {
-    lines: out,
-    totals: {
-      subtotal,
-      lineDiscountTotal,
-      docDiscount: dd,
-      taxTotal,
-      otherCharges: oc,
-      roundOff: ro,
-      netTotal,
-      grandTotal: round2(netTotal + taxTotal)
-    }
-  }
-}
+export { computeTotals } from '../../shared/totals'
+export type { ComputedTotals } from '../../shared/totals'
 
 function permPrefix(type: DocType): string {
   return DOC_TYPES[type].perm
@@ -394,7 +346,7 @@ function validateReturn(ctx: Ctx, input: DocInput, lines: ComputedLine[], exclud
   }
 }
 
-function landedCosts(ctx: Ctx, input: DocInput, lines: ComputedLine[], totals: ComputedTotals): number[] {
+function landedCosts(ctx: Ctx, lines: ComputedLine[], totals: ComputedTotals): number[] {
   // Purchase landed cost per unit: net after line & document discount + share of other charges (+ tax if not recoverable).
   const taxIsCost = getSetting(ctx.db, 'purchase_tax_is_cost', false)
   const netSum = lines.reduce((a, l) => a + l.net, 0)
@@ -413,7 +365,7 @@ function landedCosts(ctx: Ctx, input: DocInput, lines: ComputedLine[], totals: C
 function insertLines(ctx: Ctx, docId: number, input: DocInput, lines: ComputedLine[], totals: ComputedTotals): void {
   const meta = DOC_TYPES[input.docType]
   const isPurchaseCost = input.docType === 'purchase_invoice' || input.docType === 'purchase_order'
-  const costs = isPurchaseCost ? landedCosts(ctx, input, lines, totals) : lines.map(() => 0)
+  const costs = isPurchaseCost ? landedCosts(ctx, lines, totals) : lines.map(() => 0)
   const ins = ctx.db.prepare(
     `INSERT INTO document_lines (document_id, line_no, product_id, description, unit, qty, rate, discount_pct, discount_amt, tax_rate,
        tax_amt, net_amount, line_total, unit_cost, cost_total, serials, batch_no, warranty, ref_line_id)

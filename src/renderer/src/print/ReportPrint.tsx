@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * A4 report template + the shared report model used by the Reports page.
  *
@@ -13,7 +14,6 @@ import { round2, round3 } from '@shared/money'
 import { label as titleCase, statusTone } from '../lib/format'
 import { Letterhead, PrintContext, PrintFooter, PrintTable, Sheet, Signatures, TemplateProps, pd, pm, pq } from './PrintKit'
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 /* ================================================================================================ */
 /*                                       Report catalogue                                           */
@@ -588,7 +588,8 @@ function registerModel(key: ReportKey, data: any, o: ReportOptions): Pick<Report
         ]
   const notes: string[] = []
   if (data.note) notes.push(String(data.note))
-  if (gb === 'product' || gb === 'category') notes.push('Quantities are net of returns. Product rows with different units are not added together.')
+  if (gb === 'product') notes.push('Quantities are net of returns and shown in each product’s own unit; they are not added together.')
+  if (gb === 'category') notes.push('Quantities are net of returns. A category quantity adds up all units in it (pieces, metres, etc.), so treat it as indicative only.')
   return {
     summary,
     sections: [{ id: 'main', table: { columns: cols, rows, totals, totalLabel: `Total (${rows.length} ${rows.length === 1 ? 'row' : 'rows'})` } }],

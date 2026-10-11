@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { CSSProperties, ReactNode, useEffect, useMemo, useRef, useState } from 'react'
-import { Building2, Check, FileText, Hash, ImageOff, Info, Lock, Palette, Pencil, Plus, Printer, Save, Stamp, Signature, Upload, Trash2, Store } from 'lucide-react'
+import { Building2, Check, Hash, ImageOff, Info, Lock, Palette, Pencil, Plus, Printer, Save, Stamp, Signature, Upload, Trash2, Store } from 'lucide-react'
 import { api } from '../../api'
 import { useApp, useCan } from '../../store'
 import { Badge, Button, Card, Empty, Field, IconButton, Input, Loading, Modal, NumberInput, PageHeader, Select, Tabs, Textarea, Toggle, confirmDialog, cx, readImageFile, toast } from '../../components/ui'
@@ -427,6 +427,7 @@ function toForm(r: any): FirmForm {
 
 function FirmEditor({ open, firmId, onClose, onSaved }: { open: boolean; firmId?: number; onClose: () => void; onSaved: () => Promise<void> | void }): JSX.Element {
   const settings = useApp((s) => s.settings)
+  const activeFirm = useApp((s) => s.firm)
   const [id, setId] = useState<number | undefined>(firmId)
   const [tab, setTab] = useState<EditorTab>('details')
   const [f, setF] = useState<FirmForm>(EMPTY_FORM)
@@ -499,9 +500,10 @@ function FirmEditor({ open, firmId, onClose, onSaved }: { open: boolean; firmId?
       return toast.error(`${badSeq.label}: prefix may contain letters, numbers and - / _ . # only.`)
     }
     if (id && meta.wasActive && !f.isActive) {
+      const inUse = activeFirm?.id === id
       const ok = await confirmDialog({
         title: `Deactivate ${f.name}?`,
-        message: 'Users will no longer be able to switch to this firm. All of its documents, payments and history are kept and you can activate it again at any time.',
+        message: `Users will no longer be able to switch to this firm. All of its documents, payments and history are kept and you can activate it again at any time.${inUse ? ' You are currently working in this firm — switch to another firm from the top bar afterwards.' : ''}`,
         confirmLabel: 'Deactivate firm',
         danger: true
       })
@@ -530,8 +532,8 @@ function FirmEditor({ open, firmId, onClose, onSaved }: { open: boolean; firmId?
         isActive: f.isActive
       }
       let fid = id
-      if (fid) await api('firms.update', { id: fid, ...payload })
-      else fid = await api<number>('firms.create', payload)
+      if (!fid) fid = await api<number>('firms.create', payload)
+      else if (JSON.stringify(f) !== orig) await api('firms.update', { id: fid, ...payload })
       for (const s of dirtySeqs) {
         await api('firms.updateSequence', { firmId: fid, docType: s.doc_type, prefix: s.prefix.trim(), nextNo: Math.max(1, Math.floor(Number(s.next_no) || 1)), padding: Math.min(10, Math.max(1, Math.floor(Number(s.padding) || 5))) })
       }
@@ -1024,9 +1026,6 @@ function InvoicePreview({ f, invoiceNo }: { f: FirmForm; invoiceNo: string }): J
           <ImageOff className="h-3 w-3" /> Upload images in the Branding tab to see them here.
         </div>
       ) : null}
-      <div className="sr-only">
-        <FileText />
-      </div>
     </div>
   )
 }

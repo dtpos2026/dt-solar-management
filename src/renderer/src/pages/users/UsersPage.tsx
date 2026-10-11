@@ -214,7 +214,7 @@ function UsersTab({ tick, onEdit }: { tick: number; onEdit: (u: UserRow) => void
     {
       key: 'full_name',
       header: 'Name',
-      value: (u) => `${u.full_name} ${u.email ?? ''} ${u.phone ?? ''}`,
+      value: (u) => [u.full_name, u.email, u.phone].filter(Boolean).join(' · '),
       render: (u) => (
         <div className="flex items-center gap-3">
           <div className={cx('flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[13px] font-bold', u.is_owner ? 'bg-warn-soft text-warn' : 'bg-brand-soft text-brand')}>
@@ -859,7 +859,7 @@ const AUDIT_EXPORT_CAP = 20000
 
 function AuditTab(): JSX.Element {
   const can = useCan()
-  const [range, setRange] = useState<[string, string]>(PERIODS.find((p) => p.key === 'month')!.range())
+  const [range, setRange] = useState<[string, string]>(() => PERIODS.find((p) => p.key === 'month')!.range())
   const [userId, setUserId] = useState('')
   const [entity, setEntity] = useState('')
   const [text, setText] = useState('')

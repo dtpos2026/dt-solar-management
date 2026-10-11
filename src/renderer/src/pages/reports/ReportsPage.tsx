@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -57,7 +58,6 @@ import {
   totalsLead
 } from '../../print/ReportPrint'
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 const ICONS: Record<ReportKey, ReactNode> = {
   pl: <TrendingUp className="h-4 w-4" />,
@@ -160,8 +160,11 @@ export function ReportsPage(): JSX.Element {
 
   const isCash = key === 'cashbook'
   const isStock = key === 'stock'
-  const accounts = useLoad<any[]>(() => (isCash ? api<any[]>('accounts.list', { includeInactive: true }) : Promise.resolve([])), [isCash])
-  const warehouses = useLoad<any[]>(() => (isStock ? api<any[]>('warehouses.list', { includeInactive: true }) : Promise.resolve([])), [isStock])
+  // Loaded up-front (when the user may open those reports) so switching to them shows choices immediately.
+  const canCash = allowed.some((r) => r.key === 'cashbook')
+  const canStock = allowed.some((r) => r.key === 'stock')
+  const accounts = useLoad<any[]>(() => (canCash ? api<any[]>('accounts.list', { includeInactive: true }) : Promise.resolve([])), [canCash])
+  const warehouses = useLoad<any[]>(() => (canStock ? api<any[]>('warehouses.list', { includeInactive: true }) : Promise.resolve([])), [canStock])
   const accountList = accounts.data ?? []
   const warehouseList = warehouses.data ?? []
 
@@ -384,7 +387,7 @@ export function ReportsPage(): JSX.Element {
               )}
               {def.groupBys && (
                 <Tabs<GroupBy>
-                  className="mb-0"
+                  className="!mb-0"
                   tabs={def.groupBys.map((g) => ({ key: g.key, label: g.label }))}
                   value={gb}
                   onChange={(g) => (key === 'purchases' ? setPurchaseGroup(g) : setSalesGroup(g))}
@@ -402,6 +405,10 @@ export function ReportsPage(): JSX.Element {
               <Empty icon={<Info />} title="This report could not be loaded" action={<Button onClick={() => load(sig)}>Try again</Button>}>
                 {res.error}
               </Empty>
+            </Card>
+          ) : isCash && !model && accounts.loading ? (
+            <Card>
+              <Loading label="Loading accounts…" />
             </Card>
           ) : isCash && !model ? (
             <Card>
@@ -608,7 +615,7 @@ function PlView({ pl }: { pl: NonNullable<ReportModel['pl']> }): JSX.Element {
     { label: 'Operating expenses', value: Math.max(0, Number(f.operatingExpenses) || 0), color: PALETTE[1] },
     ...(f.netProfit > 0 ? [{ label: 'Net profit', value: Number(f.netProfit), color: PALETTE[2] }] : [])
   ]
-  const opex = ((f.operatingByCategory ?? []) as Array<{ name: string; amount: number }>).slice(0, 6).map((c) => ({ label: c.name, value: c.amount }))
+  const opex = uniqueLabels(((f.operatingByCategory ?? []) as Array<{ name: string; amount: number }>).slice(0, 6).map((c) => ({ label: c.name, value: c.amount })))
   return (
     <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
       <div className="space-y-4">
@@ -717,7 +724,7 @@ function Legend({ items }: { items: Array<{ label: string; value: number; color:
 
 /** Fold a long list into the first 7 + "Other" so colours stay distinguishable. */
 function slices(items: Array<{ label: string; value: number }>): Array<{ label: string; value: number; color: string }> {
-  const sorted = [...items].filter((i) => i.value > 0).sort((a, b) => b.value - a.value)
+  const sorted = uniqueLabels([...items].filter((i) => i.value > 0).sort((a, b) => b.value - a.value))
   const head = sorted.slice(0, sorted.length > 8 ? 7 : 8).map((i, n) => ({ ...i, color: PALETTE[n] }))
   const rest = sorted.slice(head.length)
   if (rest.length) head.push({ label: `Other (${rest.length})`, value: round2(rest.reduce((a, i) => a + i.value, 0)), color: OTHER })
@@ -741,12 +748,24 @@ function DonutCard({ title, items, center }: { title: string; items: Array<{ lab
   )
 }
 
+/** Chart labels double as React keys — make repeated names (two parties called alike) unique. */
+function uniqueLabels<T extends { label: string }>(items: T[]): T[] {
+  const seen = new Map<string, number>()
+  return items.map((i) => {
+    const n = (seen.get(i.label) ?? 0) + 1
+    seen.set(i.label, n)
+    return n > 1 ? { ...i, label: `${i.label} (${n})` } : i
+  })
+}
+
 function topN(rows: any[], valueOf: (r: any) => number, labelOf: (r: any) => string, n = 8): Array<{ label: string; value: number }> {
-  return [...rows]
-    .map((r) => ({ label: labelOf(r) || '—', value: round2(Number(valueOf(r)) || 0) }))
-    .filter((i) => Math.abs(i.value) > 0.004)
-    .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
-    .slice(0, n)
+  return uniqueLabels(
+    [...rows]
+      .map((r) => ({ label: labelOf(r) || '—', value: round2(Number(valueOf(r)) || 0) }))
+      .filter((i) => Math.abs(i.value) > 0.004)
+      .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
+      .slice(0, n)
+  )
 }
 
 function ReportCharts({ k, data, model, gb }: { k: ReportKey; data: any; model: ReportModel; gb: GroupBy }): JSX.Element | null {

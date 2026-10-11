@@ -23,7 +23,12 @@ export function Requests() {
   const handled = useRef(new Set<string>())
 
   useEffect(() => {
-    const a = onSnapshot(query(requestsCol(), where('status', '==', 'pending'), orderBy('createdAt', 'desc')), (s) => setPending(s.docs.map(requestFromSnap)), (e) => setMsg(errorMessage(e)))
+    // Single-field query only (no composite index needed); newest first is sorted here.
+    const a = onSnapshot(
+      query(requestsCol(), where('status', '==', 'pending')),
+      (s) => setPending(s.docs.map(requestFromSnap).sort((x, y) => (y.createdAt?.toMillis() ?? 0) - (x.createdAt?.toMillis() ?? 0))),
+      (e) => setMsg(errorMessage(e))
+    )
     const b = onSnapshot(query(requestsCol(), orderBy('createdAt', 'desc'), limit(40)), (s) => setDone(s.docs.map(requestFromSnap).filter((r) => r.status !== 'pending')), () => undefined)
     return () => { a(); b() }
   }, [])

@@ -18,3 +18,6 @@ functions/lib/
 coverage/
 e2e-output/
 *.tsbuildinfo
+
+# Local agent worktrees
+.claude/worktrees/

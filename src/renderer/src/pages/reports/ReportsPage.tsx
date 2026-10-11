@@ -46,6 +46,7 @@ import {
   effectiveGroupBy,
   fetchReport,
   isNumeric,
+  kindLabel,
   monthLabel,
   parseReportParams,
   periodText,
@@ -437,7 +438,8 @@ export function ReportsPage(): JSX.Element {
 /* ------------------------------------------------------------------------------------------------ */
 
 export function ReportBody({ k, model, data, opts, gb, nav }: { k: ReportKey; model: ReportModel; data: any; opts: ReportOptions; gb: GroupBy; nav: (to: string) => void }): JSX.Element {
-  const onRow = rowHandler(k, gb, opts, nav)
+  const can = useCan()
+  const onRow = rowHandler(k, gb, opts, nav, can)
   const sections = model.sections.filter((s) => s.screen !== false)
   return (
     <>
@@ -466,9 +468,27 @@ export function ReportBody({ k, model, data, opts, gb, nav }: { k: ReportKey; mo
   )
 }
 
-function rowHandler(k: ReportKey, gb: GroupBy, o: ReportOptions, nav: (to: string) => void): ((s: RSection) => ((r: any) => void) | undefined) | null {
+function rowHandler(
+  k: ReportKey,
+  gb: GroupBy,
+  o: ReportOptions,
+  nav: (to: string) => void,
+  can: (p: string) => boolean
+): ((s: RSection) => ((r: any) => void) | undefined) | null {
   const printVoucher = (kind: 'payment' | 'material', id: number): void => {
     api('print.open', { kind, id }).catch((e) => toast.error(e))
+  }
+  /** Open the module that owns an entry which has no page of its own (expenses, transfers, stock entries). */
+  const openModule = (kind: string, number?: string | null): void => {
+    const what = `${kindLabel(kind)}${number ? ` ${number}` : ''}`
+    if (kind === 'expense' && can('expenses.view')) nav('/expenses')
+    else if (kind.startsWith('transfer') && can('accounts.view')) nav('/accounts?tab=transfers')
+    else if (kind.startsWith('stock_') && can('inventory.view')) nav('/inventory?tab=adjustments')
+    else {
+      toast.info(`${what} — you do not have access to the module that holds this entry.`)
+      return
+    }
+    toast.info(`Look for ${what} in this list.`)
   }
   switch (k) {
     case 'sales':
@@ -482,14 +502,14 @@ function rowHandler(k: ReportKey, gb: GroupBy, o: ReportOptions, nav: (to: strin
               if (DOC_KINDS.has(r.kind)) nav(`/doc/${r.ref_id}`)
               else if (r.kind === 'receipt' || r.kind === 'payment') printVoucher('payment', r.ref_id)
               else if (r.kind === 'material_issue' || r.kind === 'material_return') printVoucher('material', r.ref_id)
-              else toast.info(`${label(r.kind)} ${r.number ?? ''} — open it from its own module.`.trim())
+              else openModule(String(r.kind), r.number)
             }
           : undefined
     case 'cashbook':
       return () => (r) => {
         if (r._opening) return
         if (r.kind === 'receipt' || r.kind === 'payment') printVoucher('payment', r.ref_id)
-        else toast.info(`${label(r.kind)} ${r.number ?? ''} — open it from Accounts or Expenses.`.trim())
+        else openModule(String(r.kind), r.number)
       }
     case 'aging_customer':
     case 'aging_supplier':

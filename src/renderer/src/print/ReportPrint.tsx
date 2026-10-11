@@ -339,6 +339,8 @@ export interface RTable {
   isSpecial?: (r: any) => boolean
   /** Rows that are cancelled (struck through) */
   isMuted?: (r: any) => boolean
+  /** Narrower column set for the A4 page (same data, some columns folded into sub-lines). Totals use the same keys. */
+  printColumns?: RCol[]
 }
 
 export interface RSection {
@@ -913,12 +915,13 @@ export function buildReportModel(key: ReportKey, data: any, o: ReportOptions): R
       const rows: any[] = data.rows ?? []
       const t = data.totals ?? {}
       const fin = (k: string) => (r: any) => r.financials?.[k] ?? null
+      const statusText = (r: any): string => PROJECT_STATUS_LABELS[r.status as keyof typeof PROJECT_STATUS_LABELS] ?? titleCase(r.status)
       const cols: RCol[] = [
         { key: 'code', label: 'Code', nowrap: true },
         { key: 'name', label: 'Project', strong: true, sub: (r) => r.city },
         { key: 'customer_name', label: 'Customer' },
         { key: 'capacity_kw', label: 'kW', type: 'qty' },
-        { key: 'status', label: 'Status', get: (r) => PROJECT_STATUS_LABELS[r.status as keyof typeof PROJECT_STATUS_LABELS] ?? titleCase(r.status), badge: (r) => statusTone(r.status) as Tone },
+        { key: 'status', label: 'Status', get: statusText, badge: (r) => statusTone(r.status) as Tone },
         { key: 'contract', label: 'Contract', type: 'money', get: fin('contractValue') },
         { key: 'revenue', label: 'Revenue', type: 'money', get: fin('revenue') },
         { key: 'cost', label: 'Direct cost', type: 'money', get: fin('totalDirectCost') },
@@ -928,6 +931,11 @@ export function buildReportModel(key: ReportKey, data: any, o: ReportOptions): R
         { key: 'ppkw', label: 'Profit / kW', type: 'money', signed: true, get: (r) => r.profit_per_kw },
         { key: 'received', label: 'Received', type: 'money', get: fin('received') },
         { key: 'due', label: 'Customer due', type: 'money', get: fin('customerOutstanding') }
+      ]
+      // 14 columns do not fit a portrait A4 page: code, customer and status move under the project name.
+      const printCols: RCol[] = [
+        { key: 'name', label: 'Project', strong: true, sub: (r) => [r.code, r.customer_name, statusText(r)].filter(Boolean).join(' · ') },
+        ...cols.filter((c) => !['code', 'name', 'customer_name', 'status'].includes(c.key))
       ]
       return {
         ...base,
@@ -944,6 +952,7 @@ export function buildReportModel(key: ReportKey, data: any, o: ReportOptions): R
             id: 'projects',
             table: {
               columns: cols,
+              printColumns: printCols,
               rows,
               totals: {
                 capacity_kw: t.kw,
@@ -1117,11 +1126,12 @@ function sizing(n: number): { th: CSSProperties; td: CSSProperties; sub: CSSProp
 }
 
 function PrintSectionTable({ ctx, sec }: { ctx: PrintContext; sec: RSection }): JSX.Element {
-  const { columns: cols, rows, totals, totalLabel } = sec.table
+  const table: RTable = sec.table.printColumns ? { ...sec.table, columns: sec.table.printColumns } : sec.table
+  const { columns: cols, rows, totals, totalLabel } = table
   const s = sizing(cols.length)
   const align = (c: RCol): 'left' | 'right' => (isNumeric(c) ? 'right' : 'left')
   const hasTotals = !!totals && (Object.keys(totals).length > 0 || !!totalLabel)
-  const lead = totalsLead(sec.table)
+  const lead = totalsLead(table)
   return (
     <div className="mb-4">
       {sec.title && (
@@ -1144,8 +1154,8 @@ function PrintSectionTable({ ctx, sec }: { ctx: PrintContext; sec: RSection }): 
           </tr>
         ) : (
           rows.map((r, i) => {
-            const special = sec.table.isSpecial?.(r)
-            const muted = sec.table.isMuted?.(r)
+            const special = table.isSpecial?.(r)
+            const muted = table.isMuted?.(r)
             return (
               <tr key={i} style={muted ? { color: '#a0aec0', textDecoration: 'line-through' } : undefined}>
                 {cols.map((c) => {
@@ -1349,7 +1359,7 @@ export function ReportPrint({ params, ctx, setTitle }: TemplateProps): JSX.Eleme
   }, [paramKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (err) return <div className="no-print mx-auto max-w-[210mm] rounded bg-red-100 p-4 text-red-800">{err}</div>
-  if (!state) return null
+  if (!state) return <div className="no-print py-20 text-center text-[13px] text-white/70">Preparing report…</div>
 
   return <ReportSheet ctx={ctx} reportKey={state.key} opts={state.opts} model={state.model} />
 }

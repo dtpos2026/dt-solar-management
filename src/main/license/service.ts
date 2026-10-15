@@ -197,7 +197,7 @@ export class LicenseService {
       signingConfigured: this.signingConfigured,
       maxFirms: payload ? payload.maxFirms : TRIAL_LIMITS.maxFirms,
       maxUsers: payload ? payload.maxUsers : TRIAL_LIMITS.maxUsers,
-      poweredBy: s.remotePoweredBy ?? payload?.poweredBy ?? true,
+      poweredBy: s.remotePoweredBy ?? payload?.poweredBy ?? false,
       detached: !!payload?.detached
     }
     const changed = !this.cached || this.cached.mode !== st.mode || this.cached.message !== st.message

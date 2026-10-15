@@ -30,7 +30,7 @@ export interface LicensePayload {
   /** Super Admin client record this license belongs to. */
   clientId?: string
   maxDevices?: number
-  /** Show "Powered by Digital Target" on customer documents (default true). */
+  /** Show "Powered by Digital Target" on customer documents (default false — customer documents are white-label). */
   poweredBy?: boolean
   /**
    * Lifetime license detached from central management: no online check-ins are required or performed, so the

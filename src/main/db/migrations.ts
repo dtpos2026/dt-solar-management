@@ -652,4 +652,4 @@ CREATE TABLE import_runs (
   }
 ]
 
-export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version
+export const LATEST_SCHEMA_VERSION = Math.max(...MIGRATIONS.map((m) => m.version))

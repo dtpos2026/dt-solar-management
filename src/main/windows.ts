@@ -119,3 +119,34 @@ export function broadcast(channel: string, payload: unknown): void {
     if (!w.isDestroyed()) w.webContents.send(channel, payload)
   }
 }
+
+/**
+ * Renders a print route (same templates as the preview window) in a hidden window and returns the PDF bytes.
+ * Used to attach documents (e.g. WhatsApp). Waits until the template marks itself ready (data-print-ready).
+ */
+export async function renderToPdf(
+  kind: string,
+  id: number,
+  params: Record<string, unknown> = {},
+  opts: { pageSize?: Electron.PrintToPDFOptions['pageSize']; timeoutMs?: number } = {}
+): Promise<Buffer> {
+  const win = new BrowserWindow({ show: false, width: 1000, height: 1400, webPreferences: secureWebPreferences() })
+  harden(win)
+  try {
+    const q = new URLSearchParams()
+    for (const [k, v] of Object.entries(params ?? {})) if (v !== undefined && v !== null) q.set(k, String(v))
+    load(win, 'index', `/print/${encodeURIComponent(kind)}/${id}${q.toString() ? `?${q}` : ''}`)
+    const deadline = Date.now() + (opts.timeoutMs ?? 20000)
+    for (;;) {
+      if (Date.now() > deadline) throw new Error('The document could not be prepared for PDF (timeout).')
+      await new Promise((r) => setTimeout(r, 250))
+      if (win.isDestroyed()) throw new Error('PDF window closed unexpectedly.')
+      const ready = await win.webContents.executeJavaScript("!!document.querySelector('[data-print-ready]')").catch(() => false)
+      if (ready) break
+    }
+    await new Promise((r) => setTimeout(r, 400)) // let images (logo, signature, stamp) paint
+    return await win.webContents.printToPDF({ pageSize: opts.pageSize ?? 'A4', printBackground: true, preferCSSPageSize: true })
+  } finally {
+    if (!win.isDestroyed()) win.destroy()
+  }
+}

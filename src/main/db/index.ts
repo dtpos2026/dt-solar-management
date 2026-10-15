@@ -48,7 +48,7 @@ export function migrate(db: DB, opts: OpenOptions = {}): void {
         `Please install the latest version. Your data has not been changed.`
     )
   }
-  const pending = MIGRATIONS.filter((m) => m.version > current)
+  const pending = MIGRATIONS.filter((m) => m.version > current).sort((a, b) => a.version - b.version)
   if (pending.length === 0) return
   if (current > 0 && opts.beforeMigrate) opts.beforeMigrate(db, current, LATEST_SCHEMA_VERSION)
   for (const m of pending) {

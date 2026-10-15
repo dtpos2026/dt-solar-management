@@ -47,8 +47,10 @@ export function PrintView(): JSX.Element {
   const run = async (what: 'print' | 'pdf'): Promise<void> => {
     setBusy(what)
     try {
-      if (what === 'print') await api('print.run')
-      else await api('print.pdf', { filename: title })
+      // Contract with the print routes: kind selects the configured printer, paper the page size.
+      const paper = params.paper || undefined
+      if (what === 'print') await api('print.run', { kind, paper })
+      else await api('print.pdf', { filename: title, kind, paper })
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -57,7 +59,7 @@ export function PrintView(): JSX.Element {
   }
 
   return (
-    <div className="print-root">
+    <div className="print-root" data-print-ready={ctx && title !== 'Document' ? '1' : undefined}>
       <div className="no-print fixed inset-x-0 top-0 z-50 flex h-14 items-center gap-3 bg-[#2b2d31] px-5 text-white shadow-lg">
         <div className="mr-auto truncate font-semibold">{title}</div>
         <span className="hidden text-[12px] text-white/60 md:inline">A4 · Preview matches the printed page</span>

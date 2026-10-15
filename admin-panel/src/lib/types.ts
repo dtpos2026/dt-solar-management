@@ -307,7 +307,7 @@ export const DEFAULT_BRANDING: Branding = {
   supportPhone: '+92 345 1873354',
   supportWhatsapp: '923451873354',
   supportEmail: 'digitaltarget.digital@gmail.com',
-  poweredByDefault: true,
+  poweredByDefault: false,
   customerPrivacy: 'masked',
   verifyBaseUrl: '',
   mapTileUrl: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',

@@ -37,6 +37,8 @@ export interface CloudServiceOptions {
   geoFetch?: NonNullable<Parameters<typeof lookupApproximate>[0]>['fetchImpl']
   onIncoming?: (msgs: support.IncomingMessage[]) => void
   log?: (level: 'info' | 'warn' | 'error', message: string) => void
+  /** Automatic (timer) heartbeats and support sync. false in development builds unless enabled explicitly. */
+  background?: boolean
 }
 
 export interface LocationInfo {
@@ -152,6 +154,31 @@ export class CloudService {
     return info
   }
 
+  /**
+   * What WOULD be sent with a draft choice (not saved, no network): lets the customer see exactly what is shared
+   * before giving consent.
+   */
+  previewLocation(input: { mode: unknown; manual?: unknown }): { location: HeartbeatLocation | null; note: string | null; manualError: string | null } {
+    const mode = normalizeMode(input.mode)
+    const manual = String(input.manual ?? '').trim()
+    if (mode === 'manual') {
+      const p = parseManualLocation(manual)
+      if (!p.ok) return { location: null, note: p.error, manualError: p.error }
+      const at = this.state.manual && this.state.manual.value === manual ? this.state.manual.at : new Date().toISOString()
+      return { location: buildLocation('manual', { manual, manualAt: at }), note: null, manualError: null }
+    }
+    if (mode === 'approximate') {
+      const g = this.state.geo && Date.now() - Date.parse(this.state.geo.fetchedAt) < GEO_MAX_STALE_MS ? this.state.geo : null
+      const location = buildLocation('approximate', { geo: g })
+      return {
+        location,
+        note: location ? null : 'The approximate place is looked up from your internet address (ipwho.is) when you save and at each heartbeat.',
+        manualError: null
+      }
+    }
+    return { location: null, note: null, manualError: null }
+  }
+
   /** Saves the customer's choice (consent). Turning sharing on requires a valid manual entry for "manual". */
   setLocation(ctx: Ctx, input: { mode: unknown; manual?: unknown }): LocationInfo['mode'] {
     const mode = normalizeMode(input.mode)
@@ -245,6 +272,7 @@ export class CloudService {
     return {
       online: this.online,
       emulator: !!this.opts.license.client?.cfg.emulator,
+      background: this.opts.background !== false,
       installId: maskToken(this.opts.license.installToken),
       everyMinutes: HEARTBEAT_EVERY_MS / 60_000,
       location,
@@ -282,7 +310,8 @@ export class CloudService {
       online: this.online,
       messages: support.listMessages(db),
       counts: support.counts(db),
-      sync: { lastSyncAt: s.lastSyncAt ?? null, lastOkAt: s.lastOkAt ?? null, ok: s.ok ?? null, offline: !!s.offline, error: s.error ?? null, syncing: !!this.syncInFlight },
+      background: this.opts.background !== false,
+      sync: { lastSyncAt: s.lastSyncAt ?? null, lastOkAt: s.lastOkAt ?? null, ok: s.ok ?? null, offline: !!s.offline, error: s.error ?? null, warning: s.warning ?? null, syncing: !!this.syncInFlight },
       contact: this.threadInfo()
     }
   }
@@ -340,6 +369,7 @@ export class CloudService {
       s.ok = r.ok
       s.offline = r.offline
       s.error = r.error
+      s.warning = r.warning ?? null
       if (r.ok) s.lastOkAt = s.lastSyncAt
       this.save()
       if (r.received.length) this.opts.onIncoming?.(r.received)
@@ -356,6 +386,10 @@ export class CloudService {
   /** Heartbeat shortly after start-up and every 15 minutes; background support sync every 15 minutes. */
   start(opts: { heartbeatDelayMs?: number; supportDelayMs?: number } = {}): void {
     this.stop()
+    if (this.opts.background === false) {
+      this.opts.log?.('info', 'Automatic heartbeats and support sync are off in this development build (set DTSP_CLOUD_BACKGROUND=1 to enable).')
+      return
+    }
     const hb = (): void => void this.sendHeartbeat().catch(() => undefined)
     const sync = (): void => {
       if (!this.opts.getDb()) return

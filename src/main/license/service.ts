@@ -26,7 +26,7 @@ import type { ActivationNotice, ActivationResult, LicenseCertificate, LicensePay
 import { TRIAL_LIMITS } from './types'
 import { WRITE_MODES, evaluate, parseCertificate, verifyCertificate } from './verify'
 import { AppError } from '../services/context'
-import { FirestoreError, FirestoreRest, resolveFirestoreConfig, type FirestoreConfig, type RestOptions } from '../cloud/firestore'
+import { FirestoreError, FirestoreRest, resolveFirestoreConfig, type FirestoreConfig, type RestOptions, type Write } from '../cloud/firestore'
 import { loadInstallToken, maskToken } from '../cloud/install'
 import { decideCertUpdate, isDetached } from '../cloud/certRefresh'
 import { log as appLog } from '../log'
@@ -104,6 +104,14 @@ export function cleanRegistration(r: unknown): Registration {
     phone,
     address: text(o.address, 'Address', 300, false)
   }
+}
+
+/**
+ * activationRequests/{id} create through documents:commit: `createdAt` is the server's request time (customer clocks
+ * can be wrong) and the precondition makes it a pure create (rules: create only, status 'pending').
+ */
+export function activationRequestWrite(id: string, fields: Record<string, unknown>): Write {
+  return { path: `activationRequests/${id}`, fields, serverTime: ['createdAt'], exists: false }
 }
 
 export interface LicenseServiceOptions {
@@ -369,12 +377,11 @@ export class LicenseService {
       appVersion: this.opts.appVersion.slice(0, 40),
       os: this.os.slice(0, 200),
       status: 'pending',
-      createdAt: new Date(now),
       installToken: this.installToken
     }
     if (reg) Object.assign(fields, { companyName: reg.companyName, ownerName: reg.ownerName, phone: reg.phone, address: reg.address })
     try {
-      await client.create('activationRequests', id, fields)
+      await client.commit([activationRequestWrite(id, fields)])
     } catch (e) {
       throw LicenseService.netError(e, 'activation request')
     }
@@ -495,23 +502,58 @@ export class LicenseService {
     return this.status(true)
   }
 
+  /**
+   * Installs a re-signed certificate published for this computer in licenseStatus/{licenseId}.certs, WITHOUT applying
+   * the remote status. Used to reconnect a detached lifetime license on the customer's request (detached licenses do
+   * not check in automatically). Returns what happened in plain words.
+   */
+  async fetchPublishedCertificate(): Promise<{ installed: boolean; message: string; status: LicenseStatus }> {
+    const st = this.status(true)
+    if (!st.payload) throw new AppError('No license is installed on this computer.', 'LICENSE')
+    const client = this.requireClient()
+    let doc
+    try {
+      doc = await client.get(`licenseStatus/${st.payload.licenseId}`)
+    } catch (e) {
+      throw LicenseService.netError(e, 'certificate check')
+    }
+    const certs = doc && doc.data.certs && typeof doc.data.certs === 'object' ? (doc.data.certs as Record<string, unknown>) : {}
+    const decision = decideCertUpdate({ code: certs[this.deviceId], publicKeyPem: this.opts.publicKeyPem, deviceId: this.deviceId, current: { cert: this.readCert(), payload: st.payload } })
+    if (!decision.install) {
+      const message =
+        decision.reason === 'none' || decision.reason === 'same'
+          ? 'No new certificate has been published for this computer yet. Ask Digital Target to reconnect your license, then try again.'
+          : `The published certificate was not installed: ${decision.message}`
+      return { installed: false, message, status: st }
+    }
+    this.writeCert(decision.cert)
+    const s = this.readState()
+    s.certUpdate = { at: new Date().toISOString(), summary: decision.summary }
+    this.writeState(s)
+    this.log('info', `License certificate installed on request: ${decision.summary}`)
+    // Reconnected: the license is centrally managed again — apply the published status right away.
+    const status = isDetached(decision.payload) ? this.status(true) : await this.checkIn(true)
+    return { installed: true, message: `Certificate updated: ${decision.summary}.`, status }
+  }
+
   /** Releases this computer: removes the local certificate and tells Digital Target (best effort). */
   async deactivate(): Promise<LicenseStatus> {
     const st = this.status(true)
     if (st.payload && this.client) {
       await this.client
-        .create('activationRequests', LicenseService.randomId(), {
-          type: 'deactivate',
-          licenseId: st.payload.licenseId,
-          deviceId: this.deviceId,
-          deviceName: this.deviceName.slice(0, 200),
-          appVersion: this.opts.appVersion.slice(0, 40),
-          os: this.os.slice(0, 200),
-          status: 'pending',
-          createdAt: new Date(),
-          installToken: this.installToken
-        })
-        .catch(() => undefined)
+        .commit([
+          activationRequestWrite(LicenseService.randomId(), {
+            type: 'deactivate',
+            licenseId: st.payload.licenseId,
+            deviceId: this.deviceId,
+            deviceName: this.deviceName.slice(0, 200),
+            appVersion: this.opts.appVersion.slice(0, 40),
+            os: this.os.slice(0, 200),
+            status: 'pending',
+            installToken: this.installToken
+          })
+        ])
+        .catch((e) => this.log('warn', `Deactivation notice not delivered: ${(e as Error).message}`))
     }
     if (existsSync(this.certFile)) unlinkSync(this.certFile)
     const s = this.readState()

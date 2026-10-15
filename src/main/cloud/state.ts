@@ -20,6 +20,7 @@ export interface SupportRecord extends SyncState {
   ok?: boolean | null
   offline?: boolean
   error?: string | null
+  warning?: string | null
 }
 
 export interface CloudState {

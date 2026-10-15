@@ -45,6 +45,22 @@ export class SupportError extends Error {
 
 export const OFFLINE_NOTE = 'Waiting for an internet connection — it will be sent automatically.'
 
+/**
+ * Firestore returns timestamps with a variable number of fraction digits ("…:05Z", "…:05.1Z", "…:05.123456Z"), which
+ * do not sort as text. Every stored server time is normalised to 9 fraction digits so the pull cursor compares safely.
+ */
+export function normTs(v: unknown): string | null {
+  if (typeof v !== 'string') return null
+  const m = v.trim().match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})$/)
+  if (!m) return null
+  if (m[3] !== 'Z') {
+    const t = Date.parse(v)
+    if (!Number.isFinite(t)) return null
+    return normTs(new Date(t).toISOString())
+  }
+  return `${m[1]}.${(m[2] ?? '').padEnd(9, '0')}Z`
+}
+
 export function newMessageUid(): string {
   return randomToken(20)
 }
@@ -119,7 +135,7 @@ export function markSent(db: DB, uid: string, remoteAt?: string | null): void {
   db.prepare(
     `UPDATE support_messages SET status = 'sent', error = NULL, sent_at = datetime('now','localtime'), remote_at = COALESCE(?, remote_at), attempts = attempts + 1
      WHERE uid = ? AND direction = 'out' AND status IN ('sending','queued','failed')`
-  ).run(remoteAt ?? null, uid)
+  ).run(normTs(remoteAt), uid)
 }
 
 /** Back to the queue with a visible note. `countAttempt` = a real server error (offline time is not counted). */
@@ -162,7 +178,8 @@ export function ingestIncoming(db: DB, msgs: IncomingMessage[]): IncomingMessage
   db.transaction(() => {
     for (const m of msgs) {
       if (!m.uid || !m.body) continue
-      if (ins.run(m.uid, String(m.body).slice(0, SUPPORT_MAX_BODY), m.author ? String(m.author).slice(0, 120) : null, m.at || null).changes === 1) added.push(m)
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(m.uid)) continue
+      if (ins.run(m.uid, String(m.body).slice(0, SUPPORT_MAX_BODY), m.author ? String(m.author).slice(0, 120) : null, normTs(m.at)).changes === 1) added.push(m)
     }
   })()
   return added
@@ -207,6 +224,8 @@ export interface SyncResult {
   received: IncomingMessage[]
   pending: number
   error: string | null
+  /** Delivered, but with a side note (e.g. the thread summary could not be updated). */
+  warning?: string | null
 }
 
 export interface SyncDeps {
@@ -227,7 +246,7 @@ export function backoffMs(attempts: number): number {
   return Math.min(30 * 60_000, 30_000 * Math.pow(2, Math.max(0, attempts - 1)))
 }
 
-function threadWrites(token: string, t: ThreadInfo, body: string, exists: boolean): Write {
+export function threadWrite(token: string, t: ThreadInfo, body: string, exists: boolean): Write {
   const common = {
     companyName: cut(t.companyName, 200),
     contactName: cut(t.contactName, 200),
@@ -262,13 +281,23 @@ function describe(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
+/** Admin replies newer than the pull cursor (structured query on the thread's messages, ordered by server time). */
+export function repliesQuery(since: string | null): Record<string, unknown> {
+  return {
+    from: [{ collectionId: 'messages' }],
+    ...(since ? { where: { fieldFilter: { field: { fieldPath: 'at' }, op: 'GREATER_THAN', value: { timestampValue: since } } } } : {}),
+    orderBy: [{ field: { fieldPath: 'at' }, direction: 'ASCENDING' }],
+    limit: 300
+  }
+}
+
 /**
  * One sync round: sends queued messages (oldest first), pulls admin replies, reports "read".
  * Never throws for network problems — the result says what happened.
  */
 export async function syncSupport(d: SyncDeps): Promise<SyncResult> {
   const now = d.now ?? Date.now
-  const res: SyncResult = { ok: true, offline: false, sent: 0, failed: 0, received: [], pending: 0, error: null }
+  const res: SyncResult = { ok: true, offline: false, sent: 0, failed: 0, received: [], pending: 0, error: null, warning: null }
   recoverInterrupted(d.db)
   const queued = d.db.prepare(`SELECT * FROM support_messages WHERE direction = 'out' AND status = 'queued' ORDER BY id`).all() as SupportMessage[]
   const threadPath = `supportThreads/${d.token}`
@@ -278,7 +307,7 @@ export async function syncSupport(d: SyncDeps): Promise<SyncResult> {
     thread = await d.client.get(threadPath)
   } catch (e) {
     const offline = e instanceof FirestoreError && e.offline
-    for (const m of queued) markRetry(d.db, m.uid, offline ? OFFLINE_NOTE : describe(e), false)
+    for (const m of queued) markRetry(d.db, m.uid, offline ? OFFLINE_NOTE : `${describe(e)} It will be retried automatically.`, false)
     res.ok = false
     res.offline = offline
     res.error = describe(e)
@@ -298,7 +327,7 @@ export async function syncSupport(d: SyncDeps): Promise<SyncResult> {
     for (;;) {
       try {
         // REQUEST_TIME is the commit time, so commitTime is exactly the message's server timestamp.
-        const r = await d.client.commit([threadWrites(d.token, d.thread, m.body, threadExists), messageWrite(d.token, m)])
+        const r = await d.client.commit([threadWrite(d.token, d.thread, m.body, threadExists), messageWrite(d.token, m)])
         markSent(d.db, m.uid, r.commitTime ?? null)
         d.backoff.delete(m.uid)
         threadExists = true
@@ -331,6 +360,20 @@ export async function syncSupport(d: SyncDeps): Promise<SyncResult> {
             retried = true
             continue
           }
+          // The thread summary itself was refused (e.g. the thread holds fields the customer may not keep):
+          // the message is what matters — deliver it on its own.
+          if (fe?.code === 'PERMISSION_DENIED' && fresh) {
+            try {
+              const r = await d.client.commit([messageWrite(d.token, m)])
+              markSent(d.db, m.uid, r.commitTime ?? null)
+              d.backoff.delete(m.uid)
+              res.sent++
+              res.warning = 'The message was delivered, but the conversation summary could not be updated.'
+              break
+            } catch {
+              /* fall through: report the original error */
+            }
+          }
         }
         if (fe?.transient || existing === undefined) {
           const after = markRetry(d.db, m.uid, `${describe(e)} Retrying automatically.`, true)
@@ -362,37 +405,25 @@ export async function syncSupport(d: SyncDeps): Promise<SyncResult> {
     }
   }
 
-  /* ---------- pull admin replies ---------- */
+  /* ---------- pull admin replies (always: an empty result costs one read) ---------- */
   try {
+    const docs = await d.client.runQuery(threadPath, repliesQuery(lastIncomingAt(d.db)))
+    const incoming = docs
+      .filter((doc) => doc.data.from === 'admin' && typeof doc.data.body === 'string' && String(doc.data.body).trim())
+      .map((doc) => ({ uid: doc.id, body: String(doc.data.body), author: (doc.data.authorName as string) || 'Digital Target', at: String(doc.data.at ?? '') }))
+    res.received = ingestIncoming(d.db, incoming)
     if (threadExists) {
-      if (!thread || res.sent > 0) thread = await d.client.get(threadPath)
-      if (thread) {
-        d.state.remoteUnread = thread.data.unreadByCustomer === true
-        const changed = !d.state.pulledThreadUpdate || d.state.pulledThreadUpdate !== thread.updateTime
-        if (changed || d.force) {
-          const since = lastIncomingAt(d.db)
-          const where = since
-            ? { fieldFilter: { field: { fieldPath: 'at' }, op: 'GREATER_THAN', value: { timestampValue: since } } }
-            : undefined
-          const docs = await d.client.runQuery(threadPath, {
-            from: [{ collectionId: 'messages' }],
-            ...(where ? { where } : {}),
-            orderBy: [{ field: { fieldPath: 'at' }, direction: 'ASCENDING' }],
-            limit: 500
-          })
-          const incoming = docs
-            .filter((doc) => doc.data.from === 'admin' && typeof doc.data.body === 'string')
-            .map((doc) => ({ uid: doc.id, body: String(doc.data.body), author: (doc.data.authorName as string) || 'Digital Target', at: String(doc.data.at ?? '') }))
-          res.received = ingestIncoming(d.db, incoming)
-          d.state.pulledThreadUpdate = thread.updateTime ?? null
+      if (res.sent > 0 || res.received.length > 0) thread = await d.client.get(threadPath)
+      d.state.remoteUnread = thread?.data.unreadByCustomer === true
+      d.state.pulledThreadUpdate = thread?.updateTime ?? null
+      /* ---------- report "read" ---------- */
+      if (d.state.pendingRemoteRead && counts(d.db).unread === 0) {
+        if (thread?.data.unreadByCustomer === true) {
+          await d.client.commit([{ path: threadPath, fields: { unreadByCustomer: false }, mask: ['unreadByCustomer'], exists: true }])
         }
+        d.state.pendingRemoteRead = false
+        d.state.remoteUnread = false
       }
-    }
-    /* ---------- report "read" ---------- */
-    if (threadExists && d.state.pendingRemoteRead && counts(d.db).unread === 0) {
-      await d.client.commit([{ path: threadPath, fields: { unreadByCustomer: false }, mask: ['unreadByCustomer'], exists: true }])
-      d.state.pendingRemoteRead = false
-      d.state.remoteUnread = false
     }
   } catch (e) {
     res.ok = false

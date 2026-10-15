@@ -6,6 +6,17 @@ import { CloudService } from './service'
 
 let cloud: CloudService | null = null
 
+/**
+ * Timers run in installed (packaged) builds. Development / test runs of the unpackaged app do not write heartbeats to
+ * the production project on their own — unless they point at the emulator or opt in with DTSP_CLOUD_BACKGROUND=1.
+ * Customer-initiated actions (Send now, support messages, activation) always work.
+ */
+function backgroundAllowed(): boolean {
+  if (process.env.DTSP_CLOUD_BACKGROUND === '1') return true
+  if (process.env.DTSP_CLOUD_BACKGROUND === '0') return false
+  return !runtime.isDev || !!process.env.DTSP_FIRESTORE_EMULATOR
+}
+
 /** The installation's cloud service (created on first use, after the license service exists). */
 export function getCloud(): CloudService {
   if (cloud) return cloud
@@ -18,6 +29,7 @@ export function getCloud(): CloudService {
     getSession: () => (runtime.session ? { firmId: runtime.session.firmId, fullName: runtime.session.user.fullName } : null),
     geoUrl: process.env.DTSP_GEOIP_URL || undefined,
     log,
+    background: backgroundAllowed(),
     onIncoming: (msgs) => {
       try {
         if (!Notification.isSupported()) return

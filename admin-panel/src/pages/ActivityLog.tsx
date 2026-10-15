@@ -1,7 +1,8 @@
 /** Activity Log — every admin action, with filters, export, archiving and retention (Module 7). */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   Timestamp,
+  doc,
   getDocs,
   limit,
   orderBy,
@@ -191,7 +192,7 @@ export function ActivityLog() {
     let done = 0
     for (const part of chunk(ids, SCAN_SIZE)) {
       const b = writeBatch(db)
-      for (const id of part) b.update(doc(id), { archived: true, archivedAt: serverTimestamp(), archivedBy: me?.email ?? '' })
+      for (const id of part) b.update(doc(auditCol(), id), { archived: true, archivedAt: serverTimestamp(), archivedBy: me?.email ?? '' })
       await b.commit()
       done += part.length
       setProgress(`Archived ${done} of ${ids.length}…`)
@@ -425,13 +426,8 @@ export function ActivityLog() {
   )
 }
 
-function doc(id: string) {
-  return docRef(auditCol(), id)
-}
-import { doc as docRef } from 'firebase/firestore'
-
 function DetailView({ r }: { r: AuditRow }) {
-  const rows: [string, React.ReactNode][] = [
+  const rows: [string, ReactNode][] = [
     ['Time', fmtDateTime(r.atMs)],
     ['Action', <><span className="font-semibold">{actionLabel(r.action)}</span> <span className="font-mono text-[12px] text-[#7a6d92]">{r.action}</span></>],
     ['Category', <><CategoryPill c={r.category} />{r.legacy && <span className="ml-2 text-[12px] text-[#7a6d92]">legacy entry (before categories) — shown as license</span>}</>],

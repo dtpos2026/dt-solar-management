@@ -1,5 +1,6 @@
 /**
- * "Send on WhatsApp" button (owner: assist area). Placeholder until the WhatsApp integration is implemented:
+ * "Send on WhatsApp" button (owner: assist area): prepares the PDF and opens the chat in the built-in WhatsApp Web module.
+ * Placeholder until the WhatsApp integration is implemented:
  * renders nothing so screens that include it keep working.
  */
 export interface WhatsAppButtonProps {

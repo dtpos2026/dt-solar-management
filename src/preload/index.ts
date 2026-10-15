@@ -17,6 +17,8 @@ const api = {
     ipcRenderer.on('dt:license', h)
     return () => ipcRenderer.removeListener('dt:license', h)
   },
+  /** Starts a native drag of a prepared outbox file (e.g. a PDF into the WhatsApp chat). Token comes from a whatsapp.* route. */
+  startDrag: (fileToken: string): void => ipcRenderer.send('dt:startDrag', String(fileToken)),
   onSession: (cb: (event: string) => void): (() => void) => {
     const h = (_e: unknown, s: string): void => cb(s)
     ipcRenderer.on('dt:session', h)

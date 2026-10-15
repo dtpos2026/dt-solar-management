@@ -613,7 +613,7 @@ CREATE TABLE support_messages (
   read_at TEXT
 );
 
--- WhatsApp send log (status + duplicate-send guard).
+-- WhatsApp send log (status + duplicate-send guard). Sending happens in the built-in WhatsApp Web module (linked device).
 CREATE TABLE whatsapp_log (
   id INTEGER PRIMARY KEY,
   firm_id INTEGER REFERENCES firms(id),
@@ -622,7 +622,7 @@ CREATE TABLE whatsapp_log (
   entity TEXT,
   entity_id INTEGER,
   file_name TEXT,
-  method TEXT NOT NULL CHECK (method IN ('chat_link','cloud_api')),
+  method TEXT NOT NULL CHECK (method IN ('whatsapp_web','chat_link')),
   status TEXT NOT NULL,
   message_id TEXT,
   error TEXT,

@@ -623,16 +623,19 @@ function AppearanceTab(): JSX.Element {
 }
 
 /* ------------------------------------------------ Printing ------------------------------------------------ */
-function PrintingTab({ draft, set, editable }: TabProps): JSX.Element {
+function PrintingTab(_props: TabProps): JSX.Element {
+  const poweredBy = useApp((s) => s.license?.poweredBy === true)
   return (
     <Card title={<SectionTitle icon={<Printer />} title="Printed documents" subtitle="Invoices, quotations, receipts, statements and reports" />}>
-      <Toggle
-        checked={!!draft.show_vendor_branding}
-        disabled={!editable}
-        onChange={(v) => set('show_vendor_branding', v)}
-        label="Show “Powered by DT Solar Pro · Digital Target” on printed documents"
-        description="A small line in the footer of printed and PDF documents. Your own firm name, logo and details are always shown regardless of this setting."
-      />
+      <div className="space-y-2 text-[13px]" data-testid="vendor-branding-info">
+        <p>
+          Your own firm name, logo and details are always printed. Layout, colours and what each document shows are set in <b>Settings → Invoice templates</b>.
+        </p>
+        <p className="text-muted">
+          The small “Powered by Digital Target” footer line is controlled by your license (set by Digital Target), not by this screen. It is currently{' '}
+          <b>{poweredBy ? 'shown' : 'not shown'}</b> on customer documents.
+        </p>
+      </div>
     </Card>
   )
 }

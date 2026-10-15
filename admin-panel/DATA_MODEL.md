@@ -100,12 +100,17 @@ iban, currency, invoicePrefix, receiptPrefix, nextInvoiceNo, taxName, taxRate, i
 supportWhatsapp, supportEmail, poweredByDefault, customerPrivacy ('full'|'masked'|'hidden'), verifyBaseUrl, mapTileUrl,
 mapAttribution`. Public copy: `companyName, logo, phone, email, website, address`.
 
+`settings/portal` (same rules): `sessionTimeoutMin` (admin inactivity sign-out, default 30).
+
 ### `auditLogs/{id}`
 `action, category ('security'|'financial'|'license'|'client'|'device'|'support'|'settings'|'general'), by (email),
 byUid, target, targetType, licenseId, details, meta, status ('success'|'failure'), at (== request.time), archived`
 
 Retention: anyone with `audit.manage` may archive. Only an owner may delete, only entries older than 90 days and
-never `security`, `financial` or `license` entries.
+never `security`, `financial` or `license` entries (legacy entries without `category` count as `license`).
+
+Rules test suite: `admin-panel/tests/rules.test.ts` (`npm run test:rules` in admin-panel; needs firebase-tools installed
+globally — `npm i -g firebase-tools` — and Java).
 
 ## Known limits of the Spark-plan design (documented to customers)
 * No server code ⇒ no true rate limiting. Auth sign-in brute force is throttled by Firebase Auth itself; license keys

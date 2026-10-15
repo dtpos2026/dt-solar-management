@@ -16,6 +16,8 @@ import { ProjectForm } from './ProjectsPage'
 import { useLoad, useProducts, useWarehouses } from '../../lib/hooks'
 import { date, label, money, pct, qty, statusTone, today } from '../../lib/format'
 import { PROJECT_STATUS_LABELS, SYSTEM_TYPE_LABELS } from '@shared/docTypes'
+import { ArchiveRestore } from 'lucide-react'
+import { ProjectDeleteDialog, restoreProjectFlow } from './projectActions'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Tab = 'overview' | 'ledger' | 'materials' | 'documents' | 'files'
@@ -31,6 +33,7 @@ export function ProjectDetail(): JSX.Element {
   const [expense, setExpense] = useState(false)
   const { data: p, reload } = useLoad(() => api<any>('projects.get', { id: Number(id) }), [id])
   const [tick, setTick] = useState(0)
+  const [del, setDel] = useState<any>(null)
   const refresh = (): void => {
     reload()
     setTick((t) => t + 1)
@@ -46,6 +49,7 @@ export function ProjectDetail(): JSX.Element {
           <div className="flex items-center gap-2">
             <h1 className="text-[20px] font-bold">{p.name}</h1>
             <Badge tone={statusTone(p.status)}>{PROJECT_STATUS_LABELS[p.status as keyof typeof PROJECT_STATUS_LABELS]}</Badge>
+            {!!p.is_archived && <Badge tone="warn">Archived</Badge>}
           </div>
           <div className="flex flex-wrap gap-4 text-[12.5px] text-muted">
             <span>{p.code}</span>
@@ -58,7 +62,10 @@ export function ProjectDetail(): JSX.Element {
         <Button icon={<Printer className="h-4 w-4" />} onClick={() => api('print.open', { kind: 'project', id: p.id })}>Project statement</Button>
         <WhatsAppButton entity="project" id={p.id} partyId={p.customer_id} phone={p.contact_phone || p.customer_phone} />
         {can('projects.manage') && <Button icon={<Pencil className="h-4 w-4" />} onClick={() => setEdit(true)}>Edit</Button>}
+        {can('projects.delete') && !!p.is_archived && <Button icon={<ArchiveRestore className="h-4 w-4" />} onClick={async () => { if (await restoreProjectFlow(p)) refresh() }}>Restore</Button>}
+        {can('projects.delete') && <Button variant="danger" icon={<Trash2 className="h-4 w-4" />} onClick={() => setDel(p)}>Delete</Button>}
       </div>
+      <ProjectDeleteDialog project={del} onClose={() => setDel(null)} onDone={(c) => (c === 'deleted' ? nav('/projects') : refresh())} />
 
       <Card>
         <div className="flex flex-wrap items-center gap-2">

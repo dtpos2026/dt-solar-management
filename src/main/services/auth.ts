@@ -29,10 +29,55 @@ export function verifyPassword(password: string, stored: string): boolean {
   return expected.length === actual.length && timingSafeEqual(expected, actual)
 }
 
-export function validatePassword(pw: unknown): string {
+/** Passwords that are refused outright (most common choices; checked case-insensitively). */
+const COMMON_PASSWORDS = new Set([
+  'password', 'password1', 'passw0rd', 'p@ssword', '123456', '1234567', '12345678', '123456789', '1234567890', '654321',
+  '111111', '000000', '123123', 'abc123', 'qwerty', 'qwerty123', 'iloveyou', 'admin', 'admin1', 'welcome', 'letmein',
+  'pakistan', 'solar123'
+])
+
+/** True when the text is one character repeated or a straight run such as 123456 / abcdef / 654321. */
+function isTrivialSequence(v: string): boolean {
+  if (v.length < 2) return true
+  if (/^(.)\1+$/.test(v)) return true
+  const codes = [...v.toLowerCase()].map((c) => c.charCodeAt(0))
+  const step = codes[1] - codes[0]
+  if (Math.abs(step) !== 1) return false
+  return codes.every((c, i) => i === 0 || c - codes[i - 1] === step)
+}
+
+/**
+ * Password strength check used for every password a person chooses (setup wizard owner, new users, resets,
+ * own change). Kept deliberately simple so staff can follow it: 6+ characters, not a common password, not a
+ * repeated character or a straight sequence, and not the same as the username.
+ */
+export function validatePassword(pw: unknown, username?: string | null): string {
   if (typeof pw !== 'string' || pw.length < 6) throw new AppError('Password must be at least 6 characters.', 'VALIDATION')
   if (pw.length > 128) throw new AppError('Password is too long.', 'VALIDATION')
+  const lower = pw.toLowerCase()
+  if (COMMON_PASSWORDS.has(lower) || isTrivialSequence(pw)) {
+    throw new AppError('This password is too easy to guess. Use a mix of letters and numbers (for example a word plus a few digits).', 'VALIDATION')
+  }
+  if (username && lower === String(username).trim().toLowerCase()) throw new AppError('The password must not be the same as the username.', 'VALIDATION')
   return pw
+}
+
+/* ---------------------------- PIN ---------------------------- */
+
+export const PIN_MAX_FAILED = 5
+export const PIN_LOCK_MINUTES = 5
+
+/** PIN rules: 4–6 digits, not one digit repeated (0000) and not a straight run (1234 / 4321). */
+export function validatePin(pin: unknown): string {
+  const v = typeof pin === 'string' ? pin.trim() : typeof pin === 'number' ? String(pin) : ''
+  if (!/^\d{4,6}$/.test(v)) throw new AppError('PIN must be 4 to 6 digits.', 'VALIDATION')
+  if (isTrivialSequence(v)) throw new AppError('This PIN is too easy to guess (like 1234 or 0000). Choose another one.', 'VALIDATION')
+  return v
+}
+
+/** PINs are hashed exactly like passwords (scrypt with a random salt) — never stored in plain text. */
+export function hashPin(pin: string): string {
+  return hashPassword(validatePin(pin))
 }
 
 interface UserRow {
@@ -54,6 +99,9 @@ interface UserRow {
   last_login_at: string | null
   last_firm_id: number | null
   created_at: string
+  pin_hash: string | null
+  pin_failed_attempts: number
+  pin_locked_until: string | null
 }
 
 const USER_SELECT = `SELECT u.*, r.name AS role_name, r.permissions AS role_permissions
@@ -89,41 +137,209 @@ export function userCount(db: DB): number {
   return (db.prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number }).c
 }
 
+/** Audit row for events that happen without a signed-in context (sign-in, PIN, unlock). */
+function auditRaw(db: DB, userId: number | null, username: string, action: string, summary: string): void {
+  db.prepare(`INSERT INTO audit_log (user_id, username, action, entity, entity_id, summary) VALUES (?, ?, ?, 'user', ?, ?)`).run(
+    userId,
+    username,
+    action,
+    userId,
+    summary
+  )
+}
+
+const isFuture = (ts: string | null): boolean => !!ts && new Date(ts).getTime() > Date.now()
+
+function minutesLeft(ts: string | null): number {
+  return ts ? Math.max(1, Math.ceil((new Date(ts).getTime() - Date.now()) / 60000)) : 0
+}
+
+/**
+ * Checks a password for a known user row and keeps the failed-attempt counter (5 wrong passwords lock the
+ * account for 5 minutes — shared by sign-in and the lock screen). Throws AppError('AUTH') on failure.
+ */
+function checkPasswordAttempt(db: DB, u: UserRow, password: string, failAction: string, auditName: string, failMsg: string): void {
+  const fail = (msg: string): never => {
+    auditRaw(db, u.id, auditName, failAction, msg)
+    throw new AppError(msg, 'AUTH')
+  }
+  if (!u.is_active) return fail('This user account is disabled. Contact your administrator.')
+  if (isFuture(u.locked_until)) return fail(`Too many failed attempts. Try again in ${minutesLeft(u.locked_until)} minute(s).`)
+  if (!verifyPassword(password, u.password_hash)) {
+    const attempts = u.failed_attempts + 1
+    const lockedUntil = attempts >= MAX_FAILED ? new Date(Date.now() + LOCK_MINUTES * 60000).toISOString() : null
+    db.prepare('UPDATE users SET failed_attempts = ?, locked_until = ? WHERE id = ?').run(attempts >= MAX_FAILED ? 0 : attempts, lockedUntil, u.id)
+    if (lockedUntil) {
+      auditRaw(db, u.id, auditName, 'account_locked', `Account locked for ${LOCK_MINUTES} minutes after ${MAX_FAILED} wrong passwords`)
+      return fail(`Too many failed attempts. Try again in ${LOCK_MINUTES} minute(s).`)
+    }
+    return fail(failMsg)
+  }
+  db.prepare('UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE id = ?').run(u.id)
+}
+
+function completeLogin(db: DB, u: UserRow, method: 'password' | 'pin'): { user: SessionUser; lastFirmId: number | null } {
+  db.prepare("UPDATE users SET last_login_at = datetime('now','localtime') WHERE id = ?").run(u.id)
+  auditRaw(db, u.id, u.username, method === 'pin' ? 'pin_login' : 'login', method === 'pin' ? 'Signed in with PIN' : 'Signed in')
+  return { user: buildSessionUser(db, u.id), lastFirmId: u.last_firm_id }
+}
+
 export function login(db: DB, username: unknown, password: unknown): { user: SessionUser; lastFirmId: number | null } {
   const name = String(username ?? '').trim()
   const pw = String(password ?? '')
   if (!name || !pw) throw new AppError('Enter username and password.', 'VALIDATION')
   const u = db.prepare(`${USER_SELECT} WHERE u.username = ?`).get(name) as UserRow | undefined
-  const fail = (msg = 'Invalid username or password.'): never => {
-    db.prepare(
-      `INSERT INTO audit_log (user_id, username, action, entity, summary) VALUES (?, ?, 'login_failed', 'user', ?)`
-    ).run(u?.id ?? null, name, msg)
+  if (!u) {
+    auditRaw(db, null, name, 'login_failed', 'Invalid username or password.')
+    throw new AppError('Invalid username or password.', 'AUTH')
+  }
+  checkPasswordAttempt(db, u, pw, 'login_failed', name, 'Invalid username or password.')
+  return completeLogin(db, u, 'password')
+}
+
+function userById(db: DB, userId: unknown): UserRow {
+  const id = Number(userId)
+  const u = Number.isInteger(id) && id > 0 ? (db.prepare(`${USER_SELECT} WHERE u.id = ?`).get(id) as UserRow | undefined) : undefined
+  if (!u || !u.is_active) throw new AppError('This user is not available. Choose another user or sign in with your username.', 'AUTH')
+  return u
+}
+
+/** Sign-in after picking a user tile on the sign-in screen, with that user's password. */
+export function loginById(db: DB, userId: unknown, password: unknown): { user: SessionUser; lastFirmId: number | null } {
+  const pw = String(password ?? '')
+  if (!pw) throw new AppError('Enter your password.', 'VALIDATION')
+  const u = userById(db, userId)
+  checkPasswordAttempt(db, u, pw, 'login_failed', u.username, 'Incorrect password.')
+  return completeLogin(db, u, 'password')
+}
+
+/**
+ * Checks a PIN for a user and keeps the PIN failure counter: 5 wrong PINs lock PIN sign-in for 5 minutes
+ * (the password still works). A password lock-out also blocks the PIN so the PIN cannot bypass it.
+ */
+function checkPinAttempt(db: DB, u: UserRow, pin: unknown, context: 'login' | 'unlock'): void {
+  const fail = (msg: string, action = context === 'login' ? 'pin_login_failed' : 'pin_unlock_failed'): never => {
+    auditRaw(db, u.id, u.username, action, msg)
     throw new AppError(msg, 'AUTH')
   }
-  if (!u) return fail()
   if (!u.is_active) return fail('This user account is disabled. Contact your administrator.')
-  if (u.locked_until && new Date(u.locked_until).getTime() > Date.now()) {
-    return fail('Too many failed attempts. Try again in a few minutes.')
+  if (!u.pin_hash) return fail('PIN sign-in is not set up for this user. Use the password.')
+  if (isFuture(u.locked_until)) return fail(`Too many failed attempts. Try again in ${minutesLeft(u.locked_until)} minute(s).`)
+  if (isFuture(u.pin_locked_until)) {
+    return fail(`PIN is locked after ${PIN_MAX_FAILED} wrong attempts. Try again in ${minutesLeft(u.pin_locked_until)} minute(s) or use your password.`)
   }
-  if (!verifyPassword(pw, u.password_hash)) {
-    const attempts = u.failed_attempts + 1
-    const lockedUntil = attempts >= MAX_FAILED ? new Date(Date.now() + LOCK_MINUTES * 60000).toISOString() : null
-    db.prepare('UPDATE users SET failed_attempts = ?, locked_until = ? WHERE id = ?').run(
-      attempts >= MAX_FAILED ? 0 : attempts,
-      lockedUntil,
-      u.id
+  const v = typeof pin === 'string' || typeof pin === 'number' ? String(pin).trim() : ''
+  if (!/^\d{4,6}$/.test(v) || !verifyPassword(v, u.pin_hash)) {
+    const attempts = u.pin_failed_attempts + 1
+    if (attempts >= PIN_MAX_FAILED) {
+      const until = new Date(Date.now() + PIN_LOCK_MINUTES * 60000).toISOString()
+      db.prepare('UPDATE users SET pin_failed_attempts = 0, pin_locked_until = ? WHERE id = ?').run(until, u.id)
+      auditRaw(db, u.id, u.username, 'pin_locked', `PIN locked for ${PIN_LOCK_MINUTES} minutes after ${PIN_MAX_FAILED} wrong attempts`)
+      return fail(`PIN is locked after ${PIN_MAX_FAILED} wrong attempts. Try again in ${PIN_LOCK_MINUTES} minute(s) or use your password.`)
+    }
+    db.prepare('UPDATE users SET pin_failed_attempts = ? WHERE id = ?').run(attempts, u.id)
+    const left = PIN_MAX_FAILED - attempts
+    return fail(`Incorrect PIN. ${left} attempt${left === 1 ? '' : 's'} left before the PIN is locked.`)
+  }
+  db.prepare('UPDATE users SET pin_failed_attempts = 0, pin_locked_until = NULL WHERE id = ?').run(u.id)
+}
+
+/** Sign-in with a PIN after picking a user tile. */
+export function pinLogin(db: DB, userId: unknown, pin: unknown): { user: SessionUser; lastFirmId: number | null } {
+  const u = userById(db, userId)
+  checkPinAttempt(db, u, pin, 'login')
+  return completeLogin(db, u, 'pin')
+}
+
+/** Lock screen: unlock with the session user's PIN or password (same lock-out rules as sign-in). */
+export function unlockSession(db: DB, userId: number, input: { pin?: unknown; password?: unknown }): void {
+  const u = db.prepare(`${USER_SELECT} WHERE u.id = ?`).get(userId) as UserRow | undefined
+  if (!u || !u.is_active) throw new AppError('This user account is no longer active. Sign out and sign in again.', 'AUTH')
+  if (input.pin !== undefined && input.pin !== null && input.pin !== '') {
+    checkPinAttempt(db, u, input.pin, 'unlock')
+    auditRaw(db, u.id, u.username, 'unlock', 'Unlocked the screen with PIN')
+    return
+  }
+  const pw = String(input.password ?? '')
+  if (!pw) throw new AppError('Enter your password.', 'VALIDATION')
+  checkPasswordAttempt(db, u, pw, 'unlock_failed', u.username, 'Incorrect password.')
+  auditRaw(db, u.id, u.username, 'unlock', 'Unlocked the screen with password')
+}
+
+/** Users shown as tiles on the sign-in screen: only safe, non-secret fields of ACTIVE users. */
+export interface LoginTile {
+  id: number
+  full_name: string
+  role_name: string
+  has_pin: boolean
+}
+
+export function loginTiles(db: DB): LoginTile[] {
+  const rows = db
+    .prepare(
+      `SELECT u.id, u.full_name, r.name AS role_name, CASE WHEN u.pin_hash IS NULL THEN 0 ELSE 1 END AS has_pin
+       FROM users u JOIN roles r ON r.id = u.role_id
+       WHERE u.is_active = 1 ORDER BY u.is_owner DESC, u.full_name COLLATE NOCASE`
     )
-    return fail()
-  }
-  db.prepare(
-    "UPDATE users SET failed_attempts = 0, locked_until = NULL, last_login_at = datetime('now','localtime') WHERE id = ?"
-  ).run(u.id)
-  db.prepare(`INSERT INTO audit_log (user_id, username, action, entity, entity_id, summary) VALUES (?, ?, 'login', 'user', ?, 'Signed in')`).run(
-    u.id,
-    u.username,
-    u.id
-  )
-  return { user: buildSessionUser(db, u.id), lastFirmId: u.last_firm_id }
+    .all() as Array<{ id: number; full_name: string; role_name: string; has_pin: number }>
+  return rows.map((r) => ({ id: r.id, full_name: r.full_name, role_name: r.role_name, has_pin: !!r.has_pin }))
+}
+
+/** PIN status for one user (no secrets). */
+export function pinStatus(db: DB, userId: number): { hasPin: boolean; pinLocked: boolean; pinLockedMinutes: number } {
+  const r = db.prepare('SELECT pin_hash, pin_locked_until FROM users WHERE id = ?').get(userId) as
+    | { pin_hash: string | null; pin_locked_until: string | null }
+    | undefined
+  const locked = !!r && isFuture(r.pin_locked_until)
+  return { hasPin: !!r?.pin_hash, pinLocked: locked, pinLockedMinutes: locked ? minutesLeft(r!.pin_locked_until) : 0 }
+}
+
+/** "Set my PIN": the signed-in user confirms with the current password. */
+export function setOwnPin(ctx: Ctx, currentPassword: unknown, pin: unknown): void {
+  if (!verifyUserPassword(ctx.db, ctx.user.id, currentPassword)) throw new AppError('Current password is incorrect.', 'AUTH')
+  const hash = hashPin(validatePin(pin))
+  ctx.db
+    .prepare("UPDATE users SET pin_hash = ?, pin_failed_attempts = 0, pin_locked_until = NULL, updated_at = datetime('now','localtime') WHERE id = ?")
+    .run(hash, ctx.user.id)
+  audit(ctx, 'pin_set', 'user', ctx.user.id, 'Set own sign-in PIN')
+}
+
+export function removeOwnPin(ctx: Ctx, currentPassword: unknown): void {
+  if (!verifyUserPassword(ctx.db, ctx.user.id, currentPassword)) throw new AppError('Current password is incorrect.', 'AUTH')
+  ctx.db.prepare('UPDATE users SET pin_hash = NULL, pin_failed_attempts = 0, pin_locked_until = NULL WHERE id = ?').run(ctx.user.id)
+  audit(ctx, 'pin_removed', 'user', ctx.user.id, 'Removed own sign-in PIN')
+}
+
+function managedUser(ctx: Ctx, userId: unknown): { id: number; username: string; is_owner: number } {
+  requirePerm(ctx, 'users.manage')
+  const id = Number(userId)
+  const u = ctx.db.prepare('SELECT id, username, is_owner FROM users WHERE id = ?').get(id) as { id: number; username: string; is_owner: number } | undefined
+  if (!u) throw new AppError('User not found.', 'NOT_FOUND')
+  if (u.is_owner && !ctx.user.isOwner) throw new AppError('Only the owner can change the owner account.', 'FORBIDDEN')
+  return u
+}
+
+/** Administrator sets or resets a user's PIN (also clears a PIN lock-out). */
+export function adminSetPin(ctx: Ctx, userId: unknown, pin: unknown): void {
+  const u = managedUser(ctx, userId)
+  const hash = hashPin(validatePin(pin))
+  ctx.db
+    .prepare("UPDATE users SET pin_hash = ?, pin_failed_attempts = 0, pin_locked_until = NULL, updated_at = datetime('now','localtime') WHERE id = ?")
+    .run(hash, u.id)
+  audit(ctx, u.id === ctx.user.id ? 'pin_set' : 'pin_reset', 'user', u.id, `Set sign-in PIN for ${u.username}`)
+}
+
+export function adminRemovePin(ctx: Ctx, userId: unknown): void {
+  const u = managedUser(ctx, userId)
+  ctx.db.prepare('UPDATE users SET pin_hash = NULL, pin_failed_attempts = 0, pin_locked_until = NULL WHERE id = ?').run(u.id)
+  audit(ctx, 'pin_removed', 'user', u.id, `Removed sign-in PIN for ${u.username}`)
+}
+
+/** Clears password and PIN lock-outs (e.g. a user locked themselves out at the counter). */
+export function adminUnlockUser(ctx: Ctx, userId: unknown): void {
+  const u = managedUser(ctx, userId)
+  ctx.db.prepare('UPDATE users SET failed_attempts = 0, locked_until = NULL, pin_failed_attempts = 0, pin_locked_until = NULL WHERE id = ?').run(u.id)
+  audit(ctx, 'unlock_user', 'user', u.id, `Cleared sign-in lock-out for ${u.username}`)
 }
 
 export function verifyUserPassword(db: DB, userId: number, password: unknown): boolean {
@@ -136,7 +352,8 @@ export function verifyUserPassword(db: DB, userId: number, password: unknown): b
 
 export function changeOwnPassword(ctx: Ctx, oldPassword: unknown, newPassword: unknown): void {
   if (!verifyUserPassword(ctx.db, ctx.user.id, oldPassword)) throw new AppError('Current password is incorrect.', 'AUTH')
-  const pw = validatePassword(newPassword)
+  const pw = validatePassword(newPassword, ctx.user.username)
+  if (pw === String(oldPassword ?? '')) throw new AppError('Choose a new password that is different from the current one.', 'VALIDATION')
   ctx.db
     .prepare("UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = datetime('now','localtime') WHERE id = ?")
     .run(hashPassword(pw), ctx.user.id)
@@ -150,13 +367,19 @@ export function listUsers(ctx: Ctx): unknown[] {
   const rows = ctx.db
     .prepare(
       `SELECT u.id, u.username, u.full_name, u.email, u.phone, u.role_id, r.name AS role_name, u.is_owner, u.is_active,
-              u.all_firms, u.last_login_at, u.created_at,
+              u.all_firms, u.last_login_at, u.created_at, u.must_change_password, u.locked_until, u.pin_locked_until,
+              CASE WHEN u.pin_hash IS NULL THEN 0 ELSE 1 END AS has_pin,
               (SELECT GROUP_CONCAT(firm_id) FROM user_firms uf WHERE uf.user_id = u.id) AS firm_ids
        FROM users u JOIN roles r ON r.id = u.role_id ORDER BY u.is_owner DESC, u.full_name`
     )
     .all() as Array<Record<string, unknown>>
-  return rows.map((r) => ({
+  // Never return password or PIN hashes; lock-outs are reported as flags only.
+  return rows.map(({ locked_until, pin_locked_until, ...r }) => ({
     ...r,
+    has_pin: !!r.has_pin,
+    must_change_password: !!r.must_change_password,
+    login_locked: isFuture((locked_until as string | null) ?? null),
+    pin_locked: isFuture((pin_locked_until as string | null) ?? null),
     firm_ids: r.firm_ids ? String(r.firm_ids).split(',').map(Number) : []
   }))
 }
@@ -213,14 +436,14 @@ export function saveUser(ctx: Ctx, input: UserInput): number {
       )
       if (input.password) {
         db.prepare('UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?').run(
-          hashPassword(validatePassword(input.password)),
+          hashPassword(validatePassword(input.password, username)),
           id
         )
         audit(ctx, 'password_reset', 'user', id, `Reset password for ${username}`)
       }
       audit(ctx, 'update', 'user', id, `Updated user ${username}`, { role: role.name, allFirms, firmIds })
     } else {
-      const pw = validatePassword(input.password)
+      const pw = validatePassword(input.password, username)
       id = Number(
         db
           .prepare(

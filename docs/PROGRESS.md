@@ -12,15 +12,21 @@ Status keys: [x] done & tested · [~] partial · [ ] not started · [!] blocked 
 
 ## Desktop areas
 - [ ] documents — item name + description in editor/preview/print/PDF, invoice delete rules, template designer, thermal layout, Powered-by toggle
+- [x] catalog — product delete/archive/restore + bulk category + category delete-with-reassign, project delete/archive/cancel (list + detail), firm activate/deactivate + active-firm limit, firm isolation fixes, assign shared records (unit tested; e2e pending integrator run)
+- [x] documents — item name + description in editor/preview/print/PDF, invoice delete rules, template designer, thermal layout, Powered-by from license (unit-tested; UI e2e left to the integrator run)
 - [ ] catalog — product delete/archive + category change, project delete/archive, firm activate/deactivate, firm isolation + limit tests
 - [ ] data — day/month closing + closing backup, backup history/export/import/validation, CSV import + reconciliation
-- [ ] access — user selection + PIN login, PIN lock screen, forced password change, printers page + per-document printer, test print
+- [x] access — user selection + PIN login (lockout 5/5min), PIN lock screen, forced password change gate, printers page + per-document printer + paper size + direct print, test print (unit-tested; consolidated e2e pending)
 - [ ] cloud — registration in setup wizard, heartbeat + consented location, support messages with offline queue, certificate refresh, License & About in Settings
+- [ ] access — user selection + PIN login, PIN lock screen, forced password change, printers page + per-document printer, test print
+- [x] cloud — registration in setup wizard (key + registration / trial / offline), heartbeat + consented location (off/approximate/manual), support messages with offline queue, certificate refresh + detached lifetime, License & About in Settings (unit tests: tests/cloud.test.ts; emulator REST check vs real rules: scripts/cloud-emulator-check.mjs — 32/32; Playwright e2e left to integrator)
 - [ ] assist — offline Urdu/English help assistant, built-in WhatsApp Web module (QR link device) + send document flow with log
 
 ## Super Admin portal areas
-- [ ] portal-admin — Admins (RBAC users), Settings (branding/invoice/bank/QR/signing key), Activity Log (filters/export/archive/retention), Verify Key, rules tests
+- [x] portal-admin — Admins (RBAC users), Settings (branding/invoice/bank/QR/signing key), Activity Log (filters/export/archive/retention), Verify Key, rules tests
 - [ ] portal-licensing — Dashboard metrics/charts, Clients, Licenses lifecycle (renew/plan/limits/detach/history), Devices (+requests), Device Map
+- [ ] portal-admin — Admins (RBAC users), Settings (branding/invoice/bank/QR/signing key), Activity Log (filters/export/archive/retention), Verify Key, rules tests
+- [x] portal-licensing — Dashboard metrics/charts, Clients, Licenses lifecycle (renew/plan/limits/detach/history), Devices (+requests), Device Map (unit-tested; browser e2e left to integrator)
 - [ ] portal-billing — Billing invoices/payments/receipts/reports/PDF, public QR verification page, Support conversations
 
 ## Blocked / needs input

@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "tsc --noEmit -p tsconfig.json && vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:rules": "firebase emulators:exec --only firestore \"vitest run --dir tests\""
   },
   "dependencies": {
     "@noble/ed25519": "2.3.0",

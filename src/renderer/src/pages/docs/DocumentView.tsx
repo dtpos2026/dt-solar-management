@@ -1,6 +1,6 @@
 import { ReactNode, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Ban, Copy, FileDown, HandCoins, Pencil, Printer, RefreshCcw, Trash2, Undo2, Truck, FileCheck2, CheckCircle2, XCircle, Send } from 'lucide-react'
+import { ArrowLeft, Ban, Copy, CopyPlus, FileDown, Info, HandCoins, Pencil, Printer, RefreshCcw, Trash2, Undo2, Truck, FileCheck2, CheckCircle2, XCircle, Send } from 'lucide-react'
 import { api } from '../../api'
 import { WhatsAppButton } from '../../components/WhatsAppButton'
 import { useCan } from '../../store'
@@ -26,7 +26,10 @@ export function DocumentView(): JSX.Element {
   const cancelled = d.status === 'cancelled'
   const canEdit = !cancelled && d.status !== 'converted' && (p === 'quotations' ? can('quotations.manage') : can(`${p}.edit`) && (!d.locked || can(`${p}.edit_locked`)))
   const canCancel = !cancelled && meta.financial && can(`${p}.cancel`) && (!d.locked || can(`${p}.edit_locked`))
-  const canDelete = !meta.financial && d.status !== 'converted' && (p === 'quotations' ? can('quotations.manage') : can(`${p}.cancel`))
+  // The server explains why a document cannot be deleted (permission, payments, references, closed period); the
+  // button is shown only when the delete would be accepted.
+  const canDelete = !d.delete_block
+  const canCopy = !d.doc_type.includes('return') && (p === 'quotations' ? can('quotations.manage') : can(`${p}.create`))
   const printDoc = (): void => {
     api('print.open', { kind: 'doc', id: d.id }).catch(toast.error)
   }
@@ -66,13 +69,17 @@ export function DocumentView(): JSX.Element {
     }
   }
   const doDelete = async (): Promise<void> => {
-    if (!(await confirmDialog({ title: `Delete ${d.number}?`, message: 'This permanently deletes this document.', danger: true, confirmLabel: 'Delete' }))) return
+    const message = meta.financial
+      ? `${meta.label} ${d.number} (${moneyFull(d.grand_total)}) will be removed permanently.${meta.stock !== 0 && !cancelled ? ' Its stock movements and serial numbers are reversed exactly like a cancellation.' : ''} A full copy is kept in the audit log. This cannot be undone.`
+      : `${meta.label} ${d.number} will be removed permanently. This cannot be undone.`
+    if (!(await confirmDialog({ title: `Delete ${d.number} permanently?`, message, danger: true, confirmLabel: 'Delete permanently' }))) return
     try {
-      await api('docs.deleteDraft', { id: d.id })
-      toast.ok('Deleted.')
+      await api('docs.delete', { id: d.id })
+      toast.ok(`${d.number} deleted.`)
       nav(-1)
     } catch (e) {
       toast.error(e)
+      reload()
     }
   }
   const setStatus = async (status: string): Promise<void> => {
@@ -122,6 +129,7 @@ export function DocumentView(): JSX.Element {
           </Button>
         )}
         {canCancel && <Button icon={<Ban className="h-4 w-4" />} variant="ghost" className="text-bad" onClick={doCancel}>Cancel</Button>}
+        {canCopy && <Button icon={<CopyPlus className="h-4 w-4" />} variant="ghost" onClick={() => nav(`/doc/new/${d.doc_type}?copy=${d.id}`)}>Duplicate</Button>}
         {canDelete && <Button icon={<Trash2 className="h-4 w-4" />} variant="ghost" className="text-bad" onClick={doDelete}>Delete</Button>}
       </div>
 
@@ -145,6 +153,12 @@ export function DocumentView(): JSX.Element {
       )}
 
       {cancelled && <div className="rounded-xl bg-bad-soft px-4 py-3 text-[13px] text-bad">Cancelled on {dateTime(d.cancelled_at)}. Reason: {d.cancel_reason ?? '—'}</div>}
+      {meta.financial && d.delete_block && can(`${p}.delete`) && (
+        <div className="flex items-start gap-2 rounded-xl bg-surface-2 px-4 py-2.5 text-[12.5px] text-muted">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>Permanent delete is not available: {d.delete_block}</span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card title={meta.partyType === 'customer' ? 'Customer' : 'Supplier'}>
@@ -210,7 +224,9 @@ export function DocumentView(): JSX.Element {
               <tr key={l.id}>
                 <td className="text-muted">{l.line_no}</td>
                 <td>
-                  <div className="font-medium">{l.description}</div>
+                  <div className="font-semibold">{l.description}</div>
+                  {(l.brand || l.model) && l.description !== l.product_name && <div className="text-[11.5px] text-muted">{[l.brand, l.model].filter(Boolean).join(' · ')}</div>}
+                  {l.details && <div className="mt-0.5 max-w-[640px] text-[12.5px] leading-snug whitespace-pre-line text-ink/80">{l.details}</div>}
                   <div className="text-[11.5px] text-muted">
                     {[l.sku, l.serials && `S/N: ${l.serials}`, l.warranty && `Warranty: ${l.warranty}`, l.returned_qty > 0 && `Returned: ${qty(l.returned_qty)}`].filter(Boolean).join(' · ')}
                   </div>

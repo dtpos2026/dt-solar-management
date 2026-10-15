@@ -52,6 +52,13 @@ const page = await mainWindow()
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
 page.on('console', (m) => m.type() === 'error' && errors.push(`console: ${m.text()}`))
 await page.setViewportSize({ width: 1440, height: 900 }).catch(() => undefined)
+// v1.1: the wizard starts with the License step — take the 15-day trial path.
+await page.waitForSelector('text=Start 15-day trial', { timeout: 30000 })
+await page.screenshot({ path: join(out, '01a-setup-license.png') })
+await page.getByText('Start 15-day trial').first().click()
+await page.waitForTimeout(300)
+const trialBtn = page.locator('button:has-text("Start 15-day trial")')
+if (await trialBtn.count()) await trialBtn.last().click()
 await page.waitForSelector('text=Business details', { timeout: 30000 })
 await page.waitForTimeout(800)
 await page.screenshot({ path: join(out, '01-setup-business.png') })
@@ -86,8 +93,16 @@ const screens = [
   ['23-firms', '#/firms'],
   ['24-settings', '#/settings'],
   ['25-backup', '#/backup'],
-  ['26-license', '#/license'],
-  ['27-new-invoice', '#/doc/new/sale_invoice']
+  ['26-license', '#/settings?tab=license'],
+  ['27-new-invoice', '#/doc/new/sale_invoice'],
+  ['28-closing', '#/closing'],
+  ['29-help', '#/help'],
+  ['29a-settings-templates', '#/settings?tab=templates'],
+  ['29b-settings-printers', '#/settings?tab=printers'],
+  ['29c-settings-cloud', '#/settings?tab=cloud'],
+  ['29d-settings-support', '#/settings?tab=support'],
+  ['29e-settings-whatsapp', '#/settings?tab=whatsapp'],
+  ['29f-firms', '#/firms']
 ]
 for (const [name, hash] of screens) {
   await page.evaluate((h) => (window.location.hash = h), hash)

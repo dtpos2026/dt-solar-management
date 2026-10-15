@@ -265,9 +265,10 @@ service cloud.firestore {
         && request.resource.data.get('archived', false) == false;
       allow update: if can('audit.manage') && changed().hasOnly(['archived', 'archivedAt', 'archivedBy'])
         && request.resource.data.archived == true;
-      // Retention: only owners delete, only entries older than 90 days, never security / financial / license records.
+      // Retention: only owners delete, only entries older than 90 days, never security / financial / license records
+      // (legacy entries without a category are license entries and are kept).
       allow delete: if isOwner()
-        && !(resource.data.get('category', 'general') in ['security', 'financial', 'license'])
+        && !(resource.data.get('category', 'license') in ['security', 'financial', 'license'])
         && resource.data.at < request.time - duration.value(90, 'd');
     }
   }

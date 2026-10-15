@@ -12,7 +12,9 @@ import {
   EyeOff,
   KeyRound,
   Lock,
+  LockOpen,
   Pencil,
+  RectangleEllipsis,
   Plus,
   Save,
   ScrollText,
@@ -54,6 +56,7 @@ import { DataTable, Column } from '../../components/DataTable'
 import { useLoad } from '../../lib/hooks'
 import { dateTime, label, PERIODS } from '../../lib/format'
 import { OWNER_ROLE_NAME } from '@shared/permissions'
+import { Avatar, PIN_RE, PinInput } from './PinInput'
 
 type Tab = 'users' | 'roles' | 'audit'
 
@@ -80,6 +83,11 @@ interface UserRow {
   last_login_at: string | null
   created_at: string
   firm_ids: number[]
+  /** Safe flags from users.list (no hashes ever leave the main process). */
+  has_pin: boolean
+  must_change_password: boolean
+  login_locked: boolean
+  pin_locked: boolean
 }
 
 interface FirmOpt {
@@ -170,6 +178,7 @@ function UsersTab({ tick, onEdit }: { tick: number; onEdit: (u: UserRow) => void
   const firms = useFirmOptions()
   const [status, setStatus] = useState<'all' | 'active' | 'disabled'>('all')
   const users = data ?? []
+  const [pinFor, setPinFor] = useState<UserRow | null>(null)
   const firmName = useMemo(() => new Map(firms.map((f) => [f.id, f.name])), [firms])
   const rows = users.filter((u) => (status === 'all' ? true : status === 'active' ? !!u.is_active : !u.is_active))
   const activeCount = users.filter((u) => u.is_active).length
@@ -210,6 +219,22 @@ function UsersTab({ tick, onEdit }: { tick: number; onEdit: (u: UserRow) => void
     }
   }
 
+  const unlockUser = async (u: UserRow): Promise<void> => {
+    const ok = await confirmDialog({
+      title: `Unlock sign-in for ${u.full_name}?`,
+      message: 'Clears the lock-out after too many wrong passwords or PINs, so the user can try again straight away.',
+      confirmLabel: 'Unlock'
+    })
+    if (!ok) return
+    try {
+      await api('users.unlock', { id: u.id })
+      toast.ok(`${u.full_name} can sign in again.`)
+      reload()
+    } catch (e) {
+      toast.error(e)
+    }
+  }
+
   const cols: Array<Column<UserRow>> = [
     {
       key: 'full_name',
@@ -234,6 +259,17 @@ function UsersTab({ tick, onEdit }: { tick: number; onEdit: (u: UserRow) => void
                 </Badge>
               )}
               {u.id === me?.id && <Badge tone="info">You</Badge>}
+              {u.has_pin && (
+                <Badge tone="muted">
+                  <RectangleEllipsis className="h-3 w-3" /> PIN
+                </Badge>
+              )}
+              {u.must_change_password && <Badge tone="warn">Must change password</Badge>}
+              {(u.login_locked || u.pin_locked) && (
+                <Badge tone="bad">
+                  <Lock className="h-3 w-3" /> {u.login_locked ? 'Locked out' : 'PIN locked'}
+                </Badge>
+              )}
             </div>
             <div className="truncate text-[11.5px] text-muted">{[u.email, u.phone].filter(Boolean).join(' · ') || '—'}</div>
           </div>
@@ -269,6 +305,20 @@ function UsersTab({ tick, onEdit }: { tick: number; onEdit: (u: UserRow) => void
       csv: false,
       render: (u) => (
         <div className="flex justify-end">
+          {(u.login_locked || u.pin_locked) && canEditRow(u) && (
+            <IconButton title="Unlock sign-in" onClick={() => unlockUser(u)}>
+              <LockOpen className="h-4 w-4" />
+            </IconButton>
+          )}
+          {!!u.is_active && (
+            <IconButton
+              title={!canEditRow(u) ? 'Only the owner can change the owner PIN' : u.has_pin ? 'Reset or remove PIN' : 'Set sign-in PIN'}
+              disabled={!canEditRow(u)}
+              onClick={() => setPinFor(u)}
+            >
+              <RectangleEllipsis className="h-4 w-4" />
+            </IconButton>
+          )}
           {!u.is_owner && u.id !== me?.id && (
             <IconButton title={u.is_active ? 'Disable user' : 'Enable user'} tone={u.is_active ? 'bad' : undefined} onClick={() => toggleActive(u)}>
               {u.is_active ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
@@ -283,29 +333,170 @@ function UsersTab({ tick, onEdit }: { tick: number; onEdit: (u: UserRow) => void
   ]
 
   return (
-    <DataTable
-      rows={rows}
-      columns={cols}
-      loading={loading}
-      exportName="Users"
-      searchPlaceholder="Search name, username, role…"
-      onRowClick={(u) => canEditRow(u) && onEdit(u)}
-      rowClassName={(u) => (u.is_active ? undefined : 'opacity-60')}
-      toolbar={
+    <div className="space-y-4">
+      <SignInScreenCard />
+      <DataTable
+        rows={rows}
+        columns={cols}
+        loading={loading}
+        exportName="Users"
+        searchPlaceholder="Search name, username, role…"
+        onRowClick={(u) => canEditRow(u) && onEdit(u)}
+        rowClassName={(u) => (u.is_active ? undefined : 'opacity-60')}
+        toolbar={
+          <>
+            <Select sm className="w-36" value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
+              <option value="all">All users</option>
+              <option value="active">Active</option>
+              <option value="disabled">Disabled</option>
+            </Select>
+            <span className="text-[12.5px] text-muted">
+              {activeCount} active user{activeCount === 1 ? '' : 's'}
+              {maxUsers > 0 ? ` · your license allows ${maxUsers}` : ''}
+            </span>
+          </>
+        }
+        empty={<Empty icon={<Users />} title="No users found">Create accounts for your staff and give each one a role.</Empty>}
+      />
+      <UserPinDialog user={pinFor} onClose={() => setPinFor(null)} onSaved={() => reload()} />
+    </div>
+  )
+}
+
+/** Sign-in screen option: show user tiles (pick a name, then PIN or password) or the classic username form. */
+function SignInScreenCard(): JSX.Element {
+  const settings = useApp((s) => s.settings)
+  const canWrite = useApp((s) => s.license?.canWrite ?? false)
+  const [busy, setBusy] = useState(false)
+  const on = settings.login_show_users !== false
+  const change = async (v: boolean): Promise<void> => {
+    setBusy(true)
+    try {
+      await api('users.setLoginOptions', { showUsers: v })
+      await useApp.getState().refresh()
+      toast.ok(v ? 'The sign-in screen now shows the list of users.' : 'The sign-in screen now asks for a username and password.')
+    } catch (e) {
+      toast.error(e)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="card flex items-center gap-4 px-4 py-3">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand">
+        <UserCog className="h-[18px] w-[18px]" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <Toggle
+          checked={on}
+          disabled={busy || !canWrite}
+          onChange={change}
+          label="Show the list of users on the sign-in screen"
+          description={
+            on
+              ? 'Staff pick their name, then enter their PIN (if set) or password. Disabled users are never shown.'
+              : 'Everyone types their username and password. Turn on to let staff pick their name instead.'
+          }
+        />
+      </div>
+    </div>
+  )
+}
+
+/** Administrator: set, reset or remove another user's sign-in PIN (users.manage). */
+function UserPinDialog({ user, onClose, onSaved }: { user: UserRow | null; onClose: () => void; onSaved: () => void }): JSX.Element {
+  const [f, setF] = useState({ pin: '', confirm: '' })
+  const [busy, setBusy] = useState<'save' | 'remove' | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const open = !!user
+  useEffect(() => {
+    if (!open) return
+    setF({ pin: '', confirm: '' })
+    setError(null)
+  }, [open, user?.id])
+  const save = async (): Promise<void> => {
+    if (!user) return
+    setError(null)
+    if (!PIN_RE.test(f.pin)) return setError('The PIN must be 4 to 6 digits.')
+    if (f.pin !== f.confirm) return setError('The two PINs do not match.')
+    setBusy('save')
+    try {
+      await api('users.setPin', { id: user.id, pin: f.pin })
+      toast.ok(user.has_pin ? `PIN reset for ${user.full_name}.` : `PIN set for ${user.full_name}.`)
+      onSaved()
+      onClose()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(null)
+    }
+  }
+  const remove = async (): Promise<void> => {
+    if (!user) return
+    const ok = await confirmDialog({
+      title: `Remove the PIN of ${user.full_name}?`,
+      message: 'They will sign in and unlock with their password only.',
+      confirmLabel: 'Remove PIN',
+      danger: true
+    })
+    if (!ok) return
+    setBusy('remove')
+    try {
+      await api('users.removePin', { id: user.id })
+      toast.ok(`PIN removed for ${user.full_name}.`)
+      onSaved()
+      onClose()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(null)
+    }
+  }
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="sm"
+      title={user?.has_pin ? 'Reset sign-in PIN' : 'Set sign-in PIN'}
+      subtitle="A 4–6 digit PIN for quick sign-in and unlocking. Tell the user their new PIN in person."
+      footer={
         <>
-          <Select sm className="w-36" value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
-            <option value="all">All users</option>
-            <option value="active">Active</option>
-            <option value="disabled">Disabled</option>
-          </Select>
-          <span className="text-[12.5px] text-muted">
-            {activeCount} active user{activeCount === 1 ? '' : 's'}
-            {maxUsers > 0 ? ` · your license allows ${maxUsers}` : ''}
-          </span>
+          {user?.has_pin && (
+            <Button variant="ghost" className="mr-auto text-bad" loading={busy === 'remove'} disabled={!!busy} onClick={remove}>
+              Remove PIN
+            </Button>
+          )}
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="primary" loading={busy === 'save'} disabled={!!busy} onClick={save}>
+            {user?.has_pin ? 'Reset PIN' : 'Set PIN'}
+          </Button>
         </>
       }
-      empty={<Empty icon={<Users />} title="No users found">Create accounts for your staff and give each one a role.</Empty>}
-    />
+    >
+      {user && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 rounded-xl border border-line px-3 py-2.5">
+            <Avatar name={user.full_name} id={user.id} size={38} />
+            <div className="min-w-0">
+              <div className="truncate font-semibold">{user.full_name}</div>
+              <div className="text-[12px] text-muted">
+                {user.role_name} · {user.has_pin ? (user.pin_locked ? 'PIN locked after wrong attempts' : 'PIN is set') : 'No PIN yet'}
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="New PIN" hint="4–6 digits, not 1234 or 0000">
+              <PinInput size="md" label="PIN" autoFocus value={f.pin} onChange={(v) => setF({ ...f, pin: v })} />
+            </Field>
+            <Field label="Repeat PIN">
+              <PinInput size="md" label="PIN" value={f.confirm} onChange={(v) => setF({ ...f, confirm: v })} onEnter={save} />
+            </Field>
+          </div>
+          {user.pin_locked && <div className="rounded-lg bg-warn-soft px-3 py-2 text-[12.5px] text-warn">Setting a new PIN also clears the PIN lock-out.</div>}
+          {error && <div role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-[12.5px] text-bad">{error}</div>}
+        </div>
+      )}
+    </Modal>
   )
 }
 

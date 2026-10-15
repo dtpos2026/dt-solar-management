@@ -25,6 +25,8 @@ export interface License {
   planType: PlanType
   poweredBy: boolean
   detached: boolean
+  detachedAt: Timestamp | null
+  detachedBy: string
   paymentStatus: 'paid' | 'partial' | 'unpaid' | 'none'
   activatedAt: Timestamp | null
   lastVerifiedAt: Timestamp | null
@@ -56,11 +58,16 @@ export interface Device {
   deviceName: string
   os: string
   appVersion: string
-  status: 'active' | 'deactivated'
+  /** active | suspended | revoked hold a slot of maxDevices; deactivated (released) frees it. */
+  status: 'active' | 'suspended' | 'revoked' | 'deactivated'
   activatedAt: Timestamp | null
   activationType: 'online' | 'offline'
   lastIssuedAt: Timestamp | null
   deactivatedAt?: Timestamp | null
+  /** v1.1: reason / note of the last suspend / revoke / release, when and by whom. */
+  statusNote?: string
+  statusChangedAt?: Timestamp | null
+  statusBy?: string
 }
 
 export interface HistoryEntry {
@@ -109,6 +116,7 @@ export interface ActivationRequest {
   ownerName?: string
   phone?: string
   address?: string
+  installToken?: string
 }
 
 export interface AdminDoc {

@@ -41,6 +41,7 @@ interface ProductRow {
   warranty_months: number
   warranty_terms: string | null
   is_active: number
+  archived_at?: string | null
 }
 
 export interface MoveInput {
@@ -63,6 +64,15 @@ export interface MoveInput {
 export function getProductRow(db: DB, id: number): ProductRow {
   const p = db.prepare('SELECT * FROM products WHERE id = ?').get(id) as ProductRow | undefined
   if (!p) throw new AppError('Product not found.', 'NOT_FOUND')
+  return p
+}
+
+/** A product the active firm may see (its own or shared). Other firms' products are reported as "not found". */
+export function getVisibleProduct(ctx: Ctx, id: number): ProductRow {
+  const p = ctx.db.prepare(`SELECT * FROM products p WHERE p.id = @id AND ${visibleTo('p')}`).get({ id, firmId: ctx.firmId }) as
+    | ProductRow
+    | undefined
+  if (!p) throw new AppError('Product not found in the active firm.', 'NOT_FOUND')
   return p
 }
 
@@ -359,7 +369,7 @@ export interface ProductInput {
 
 export function listProducts(
   ctx: Ctx,
-  f: { q?: string; categoryId?: number; type?: string; active?: 'all' | 'active' | 'inactive'; stock?: 'low' | 'out' | 'in'; limit?: number; offset?: number } = {}
+  f: { q?: string; categoryId?: number; type?: string; active?: 'all' | 'active' | 'inactive' | 'archived'; stock?: 'low' | 'out' | 'in'; limit?: number; offset?: number } = {}
 ): { rows: unknown[]; total: number } {
   const where = [visibleTo('p')]
   const p: Record<string, unknown> = { firmId: ctx.firmId }
@@ -375,7 +385,8 @@ export function listProducts(
     where.push('p.type = @type')
     p.type = f.type
   }
-  if (f.active !== 'all') where.push(f.active === 'inactive' ? 'p.is_active = 0' : 'p.is_active = 1')
+  // Archived products (is_active = 0) are hidden from pickers; history keeps showing them.
+  if (f.active !== 'all') where.push(f.active === 'inactive' || f.active === 'archived' ? 'p.is_active = 0' : 'p.is_active = 1')
   const stockExpr = `COALESCE((SELECT SUM(sl.qty) FROM stock_levels sl JOIN warehouses w ON w.id = sl.warehouse_id
       WHERE sl.product_id = p.id AND (w.firm_id IS NULL OR w.firm_id = @firmId)), 0)`
   if (f.stock === 'low') where.push(`p.type = 'goods' AND ${stockExpr} > 0 AND ${stockExpr} <= p.reorder_level`)
@@ -387,7 +398,7 @@ export function listProducts(
   const rows = ctx.db
     .prepare(
       `SELECT p.id, p.firm_id, p.name, p.sku, p.barcode, p.type, p.unit, p.brand, p.model, p.sale_price, p.min_sale_price,
-         p.tax_rate, p.reorder_level, p.track_serial, p.warranty_months, p.warranty_terms, p.is_active, p.category_id,
+         p.tax_rate, p.reorder_level, p.track_serial, p.warranty_months, p.warranty_terms, p.is_active, p.archived_at, p.category_id,
          c.name AS category_name,
          ${showCost ? 'p.purchase_price, p.avg_cost,' : 'NULL AS purchase_price, NULL AS avg_cost,'}
          ${stockExpr} AS stock
@@ -424,6 +435,15 @@ export function getProduct(ctx: Ctx, id: number): unknown {
   return { ...p, stock_by_warehouse: stock, serials_in_stock: serials }
 }
 
+/** Validates a category id for the active firm (own or shared). Returns null for "no category". */
+function visibleCategoryId(ctx: Ctx, v: unknown): number | null {
+  const id = optId(v)
+  if (!id) return null
+  const c = ctx.db.prepare(`SELECT id FROM categories c WHERE c.id = @id AND ${visibleTo('c')}`).get({ id, firmId: ctx.firmId })
+  if (!c) throw new AppError('Selected category is not available in the active firm.', 'VALIDATION')
+  return id
+}
+
 export function saveProduct(ctx: Ctx, input: ProductInput): number {
   requirePerm(ctx, 'inventory.manage')
   const db = ctx.db
@@ -441,7 +461,7 @@ export function saveProduct(ctx: Ctx, input: ProductInput): number {
   if (taxRate < 0 || taxRate > 100) throw new AppError('Tax rate must be between 0 and 100.', 'VALIDATION')
   const vals = {
     name,
-    category_id: optId(input.categoryId),
+    category_id: visibleCategoryId(ctx, input.categoryId),
     sku,
     barcode: optText(input.barcode, 60),
     type,
@@ -463,20 +483,33 @@ export function saveProduct(ctx: Ctx, input: ProductInput): number {
     if (input.id) {
       const existing = db
         .prepare(`SELECT * FROM products p WHERE id = @id AND ${visibleTo('p')}`)
-        .get({ id: input.id, firmId: ctx.firmId }) as ProductRow | undefined
+        .get({ id: input.id, firmId: ctx.firmId }) as (ProductRow & { category_id: number | null }) | undefined
       if (!existing) throw new AppError('Product not found.', 'NOT_FOUND')
       if (existing.type !== type) {
         const used = db.prepare('SELECT 1 FROM stock_movements WHERE product_id = ? LIMIT 1').get(input.id)
         if (used) throw new AppError('Product type cannot be changed after stock transactions exist.', 'VALIDATION')
       }
+      // Archive / restore is a separate action (inventory.delete). An edit keeps the current state unless
+      // isActive is sent explicitly, so editing an archived product never restores it by accident.
+      const isActive = typeof input.isActive === 'boolean' ? (input.isActive ? 1 : 0) : existing.is_active
+      if (isActive !== existing.is_active) requirePerm(ctx, 'inventory.delete')
       db.prepare(
         `UPDATE products SET name=@name, category_id=@category_id, sku=@sku, barcode=@barcode, type=@type, unit=@unit, brand=@brand,
            model=@model, description=@description, purchase_price=@purchase_price, sale_price=@sale_price,
            min_sale_price=@min_sale_price, tax_rate=@tax_rate, reorder_level=@reorder_level, track_serial=@track_serial,
            warranty_months=@warranty_months, warranty_terms=@warranty_terms, is_active=@is_active,
+           archived_at = CASE WHEN @is_active = 1 THEN NULL ELSE COALESCE(archived_at, datetime('now','localtime')) END,
            updated_at=datetime('now','localtime') WHERE id=@id`
-      ).run({ ...vals, id: input.id })
-      audit(ctx, 'update', 'product', input.id, `Updated product ${name}`)
+      ).run({ ...vals, is_active: isActive, id: input.id })
+      const catChanged = (existing.category_id ?? null) !== vals.category_id
+      audit(
+        ctx,
+        'update',
+        'product',
+        input.id,
+        `Updated product ${name}${catChanged ? ' (category changed)' : ''}`,
+        catChanged ? { categoryFrom: existing.category_id, categoryTo: vals.category_id } : undefined
+      )
       return input.id
     }
     const shared = getSetting(db, 'share_inventory', true)
@@ -484,10 +517,11 @@ export function saveProduct(ctx: Ctx, input: ProductInput): number {
       db
         .prepare(
           `INSERT INTO products (firm_id, name, category_id, sku, barcode, type, unit, brand, model, description, purchase_price,
-             sale_price, min_sale_price, tax_rate, reorder_level, track_serial, warranty_months, warranty_terms, is_active, avg_cost, created_by)
+             sale_price, min_sale_price, tax_rate, reorder_level, track_serial, warranty_months, warranty_terms, is_active, archived_at,
+             avg_cost, created_by)
            VALUES (@firm_id, @name, @category_id, @sku, @barcode, @type, @unit, @brand, @model, @description, @purchase_price,
              @sale_price, @min_sale_price, @tax_rate, @reorder_level, @track_serial, @warranty_months, @warranty_terms, @is_active,
-             @purchase_price, @created_by)`
+             CASE WHEN @is_active = 1 THEN NULL ELSE datetime('now','localtime') END, @purchase_price, @created_by)`
         )
         .run({ ...vals, firm_id: shared ? null : ctx.firmId, created_by: ctx.user.id }).lastInsertRowid
     )
@@ -508,26 +542,150 @@ export function saveProduct(ctx: Ctx, input: ProductInput): number {
   })()
 }
 
-export function deleteProduct(ctx: Ctx, id: number): { deleted: boolean } {
-  requirePerm(ctx, 'inventory.manage')
-  const db = ctx.db
-  const p = getProductRow(db, id)
-  const used =
-    db.prepare('SELECT 1 FROM stock_movements WHERE product_id = ? LIMIT 1').get(id) ||
-    db.prepare('SELECT 1 FROM document_lines WHERE product_id = ? LIMIT 1').get(id) ||
-    db.prepare('SELECT 1 FROM material_move_lines WHERE product_id = ? LIMIT 1').get(id)
-  if (used) {
-    db.prepare('UPDATE products SET is_active = 0 WHERE id = ?').run(id)
-    audit(ctx, 'deactivate', 'product', id, `Deactivated product ${p.name} (has transactions)`)
-    return { deleted: false }
+/* ---------------------- Delete / archive / restore ---------------------- */
+
+export interface ProductUsage {
+  documents: number
+  documentLines: number
+  movements: number
+  adjustments: number
+  materialMoves: number
+  serials: number
+  stockQty: number
+  used: boolean
+  reason: string | null
+}
+
+const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`
+
+/** Everything that references a product (across all firms — a shared product may be used by another firm). */
+export function productUsage(db: DB, productId: number): ProductUsage {
+  const c = (sql: string): number => (db.prepare(sql).get(productId) as { c: number }).c
+  const documents = c('SELECT COUNT(DISTINCT document_id) AS c FROM document_lines WHERE product_id = ?')
+  const documentLines = c('SELECT COUNT(*) AS c FROM document_lines WHERE product_id = ?')
+  const movements = c('SELECT COUNT(*) AS c FROM stock_movements WHERE product_id = ?')
+  const adjustments = c('SELECT COUNT(DISTINCT adjustment_id) AS c FROM stock_adjustment_lines WHERE product_id = ?')
+  const materialMoves = c('SELECT COUNT(DISTINCT move_id) AS c FROM material_move_lines WHERE product_id = ?')
+  const serials = c('SELECT COUNT(*) AS c FROM serials WHERE product_id = ?')
+  const stockQty = round3((db.prepare('SELECT COALESCE(SUM(qty),0) AS q FROM stock_levels WHERE product_id = ?').get(productId) as { q: number }).q)
+  const parts: string[] = []
+  if (documents) parts.push(`${plural(documents, 'document')} (invoices, purchases, quotations, orders or returns)`)
+  if (movements) parts.push(plural(movements, 'stock movement'))
+  if (adjustments) parts.push(plural(adjustments, 'stock adjustment / opening stock entry', 'stock adjustment / opening stock entries'))
+  if (materialMoves) parts.push(plural(materialMoves, 'project material issue / return', 'project material issues / returns'))
+  if (serials) parts.push(plural(serials, 'serial number record'))
+  if (Math.abs(stockQty) > 0.0005 && !movements) parts.push(`${stockQty} in stock`)
+  const used = parts.length > 0
+  return {
+    documents,
+    documentLines,
+    movements,
+    adjustments,
+    materialMoves,
+    serials,
+    stockQty,
+    used,
+    reason: used ? `It is used in ${parts.join(', ')}.` : null
   }
-  db.transaction(() => {
+}
+
+export function getProductUsage(ctx: Ctx, id: number): ProductUsage & { id: number; name: string; is_active: number } {
+  const p = getVisibleProduct(ctx, id)
+  return { id: p.id, name: p.name, is_active: p.is_active, ...productUsage(ctx.db, id) }
+}
+
+/**
+ * Delete a product. A product that was never used is removed permanently. A product with any history
+ * (document line, stock movement, adjustment, material issue/return or serial) is ARCHIVED instead so
+ * every past document, ledger and report stays intact.
+ */
+export function deleteProduct(ctx: Ctx, id: number): { deleted: boolean; archived: boolean; message: string; usage: ProductUsage } {
+  requirePerm(ctx, 'inventory.delete')
+  const db = ctx.db
+  return db.transaction(() => {
+    const p = getVisibleProduct(ctx, id)
+    const usage = productUsage(db, id)
+    if (usage.used) {
+      if (p.is_active) {
+        db.prepare("UPDATE products SET is_active = 0, archived_at = datetime('now','localtime'), updated_at = datetime('now','localtime') WHERE id = ?").run(id)
+      }
+      const message = `"${p.name}" was not deleted because it has history. ${usage.reason} It has been archived instead: it no longer appears when creating sales, purchases, quotations or project issues, but all past records still show it. You can restore it at any time.`
+      audit(ctx, 'archive', 'product', id, `Archived product ${p.name} instead of deleting (has history)`, usage)
+      return { deleted: false, archived: true, message, usage }
+    }
     db.prepare('DELETE FROM stock_levels WHERE product_id = ?').run(id)
-    db.prepare('DELETE FROM serials WHERE product_id = ?').run(id)
     db.prepare('DELETE FROM products WHERE id = ?').run(id)
+    audit(ctx, 'delete', 'product', id, `Deleted product ${p.name} permanently (never used)`)
+    return { deleted: true, archived: false, message: `"${p.name}" was deleted permanently.`, usage }
   })()
-  audit(ctx, 'delete', 'product', id, `Deleted product ${p.name}`)
-  return { deleted: true }
+}
+
+function idList(ids: unknown): number[] {
+  const list = Array.from(new Set((Array.isArray(ids) ? ids : [ids]).map((v) => optId(v)).filter((v): v is number => !!v)))
+  if (list.length === 0) throw new AppError('Select at least one product.', 'VALIDATION')
+  if (list.length > 5000) throw new AppError('Too many products selected (max 5000).', 'VALIDATION')
+  return list
+}
+
+/** Archive products (hide them from pickers, keep history). */
+export function archiveProducts(ctx: Ctx, ids: unknown): { archived: number; withStock: Array<{ id: number; name: string; qty: number }> } {
+  requirePerm(ctx, 'inventory.delete')
+  const list = idList(ids)
+  return ctx.db.transaction(() => {
+    let archived = 0
+    const withStock: Array<{ id: number; name: string; qty: number }> = []
+    for (const id of list) {
+      const p = getVisibleProduct(ctx, id)
+      if (!p.is_active) continue
+      ctx.db.prepare("UPDATE products SET is_active = 0, archived_at = datetime('now','localtime'), updated_at = datetime('now','localtime') WHERE id = ?").run(id)
+      archived++
+      const q = totalQty(ctx.db, id)
+      if (p.type === 'goods' && Math.abs(q) > 0.0005) withStock.push({ id, name: p.name, qty: q })
+    }
+    audit(ctx, 'archive', 'product', list.length === 1 ? list[0] : null, `Archived ${plural(archived, 'product')}`, { ids: list })
+    return { archived, withStock }
+  })()
+}
+
+/** Restore archived products so they can be used on new documents again. */
+export function restoreProducts(ctx: Ctx, ids: unknown): { restored: number } {
+  requirePerm(ctx, 'inventory.delete')
+  const list = idList(ids)
+  return ctx.db.transaction(() => {
+    let restored = 0
+    for (const id of list) {
+      const p = getVisibleProduct(ctx, id)
+      if (p.is_active) continue
+      ctx.db.prepare("UPDATE products SET is_active = 1, archived_at = NULL, updated_at = datetime('now','localtime') WHERE id = ?").run(id)
+      restored++
+    }
+    audit(ctx, 'restore', 'product', list.length === 1 ? list[0] : null, `Restored ${plural(restored, 'product')}`, { ids: list })
+    return { restored }
+  })()
+}
+
+/**
+ * Move products to another category. Only the product → category relationship changes: stock, average
+ * cost, movements and past documents are untouched (reports group by the product's current category).
+ */
+export function changeProductsCategory(ctx: Ctx, ids: unknown, categoryId: unknown): { changed: number } {
+  requirePerm(ctx, 'inventory.manage')
+  const list = idList(ids)
+  const target = visibleCategoryId(ctx, categoryId)
+  return ctx.db.transaction(() => {
+    let changed = 0
+    const from: Record<number, number | null> = {}
+    for (const id of list) {
+      const p = getVisibleProduct(ctx, id) as ProductRow & { category_id: number | null }
+      if ((p.category_id ?? null) === target) continue
+      from[id] = p.category_id ?? null
+      ctx.db.prepare("UPDATE products SET category_id = ?, updated_at = datetime('now','localtime') WHERE id = ?").run(target, id)
+      changed++
+    }
+    const name = target ? (ctx.db.prepare('SELECT name FROM categories WHERE id = ?').get(target) as { name: string }).name : 'No category'
+    audit(ctx, 'update', 'product', list.length === 1 ? list[0] : null, `Moved ${plural(changed, 'product')} to category "${name}"`, { to: target, from })
+    return { changed }
+  })()
 }
 
 /* ------------------------------ Categories ------------------------------ */
@@ -535,19 +693,37 @@ export function deleteProduct(ctx: Ctx, id: number): { deleted: boolean } {
 export function listCategories(ctx: Ctx): unknown[] {
   return ctx.db
     .prepare(
-      `SELECT c.*, (SELECT COUNT(*) FROM products p WHERE p.category_id = c.id) AS product_count
+      `SELECT c.*,
+         (SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND ${visibleTo('p')}) AS product_count,
+         (SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND ${visibleTo('p')} AND p.is_active = 1) AS active_count
        FROM categories c WHERE ${visibleTo('c')} ORDER BY c.name`
     )
     .all({ firmId: ctx.firmId })
+}
+
+function getVisibleCategory(ctx: Ctx, id: number): { id: number; name: string; kind: string; firm_id: number | null } {
+  const c = ctx.db.prepare(`SELECT * FROM categories c WHERE c.id = @id AND ${visibleTo('c')}`).get({ id, firmId: ctx.firmId }) as
+    | { id: number; name: string; kind: string; firm_id: number | null }
+    | undefined
+  if (!c) throw new AppError('Category not found in the active firm.', 'NOT_FOUND')
+  return c
 }
 
 export function saveCategory(ctx: Ctx, input: { id?: number; name: string; kind?: string }): number {
   requirePerm(ctx, 'inventory.manage')
   const name = requireText(input.name, 'Category name', 80)
   const kind = input.kind === 'service' ? 'service' : 'goods'
+  const dup = ctx.db
+    .prepare(`SELECT id FROM categories c WHERE c.name = @name COLLATE NOCASE AND c.id <> @id AND ${visibleTo('c')}`)
+    .get({ name, id: input.id ?? 0, firmId: ctx.firmId })
+  if (dup) throw new AppError(`A category named "${name}" already exists.`, 'VALIDATION')
   if (input.id) {
+    const before = getVisibleCategory(ctx, input.id)
     ctx.db.prepare('UPDATE categories SET name = ?, kind = ? WHERE id = ?').run(name, kind, input.id)
-    audit(ctx, 'update', 'category', input.id, `Updated category ${name}`)
+    audit(ctx, 'update', 'category', input.id, `Updated category ${before.name}${before.name !== name ? ` → ${name}` : ''}`, {
+      before,
+      after: { name, kind }
+    })
     return input.id
   }
   const shared = getSetting(ctx.db, 'share_inventory', true)
@@ -559,12 +735,40 @@ export function saveCategory(ctx: Ctx, input: { id?: number; name: string; kind?
   return id
 }
 
-export function deleteCategory(ctx: Ctx, id: number): void {
+/**
+ * Delete a category. An empty category is deleted straight away. A category with products is deleted only
+ * when a destination is chosen: its products are moved to that category (or to "no category") and the
+ * category is removed — in one transaction. Stock and documents are not touched.
+ */
+export function deleteCategory(ctx: Ctx, id: number, opts: { moveToCategoryId?: number | null; clearCategory?: boolean } = {}): { moved: number } {
   requirePerm(ctx, 'inventory.manage')
-  const used = ctx.db.prepare('SELECT 1 FROM products WHERE category_id = ? LIMIT 1').get(id)
-  if (used) throw new AppError('This category has products. Move them to another category first.', 'VALIDATION')
-  ctx.db.prepare('DELETE FROM categories WHERE id = ?').run(id)
-  audit(ctx, 'delete', 'category', id, 'Deleted category')
+  const db = ctx.db
+  return db.transaction(() => {
+    const cat = getVisibleCategory(ctx, id)
+    const total = (db.prepare('SELECT COUNT(*) AS c FROM products WHERE category_id = ?').get(id) as { c: number }).c
+    const visible = (
+      db.prepare(`SELECT COUNT(*) AS c FROM products p WHERE p.category_id = @id AND ${visibleTo('p')}`).get({ id, firmId: ctx.firmId }) as { c: number }
+    ).c
+    let moved = 0
+    if (total > 0) {
+      if (visible < total) {
+        throw new AppError(`"${cat.name}" is also used by products of another firm. It can only be deleted from that firm after those products are moved.`, 'VALIDATION')
+      }
+      const target = opts.clearCategory ? null : optId(opts.moveToCategoryId)
+      if (!opts.clearCategory && !target) {
+        throw new AppError(`"${cat.name}" has ${plural(total, 'product')}. Choose a category to move them to before deleting it.`, 'HAS_PRODUCTS')
+      }
+      if (target === id) throw new AppError('Choose a different category to move the products to.', 'VALIDATION')
+      if (target) getVisibleCategory(ctx, target)
+      moved = db.prepare("UPDATE products SET category_id = ?, updated_at = datetime('now','localtime') WHERE category_id = ?").run(target, id).changes
+    }
+    db.prepare('DELETE FROM categories WHERE id = ?').run(id)
+    audit(ctx, 'delete', 'category', id, `Deleted category ${cat.name}${moved ? ` (${plural(moved, 'product')} moved)` : ''}`, {
+      moved,
+      moveTo: opts.clearCategory ? null : (opts.moveToCategoryId ?? null)
+    })
+    return { moved }
+  })()
 }
 
 /* ------------------------------ Warehouses ------------------------------ */
@@ -573,7 +777,7 @@ export function listWarehouses(ctx: Ctx, includeInactive = false): unknown[] {
   return ctx.db
     .prepare(
       `SELECT w.*, (SELECT COALESCE(SUM(sl.qty * p.avg_cost),0) FROM stock_levels sl JOIN products p ON p.id = sl.product_id
-                    WHERE sl.warehouse_id = w.id AND sl.qty > 0) AS stock_value
+                    WHERE sl.warehouse_id = w.id AND sl.qty > 0 AND ${visibleTo('p')}) AS stock_value
        FROM warehouses w WHERE ${visibleTo('w')} ${includeInactive ? '' : 'AND w.is_active = 1'}
        ORDER BY w.is_default DESC, w.name`
     )
@@ -600,6 +804,7 @@ export function saveWarehouse(ctx: Ctx, input: { id?: number; name: string; addr
   requirePerm(ctx, 'inventory.manage')
   const name = requireText(input.name, 'Warehouse name', 80)
   if (input.id) {
+    assertWarehouseVisible(ctx, input.id)
     if (input.isActive === false) {
       const hasStock = ctx.db.prepare('SELECT 1 FROM stock_levels WHERE warehouse_id = ? AND abs(qty) > 0.0005').get(input.id)
       if (hasStock) throw new AppError('Warehouse still has stock. Transfer it before deactivating.', 'VALIDATION')
@@ -635,6 +840,7 @@ export function transferStock(
     for (const l of input.lines ?? []) {
       const qty = round3(num(l.qty))
       if (qty <= 0) continue
+      getVisibleProduct(ctx, Number(l.productId))
       const base = { firmId: ctx.firmId, productId: l.productId, qty, date, refType: 'transfer', refId: ref, notes: optText(input.notes, 300), userId: ctx.user.id }
       const cost = stockOut(ctx.db, { ...base, warehouseId: input.fromWarehouseId }, { allowNegative: false })
       stockIn(ctx.db, { ...base, warehouseId: input.toWarehouseId, unitCost: cost })
@@ -675,7 +881,7 @@ export function createAdjustment(ctx: Ctx, input: AdjustmentInput): number {
     )
     let total = 0
     for (const l of lines) {
-      const p = getProductRow(db, l.productId)
+      const p = getVisibleProduct(ctx, Number(l.productId))
       if (p.type === 'service') throw new AppError(`"${p.name}" is a service and has no stock.`, 'VALIDATION')
       const qty = round3(num(l.qty))
       if (kind === 'opening' && qty < 0) throw new AppError('Opening stock quantity must be positive.', 'VALIDATION')
@@ -746,12 +952,17 @@ export function listMovements(
   ctx: Ctx,
   f: { productId?: number; warehouseId?: number; from?: string; to?: string; refType?: string; limit?: number }
 ): unknown[] {
+  // Only products and warehouses the active firm can see. When inventory is not shared, only this firm's own
+  // movements are listed (another firm's document numbers never appear).
+  const sharedInventory = getSetting(ctx.db, 'share_inventory', true)
   return ctx.db
     .prepare(
-      `SELECT m.*, p.name AS product_name, p.unit, w.name AS warehouse_name, f.name AS firm_name, pr.name AS project_name
+      `SELECT m.*, p.name AS product_name, p.unit, w.name AS warehouse_name, f.name AS firm_name,
+         CASE WHEN pr.firm_id = @firmId THEN pr.name END AS project_name
        FROM stock_movements m JOIN products p ON p.id = m.product_id JOIN warehouses w ON w.id = m.warehouse_id
        JOIN firms f ON f.id = m.firm_id LEFT JOIN projects pr ON pr.id = m.project_id
-       WHERE (w.firm_id IS NULL OR w.firm_id = @firmId)
+       WHERE (w.firm_id IS NULL OR w.firm_id = @firmId) AND ${visibleTo('p')}
+         AND (@shared = 1 OR m.firm_id = @firmId)
          AND (@productId IS NULL OR m.product_id = @productId)
          AND (@warehouseId IS NULL OR m.warehouse_id = @warehouseId)
          AND (@from IS NULL OR m.date >= @from) AND (@to IS NULL OR m.date <= @to)
@@ -760,6 +971,7 @@ export function listMovements(
     )
     .all({
       firmId: ctx.firmId,
+      shared: sharedInventory ? 1 : 0,
       productId: f.productId ?? null,
       warehouseId: f.warehouseId ?? null,
       from: f.from ?? null,
@@ -771,18 +983,22 @@ export function listMovements(
 
 export function lookupSerial(ctx: Ctx, serial: string): unknown[] {
   const s = requireText(serial, 'Serial number', 100)
+  // Serials of products visible to the active firm; customer, project and document details only when they
+  // belong to the active firm.
   return ctx.db
     .prepare(
-      `SELECT s.*, p.name AS product_name, p.warranty_months, p.warranty_terms, pa.name AS party_name, pr.name AS project_name,
+      `SELECT s.*, p.name AS product_name, p.warranty_months, p.warranty_terms,
+         CASE WHEN pa.id IS NOT NULL AND (pa.firm_id IS NULL OR pa.firm_id = @firmId) THEN pa.name END AS party_name,
+         CASE WHEN pr.firm_id = @firmId THEN pr.name END AS project_name,
          w.name AS warehouse_name,
-         (SELECT d.number FROM documents d WHERE s.out_ref_type = d.doc_type AND d.id = s.out_ref_id) AS out_doc_number,
-         (SELECT d.number FROM documents d WHERE s.in_ref_type = d.doc_type AND d.id = s.in_ref_id) AS in_doc_number
+         (SELECT d.number FROM documents d WHERE s.out_ref_type = d.doc_type AND d.id = s.out_ref_id AND d.firm_id = @firmId) AS out_doc_number,
+         (SELECT d.number FROM documents d WHERE s.in_ref_type = d.doc_type AND d.id = s.in_ref_id AND d.firm_id = @firmId) AS in_doc_number
        FROM serials s JOIN products p ON p.id = s.product_id
        LEFT JOIN parties pa ON pa.id = s.party_id LEFT JOIN projects pr ON pr.id = s.project_id
        LEFT JOIN warehouses w ON w.id = s.warehouse_id
-       WHERE s.serial LIKE ? ESCAPE '\\' ORDER BY s.serial LIMIT 100`
+       WHERE s.serial LIKE @q ESCAPE '\\' AND ${visibleTo('p')} ORDER BY s.serial LIMIT 100`
     )
-    .all(like(s))
+    .all({ q: like(s), firmId: ctx.firmId })
 }
 
 export function stockReport(ctx: Ctx, f: { warehouseId?: number; categoryId?: number; includeZero?: boolean } = {}): unknown {

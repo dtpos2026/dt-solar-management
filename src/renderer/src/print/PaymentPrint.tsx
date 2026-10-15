@@ -3,7 +3,9 @@ import { api } from '../api'
 import { today } from '../lib/format'
 import { DOC_TYPES, DocType, PAYMENT_METHOD_LABELS } from '@shared/docTypes'
 import { amountInWords, round2 } from '@shared/money'
-import { InfoBox, Letterhead, PrintFooter, PrintTable, Sheet, Signatures, TemplateProps, pd, pm, pmSym } from './PrintKit'
+import { CompactHeader, InfoBox, Letterhead, ModernHeader, PrintFooter, PrintTable, Sheet, Signatures, TemplateProps, pd, pm, pmSym } from './PrintKit'
+import { firmOptions } from './design'
+import { ThermalPayment } from './ThermalPrint'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const ALLOC_TYPES: Record<string, string> = {
@@ -18,23 +20,36 @@ function allocType(a: any): string {
   return ALLOC_TYPES[a.doc_type] ?? DOC_TYPES[a.doc_type as DocType]?.label ?? 'Document'
 }
 
-/** Payment Receipt (money in) / Payment Voucher (money out) — compact, half-page when short. */
-export function PaymentPrint({ id, ctx, setTitle }: TemplateProps): JSX.Element | null {
-  const [p, setP] = useState<any>(null)
+/**
+ * Payment Receipt (money in) / Payment Voucher (money out) — compact, half-page when short.
+ * Layouts: classic / modern / compact (A4) and thermal80 (80 mm receipt); the template options decide what is shown.
+ */
+export function PaymentPrint({ id, ctx, setTitle, design, onKind, data }: TemplateProps): JSX.Element | null {
+  const [p, setP] = useState<any>(data ?? null)
   const [err, setErr] = useState<string | null>(null)
   useEffect(() => {
+    if (data) {
+      setP(data)
+      return
+    }
     api<any>('payments.get', { id })
       .then((r) => {
         setP(r)
         setTitle(`${r.direction === 'in' ? 'Payment Receipt' : 'Payment Voucher'} ${r.number}${r.party_name ? ` - ${r.party_name}` : ''}`)
+        onKind?.('payment')
       })
       .catch((e) => setErr(e.message))
-  }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [id, data]) // eslint-disable-line react-hooks/exhaustive-deps
   if (err) return <div className="no-print mx-auto max-w-[210mm] rounded bg-red-100 p-4 text-red-800">{err}</div>
-  if (!p) return null
+  if (!p || design === null) return null
 
+  const o = design?.options ?? firmOptions(ctx.ps)
+  const layout = design?.layout ?? 'classic'
+  if (layout === 'thermal80') return <ThermalPayment p={p} ctx={ctx} o={o} />
+  const compact = layout === 'compact'
   const isIn = p.direction === 'in'
-  const title = isIn ? 'Payment Receipt' : 'Payment Voucher'
+  const title = o.titleOverride?.trim() || (isIn ? 'Payment Receipt' : 'Payment Voucher')
+  const subtitle = isIn ? 'Acknowledgement of money received' : 'Record of money paid'
   const cancelled = p.status === 'cancelled'
   const allocations: any[] = p.allocations ?? []
   const allocated = round2(allocations.reduce((a, r) => a + Number(r.amount || 0), 0))
@@ -59,10 +74,18 @@ export function PaymentPrint({ id, ctx, setTitle }: TemplateProps): JSX.Element 
   if (p.created_by_name) details.push(['Prepared by', p.created_by_name])
 
   return (
-    <Sheet ctx={ctx} watermark={cancelled ? { text: 'CANCELLED', color: '#c53030' } : null}>
-      <Letterhead ctx={ctx} title={title} subtitle={isIn ? 'Acknowledgement of money received' : 'Record of money paid'} meta={meta} />
+    <Sheet ctx={ctx} watermark={cancelled ? { text: 'CANCELLED', color: '#c53030' } : null} accent={o.accentColor} className={compact ? '!text-[10px]' : undefined}>
+      {layout === 'modern' ? (
+        <ModernHeader ctx={ctx} title={title} subtitle={subtitle} number={p.number} date={pd(p.date)} showLogo={o.showLogo} />
+      ) : compact ? (
+        <div className="mb-2">
+          <CompactHeader ctx={ctx} title={title} number={p.number} date={pd(p.date)} showLogo={o.showLogo} />
+        </div>
+      ) : (
+        <Letterhead ctx={ctx} title={title} subtitle={subtitle} meta={meta} showLogo={o.showLogo} />
+      )}
 
-      <div className="mb-3 grid grid-cols-[1fr_300px] gap-3">
+      <div className={`${compact ? 'mb-2' : 'mb-3'} grid grid-cols-[1fr_300px] gap-3`}>
         <InfoBox title={isIn ? 'Received From' : 'Paid To'}>
           <div className="text-[12.5px] font-bold">{p.party_name ?? (isIn ? 'Walk-in / cash receipt' : 'Cash payment')}</div>
           {p.party_address && <div>{p.party_address}</div>}
@@ -71,8 +94,8 @@ export function PaymentPrint({ id, ctx, setTitle }: TemplateProps): JSX.Element 
         </InfoBox>
         <div className="avoid-break flex flex-col justify-center rounded-md border-2 px-3 py-2 text-center" style={{ borderColor: 'var(--pc)', background: 'color-mix(in srgb, var(--pc) 7%, #fff)' }}>
           <div className="text-[9.5px] font-bold tracking-wider text-[#4a5568] uppercase">{isIn ? 'Amount Received' : 'Amount Paid'}</div>
-          <div className="num text-[26px] leading-tight font-black" style={{ color: 'var(--pc)' }}>{pmSym(ctx, p.amount, 2)}</div>
-          <div className="mt-0.5 text-[9.8px] leading-snug font-semibold text-[#2d3748]">{amountInWords(p.amount, word)}</div>
+          <div className={`num ${compact ? 'text-[20px]' : 'text-[26px]'} leading-tight font-black`} style={{ color: 'var(--pc)' }}>{pmSym(ctx, p.amount, 2)}</div>
+          {o.showAmountInWords && <div className="mt-0.5 text-[9.8px] leading-snug font-semibold text-[#2d3748]">{amountInWords(p.amount, word)}</div>}
         </div>
       </div>
 
@@ -130,7 +153,7 @@ export function PaymentPrint({ id, ctx, setTitle }: TemplateProps): JSX.Element 
 
       <div className="avoid-break mt-3 grid grid-cols-[1fr_300px] gap-3 text-[10.5px]">
         <div className="space-y-2">
-          {p.notes && (
+          {o.showNotes && p.notes && (
             <div>
               <div className="text-[9px] font-bold tracking-wider text-[#718096] uppercase">Notes</div>
               <div className="whitespace-pre-line">{p.notes}</div>
@@ -160,10 +183,14 @@ export function PaymentPrint({ id, ctx, setTitle }: TemplateProps): JSX.Element 
 
       <Signatures
         ctx={ctx}
+        compact={compact}
         left={isIn ? 'Paid by (depositor signature)' : 'Received by (payee signature)'}
         right={isIn ? 'Received by / Authorized Signature' : ctx.ps.signatureLabel}
+        showReceiver={o.showCustomerSignature}
+        showSignature={o.showAuthorisedSignature}
+        showStamp={o.showStamp}
       />
-      <PrintFooter ctx={ctx} />
+      <PrintFooter ctx={ctx} note={o.footerNote || undefined} className={compact ? '!mt-3' : undefined} />
     </Sheet>
   )
 }

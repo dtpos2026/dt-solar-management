@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Boxes, Plus, Pencil, Trash2, ArrowLeftRight, ClipboardList, Search, Warehouse, Tags, ScanLine, Printer } from 'lucide-react'
+import { Boxes, Plus, Pencil, Trash2, ArrowLeftRight, ClipboardList, Search, Warehouse, Tags, ScanLine, Printer, Archive, ArchiveRestore } from 'lucide-react'
 import { api } from '../../api'
 import { useCan } from '../../store'
-import { Badge, Button, Card, Checkbox, Empty, Field, IconButton, Input, Kv, Modal, NumberInput, PageHeader, PeriodPicker, Select, Tabs, Textarea, Toggle, confirmDialog, toast } from '../../components/ui'
+import { Badge, Button, Card, Checkbox, Empty, Field, IconButton, Input, Kv, Modal, NumberInput, PageHeader, PeriodPicker, Select, Tabs, Textarea, Toggle, toast } from '../../components/ui'
 import { DataTable, Column } from '../../components/DataTable'
 import { Combobox } from '../../components/Combobox'
 import { useLoad, useProducts, useWarehouses } from '../../lib/hooks'
 import { date, label, money, qty, today, PERIODS } from '../../lib/format'
+import { CategoryPickModal, DeleteCategoryModal, archiveProductsFlow, deleteProductFlow, restoreProductsFlow } from './productActions'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Tab = 'products' | 'stock' | 'movements' | 'adjustments' | 'warehouses' | 'categories' | 'serials'
@@ -49,7 +50,7 @@ export function InventoryPage(): JSX.Element {
           { key: 'serials', label: 'Serial / warranty lookup' }
         ]}
       />
-      {tab === 'products' && <ProductsTab key={tick} onEdit={(p) => setProductForm({ open: true, product: p })} />}
+      {tab === 'products' && <ProductsTab tick={tick} onEdit={(p) => setProductForm({ open: true, product: p })} />}
       {tab === 'stock' && <StockTab key={tick} />}
       {tab === 'movements' && <MovementsTab key={tick} />}
       {tab === 'adjustments' && <AdjustmentsTab key={tick} />}
@@ -63,87 +64,193 @@ export function InventoryPage(): JSX.Element {
   )
 }
 
-function ProductsTab({ onEdit }: { onEdit: (p: any) => void }): JSX.Element {
+function ProductsTab({ onEdit, tick }: { onEdit: (p: any) => void; tick: number }): JSX.Element {
   const can = useCan()
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   const [stock, setStock] = useState(params.get('stock') ?? '')
-  const [cat, setCat] = useState('')
-  const [active, setActive] = useState('active')
+  const [cat, setCat] = useState(params.get('category') ?? '')
+  const [active, setActive] = useState<'active' | 'archived' | 'all'>('active')
+  const [q, setQ] = useState('')
+  const [search, setSearch] = useState('')
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [catPick, setCatPick] = useState(false)
   const [detail, setDetail] = useState<number | null>(params.get('product') ? Number(params.get('product')) : null)
-  const cats = useLoad(() => api<any[]>('categories.list'), [])
-  const { data, loading, reload } = useLoad(() => api<{ rows: any[] }>('products.list', { stock: stock || undefined, categoryId: cat ? Number(cat) : undefined, active, limit: 5000 }), [stock, cat, active])
+  const cats = useLoad(() => api<any[]>('categories.list'), [tick])
+  const { data, loading, reload } = useLoad(
+    () => api<{ rows: any[] }>('products.list', { q: search || undefined, stock: stock || undefined, categoryId: cat ? Number(cat) : undefined, active, limit: 5000 }),
+    [search, stock, cat, active, tick]
+  )
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(q.trim()), 250)
+    return () => clearTimeout(t)
+  }, [q])
+  useEffect(() => setSelected(new Set()), [search, stock, cat, active, tick])
   const rows = data?.rows ?? []
   const showCost = rows.some((r) => r.avg_cost !== null)
+  const canDelete = can('inventory.delete')
+  const canManage = can('inventory.manage')
+  const canSelect = canDelete || canManage
+  const selRows = rows.filter((r) => selected.has(r.id))
+  const allSelected = rows.length > 0 && selRows.length === rows.length
+  const toggle = (id: number): void =>
+    setSelected((s) => {
+      const n = new Set(s)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
+  const refresh = async (): Promise<void> => {
+    setSelected(new Set())
+    await Promise.all([reload(), cats.reload()])
+  }
   const cols: Array<Column<any>> = [
+    {
+      key: 'sel',
+      hidden: !canSelect,
+      sortable: false,
+      csv: false,
+      width: 36,
+      header: (
+        <input
+          type="checkbox"
+          className="h-4 w-4 cursor-pointer accent-[var(--brand)]"
+          aria-label="Select all products in this list"
+          title="Select all products in this list"
+          checked={allSelected}
+          ref={(el) => {
+            if (el) el.indeterminate = selRows.length > 0 && !allSelected
+          }}
+          onChange={() => setSelected(allSelected ? new Set() : new Set(rows.map((r) => r.id)))}
+        />
+      ),
+      render: (r) => (
+        <span onClick={(e) => e.stopPropagation()}>
+          <input type="checkbox" className="h-4 w-4 cursor-pointer accent-[var(--brand)]" aria-label={`Select ${r.name}`} checked={selected.has(r.id)} onChange={() => toggle(r.id)} />
+        </span>
+      )
+    },
     { key: 'name', header: 'Product', render: (r) => <div><div className="font-medium">{r.name}</div><div className="text-[11.5px] text-muted">{[r.sku, r.brand, r.model].filter(Boolean).join(' · ')}</div></div>, value: (r) => `${r.name} ${r.sku ?? ''} ${r.brand ?? ''} ${r.model ?? ''}` },
-    { key: 'category_name', header: 'Category' },
+    { key: 'category_name', header: 'Category', render: (r) => r.category_name ?? <span className="text-muted">—</span> },
     { key: 'type', header: 'Type', render: (r) => <Badge tone={r.type === 'service' ? 'info' : 'muted'}>{r.type === 'service' ? 'Service' : 'Goods'}</Badge> },
     { key: 'stock', header: 'In stock', align: 'right', render: (r) => (r.type === 'service' ? '—' : <span className={r.stock <= 0 ? 'font-semibold text-bad' : r.reorder_level > 0 && r.stock <= r.reorder_level ? 'font-semibold text-warn' : ''}>{qty(r.stock)} {r.unit}</span>) },
     { key: 'avg_cost', header: 'Avg cost', align: 'right', hidden: !showCost, render: (r) => (r.type === 'service' ? '—' : money(r.avg_cost)) },
     { key: 'sale_price', header: 'Sale price', align: 'right', render: (r) => money(r.sale_price) },
     { key: 'stock_value', header: 'Stock value', align: 'right', hidden: !showCost, render: (r) => (r.type === 'service' ? '—' : money(r.stock_value)) },
-    { key: 'flags', header: '', sortable: false, csv: false, render: (r) => <div className="flex gap-1">{r.track_serial ? <Badge tone="info">S/N</Badge> : null}{r.warranty_months ? <Badge tone="ok">{r.warranty_months}m</Badge> : null}{!r.is_active && <Badge tone="bad">Inactive</Badge>}</div> },
+    { key: 'flags', header: '', sortable: false, csv: false, render: (r) => <div className="flex gap-1">{r.track_serial ? <Badge tone="info">S/N</Badge> : null}{r.warranty_months ? <Badge tone="ok">{r.warranty_months}m</Badge> : null}{!r.is_active && <Badge tone="warn">Archived</Badge>}</div> },
     {
       key: 'actions', header: '', sortable: false, csv: false,
-      render: (r) => can('inventory.manage') && (
+      render: (r) => (
         <div className="flex justify-end">
-          <IconButton title="Edit" onClick={() => onEdit(r)}><Pencil className="h-4 w-4" /></IconButton>
-          <IconButton title="Delete" tone="bad" onClick={async () => {
-            if (!(await confirmDialog({ title: `Delete ${r.name}?`, message: 'Products with transactions are deactivated instead of deleted.', danger: true, confirmLabel: 'Delete' }))) return
-            try { const res = await api<{ deleted: boolean }>('products.delete', { id: r.id }); toast.ok(res.deleted ? 'Product deleted.' : 'Product has history — it was deactivated.'); reload() } catch (e) { toast.error(e) }
-          }}><Trash2 className="h-4 w-4" /></IconButton>
+          {canManage && <IconButton title="Edit" onClick={() => onEdit(r)}><Pencil className="h-4 w-4" /></IconButton>}
+          {canDelete && (r.is_active
+            ? <IconButton title="Archive" onClick={async () => { if (await archiveProductsFlow([r.id], `“${r.name}”`)) refresh() }}><Archive className="h-4 w-4" /></IconButton>
+            : <IconButton title="Restore" onClick={async () => { if (await restoreProductsFlow([r.id])) refresh() }}><ArchiveRestore className="h-4 w-4" /></IconButton>)}
+          {canDelete && <IconButton title="Delete" tone="bad" onClick={async () => { if (await deleteProductFlow(r)) refresh() }}><Trash2 className="h-4 w-4" /></IconButton>}
         </div>
       )
     }
   ]
+  const selActive = selRows.filter((r) => r.is_active).map((r) => r.id)
+  const selArchived = selRows.filter((r) => !r.is_active).map((r) => r.id)
   return (
     <>
+      {selRows.length > 0 && (
+        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-brand/40 bg-brand-soft px-3 py-2 text-[13px]" role="region" aria-label="Bulk actions">
+          <span className="font-semibold text-brand">{selRows.length} selected</span>
+          {canManage && <Button size="sm" icon={<Tags className="h-4 w-4" />} onClick={() => setCatPick(true)}>Change category</Button>}
+          {canDelete && selActive.length > 0 && <Button size="sm" icon={<Archive className="h-4 w-4" />} onClick={async () => { if (await archiveProductsFlow(selActive, `${selActive.length} product${selActive.length === 1 ? '' : 's'}`)) refresh() }}>Archive{selArchived.length ? ` (${selActive.length})` : ''}</Button>}
+          {canDelete && selArchived.length > 0 && <Button size="sm" icon={<ArchiveRestore className="h-4 w-4" />} onClick={async () => { if (await restoreProductsFlow(selArchived)) refresh() }}>Restore{selActive.length ? ` (${selArchived.length})` : ''}</Button>}
+          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Clear selection</Button>
+        </div>
+      )}
       <DataTable
         rows={rows}
         columns={cols}
         loading={loading}
-        exportName="Products"
+        searchable={false}
+        exportName={active === 'archived' ? 'Archived products' : 'Products'}
         onRowClick={(r) => setDetail(r.id)}
+        rowClassName={(r) => (!r.is_active ? 'opacity-70' : undefined)}
         toolbar={
           <>
-            <Select sm className="w-48" value={cat} onChange={(e) => setCat(e.target.value)}>
+            <div className="relative w-64 max-w-full">
+              <Search className="pointer-events-none absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-muted" />
+              <Input sm className="pl-8" placeholder="Search name, SKU, brand, model…" value={q} onChange={(e) => setQ(e.target.value)} />
+            </div>
+            <Select sm className="w-44" value={cat} onChange={(e) => { setCat(e.target.value); if (params.get('category')) setParams({ tab: 'products' }, { replace: true }) }} aria-label="Category filter">
               <option value="">All categories</option>
               {(cats.data ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </Select>
-            <Select sm className="w-40" value={stock} onChange={(e) => setStock(e.target.value)}>
+            <Select sm className="w-40" value={stock} onChange={(e) => setStock(e.target.value)} aria-label="Stock filter">
               <option value="">Any stock level</option>
               <option value="in">In stock</option>
               <option value="low">Low stock</option>
               <option value="out">Out of stock</option>
             </Select>
-            <Select sm className="w-32" value={active} onChange={(e) => setActive(e.target.value)}>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="all">All</option>
+            <Select sm className="w-44" value={active} onChange={(e) => setActive(e.target.value as 'active' | 'archived' | 'all')} aria-label="Archived filter">
+              <option value="active">Active products</option>
+              <option value="archived">Show archived</option>
+              <option value="all">Active + archived</option>
             </Select>
           </>
         }
-        empty={<Empty icon={<Boxes />} title="No products found">Add your solar panels, inverters, batteries and services to start invoicing.</Empty>}
+        empty={
+          active === 'archived'
+            ? <Empty icon={<Archive />} title="No archived products">Products you archive (or that could not be deleted because they have history) appear here and can be restored.</Empty>
+            : <Empty icon={<Boxes />} title="No products found">Add your solar panels, inverters, batteries and services to start invoicing.</Empty>
+        }
       />
-      <ProductDetail id={detail} onClose={() => setDetail(null)} onEdit={(p) => { setDetail(null); onEdit(p) }} />
+      <ProductDetail id={detail} onClose={() => setDetail(null)} onEdit={(p) => { setDetail(null); onEdit(p) }} onChanged={refresh} />
+      <CategoryPickModal open={catPick} ids={selRows.map((r) => r.id)} categories={cats.data ?? []} onClose={() => setCatPick(false)} onDone={refresh} />
     </>
   )
 }
 
-function ProductDetail({ id, onClose, onEdit }: { id: number | null; onClose: () => void; onEdit: (p: any) => void }): JSX.Element {
+function ProductDetail({ id, onClose, onEdit, onChanged }: { id: number | null; onClose: () => void; onEdit: (p: any) => void; onChanged: () => void }): JSX.Element {
   const can = useCan()
   const [p, setP] = useState<any>(null)
   const [moves, setMoves] = useState<any[]>([])
+  const load = (pid: number): void => {
+    api('products.get', { id: pid }).then(setP).catch((e) => { toast.error(e); onClose() })
+  }
   useEffect(() => {
     if (!id) return
     setP(null)
-    api('products.get', { id }).then(setP).catch(toast.error)
+    load(id)
     if (can('inventory.view')) api<any[]>('stock.movements', { productId: id, limit: 100 }).then(setMoves).catch(() => setMoves([]))
   }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
+  const after = (changed: boolean, stillExists = true): void => {
+    if (!changed) return
+    onChanged()
+    if (stillExists && id) load(id)
+    else onClose()
+  }
+  const footer = p && (
+    <>
+      {can('inventory.delete') && (
+        <Button variant="ghost" className="mr-auto text-bad" icon={<Trash2 className="h-4 w-4" />} onClick={async () => {
+          const ok = await deleteProductFlow(p)
+          if (!ok) return
+          const exists = await api('products.get', { id: p.id }).then(() => true).catch(() => false)
+          after(true, exists)
+        }}>Delete</Button>
+      )}
+      {can('inventory.delete') && (p.is_active
+        ? <Button icon={<Archive className="h-4 w-4" />} onClick={async () => after(await archiveProductsFlow([p.id], `“${p.name}”`))}>Archive</Button>
+        : <Button variant="success" icon={<ArchiveRestore className="h-4 w-4" />} onClick={async () => after(await restoreProductsFlow([p.id]))}>Restore</Button>)}
+      {can('inventory.manage') && <Button variant="primary" icon={<Pencil className="h-4 w-4" />} onClick={() => onEdit(p)}>Edit product</Button>}
+    </>
+  )
   return (
-    <Modal open={!!id} onClose={onClose} title={p?.name ?? 'Product'} subtitle={p ? [p.sku, p.category_name, p.brand, p.model].filter(Boolean).join(' · ') : ''} size="lg" footer={can('inventory.manage') && p && <Button variant="primary" icon={<Pencil className="h-4 w-4" />} onClick={() => onEdit(p)}>Edit product</Button>}>
+    <Modal open={!!id} onClose={onClose} title={p?.name ?? 'Product'} subtitle={p ? [p.sku, p.category_name, p.brand, p.model].filter(Boolean).join(' · ') : ''} size="lg" footer={footer}>
       {!p ? null : (
         <div className="space-y-4">
+          {!p.is_active && (
+            <div className="flex items-start gap-3 rounded-xl bg-warn-soft px-4 py-3 text-[13px]">
+              <Archive className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
+              <div><b>Archived{p.archived_at ? ` on ${date(String(p.archived_at).slice(0, 10))}` : ''}.</b> Hidden from new sales, purchases, quotations and project material issues. Past documents, stock movements and reports still show it.</div>
+            </div>
+          )}
           <div className="grid grid-cols-3 gap-3">
             <Card><Kv label="Sale price">{money(p.sale_price)}</Kv>{p.avg_cost !== null && <Kv label="Average cost">{money(p.avg_cost)}</Kv>}{p.purchase_price !== null && <Kv label="Last purchase price">{money(p.purchase_price)}</Kv>}</Card>
             <Card><Kv label="Unit">{p.unit}</Kv><Kv label="Tax rate">{p.tax_rate}%</Kv><Kv label="Reorder level">{qty(p.reorder_level)}</Kv></Card>
@@ -179,8 +286,8 @@ export function ProductForm({ open, product, onClose, onSaved }: { open: boolean
     if (!open) return
     setF(
       product
-        ? { id: product.id, name: product.name, categoryId: product.category_id, sku: product.sku ?? '', barcode: product.barcode ?? '', type: product.type, unit: product.unit, brand: product.brand ?? '', model: product.model ?? '', description: product.description ?? '', purchasePrice: product.purchase_price ?? 0, salePrice: product.sale_price, minSalePrice: product.min_sale_price ?? 0, taxRate: product.tax_rate, reorderLevel: product.reorder_level, trackSerial: !!product.track_serial, warrantyMonths: product.warranty_months, warrantyTerms: product.warranty_terms ?? '', isActive: !!product.is_active }
-        : { name: '', categoryId: null, sku: '', barcode: '', type: 'goods', unit: 'pcs', brand: '', model: '', description: '', purchasePrice: 0, salePrice: 0, minSalePrice: 0, taxRate: 0, reorderLevel: 0, trackSerial: false, warrantyMonths: 0, warrantyTerms: '', isActive: true, openingQty: 0, openingCost: 0, openingWarehouseId: null, openingSerials: '' }
+        ? { id: product.id, name: product.name, categoryId: product.category_id, sku: product.sku ?? '', barcode: product.barcode ?? '', type: product.type, unit: product.unit, brand: product.brand ?? '', model: product.model ?? '', description: product.description ?? '', purchasePrice: product.purchase_price ?? 0, salePrice: product.sale_price, minSalePrice: product.min_sale_price ?? 0, taxRate: product.tax_rate, reorderLevel: product.reorder_level, trackSerial: !!product.track_serial, warrantyMonths: product.warranty_months, warrantyTerms: product.warranty_terms ?? '' }
+        : { name: '', categoryId: null, sku: '', barcode: '', type: 'goods', unit: 'pcs', brand: '', model: '', description: '', purchasePrice: 0, salePrice: 0, minSalePrice: 0, taxRate: 0, reorderLevel: 0, trackSerial: false, warrantyMonths: 0, warrantyTerms: '', openingQty: 0, openingCost: 0, openingWarehouseId: null, openingSerials: '' }
     )
   }, [open, product])
   const set = (k: string, v: unknown): void => setF((x: any) => ({ ...x, [k]: v }))
@@ -199,6 +306,12 @@ export function ProductForm({ open, product, onClose, onSaved }: { open: boolean
   }
   return (
     <Modal open={open} onClose={onClose} title={product ? 'Edit product' : 'New product'} size="lg" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" loading={busy} onClick={save}>Save product</Button></>}>
+      {product && !product.is_active && (
+        <div className="mb-3 flex items-start gap-3 rounded-xl bg-warn-soft px-4 py-2.5 text-[13px]">
+          <Archive className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
+          <div>This product is <b>archived</b>. Saving keeps it archived — use <b>Restore</b> in the product list to make it available on new documents again.</div>
+        </div>
+      )}
       <div className="grid grid-cols-4 gap-3">
         <Field label="Product / service name" required className="col-span-3"><Input autoFocus value={f.name ?? ''} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Longi 585W Mono PERC Solar Panel" /></Field>
         <Field label="Type">
@@ -207,7 +320,7 @@ export function ProductForm({ open, product, onClose, onSaved }: { open: boolean
             <option value="service">Service / labor</option>
           </Select>
         </Field>
-        <Field label="Category" className="col-span-2">
+        <Field label="Category" className="col-span-2" hint={product ? 'Can be changed at any time — stock, costs and past documents are not affected.' : undefined}>
           <Select value={f.categoryId ?? ''} onChange={(e) => set('categoryId', e.target.value ? Number(e.target.value) : null)}>
             <option value="">— None —</option>
             {(cats.data ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -229,7 +342,6 @@ export function ProductForm({ open, product, onClose, onSaved }: { open: boolean
         {f.type === 'goods' && (
           <div className="col-span-4 flex flex-wrap gap-6">
             <Checkbox checked={!!f.trackSerial} onChange={(v) => set('trackSerial', v)} label="Track serial numbers (inverters, batteries…)" />
-            {product && <Checkbox checked={!!f.isActive} onChange={(v) => set('isActive', v)} label="Active" />}
           </div>
         )}
         {!product && f.type === 'goods' && can('inventory.adjust') && (
@@ -522,37 +634,59 @@ function WarehousesTab(): JSX.Element {
 
 function CategoriesTab(): JSX.Element {
   const can = useCan()
+  const [, setParams] = useSearchParams()
   const { data, loading, reload } = useLoad(() => api<any[]>('categories.list'), [])
   const [edit, setEdit] = useState<any>(null)
+  const [del, setDel] = useState<any>(null)
+  const save = async (): Promise<void> => {
+    try {
+      await api('categories.save', edit)
+      toast.ok(edit.id ? 'Category updated.' : 'Category created.')
+      setEdit(null)
+      reload()
+    } catch (e) {
+      toast.error(e)
+    }
+  }
   return (
     <>
       <DataTable
         rows={data ?? []}
         loading={loading}
+        exportName="Categories"
         toolbar={can('inventory.manage') && <Button size="sm" variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setEdit({ name: '', kind: 'goods' })}>New category</Button>}
         columns={[
-          { key: 'name', header: 'Category', render: (r: any) => <div className="flex items-center gap-2"><Tags className="h-4 w-4 text-muted" />{r.name}</div> },
-          { key: 'kind', header: 'Kind', render: (r: any) => <Badge tone={r.kind === 'service' ? 'info' : 'muted'}>{label(r.kind)}</Badge> },
-          { key: 'product_count', header: 'Products', align: 'right' },
+          { key: 'name', header: 'Category', render: (r: any) => <div className="flex items-center gap-2"><Tags className="h-4 w-4 text-muted" /><span className="font-medium">{r.name}</span></div> },
+          { key: 'kind', header: 'Kind', render: (r: any) => <Badge tone={r.kind === 'service' ? 'info' : 'muted'}>{r.kind === 'service' ? 'Services' : 'Goods'}</Badge> },
+          { key: 'firm_id', header: 'Scope', render: (r: any) => (r.firm_id === null ? <Badge tone="info">Shared by all firms</Badge> : <Badge>This firm</Badge>), value: (r: any) => (r.firm_id === null ? 'Shared' : 'This firm') },
           {
-            key: 'a', header: '', sortable: false,
+            key: 'product_count', header: 'Products', align: 'right',
+            render: (r: any) => r.product_count > 0
+              ? <button type="button" className="cursor-pointer text-brand hover:underline" title="Show these products" onClick={(e) => { e.stopPropagation(); setParams({ tab: 'products', category: String(r.id) }) }}>{r.active_count}{r.product_count > r.active_count ? <span className="text-muted"> + {r.product_count - r.active_count} archived</span> : ''}</button>
+              : <span className="text-muted">0</span>
+          },
+          {
+            key: 'a', header: '', sortable: false, csv: false,
             render: (r: any) => can('inventory.manage') && (
               <div className="flex justify-end">
-                <IconButton title="Edit" onClick={() => setEdit({ id: r.id, name: r.name, kind: r.kind })}><Pencil className="h-4 w-4" /></IconButton>
-                <IconButton title="Delete" tone="bad" onClick={async () => { try { await api('categories.delete', { id: r.id }); reload() } catch (e) { toast.error(e) } }}><Trash2 className="h-4 w-4" /></IconButton>
+                <IconButton title="Rename / change kind" onClick={() => setEdit({ id: r.id, name: r.name, kind: r.kind })}><Pencil className="h-4 w-4" /></IconButton>
+                <IconButton title="Delete" tone="bad" onClick={() => setDel(r)}><Trash2 className="h-4 w-4" /></IconButton>
               </div>
             )
           }
         ]}
       />
-      <Modal open={!!edit} onClose={() => setEdit(null)} title={edit?.id ? 'Edit category' : 'New category'} size="sm" footer={<><Button onClick={() => setEdit(null)}>Cancel</Button><Button variant="primary" onClick={async () => { try { await api('categories.save', edit); setEdit(null); reload() } catch (e) { toast.error(e) } }}>Save</Button></>}>
+      <Modal open={!!edit} onClose={() => setEdit(null)} title={edit?.id ? 'Edit category' : 'New category'} size="sm" footer={<><Button onClick={() => setEdit(null)}>Cancel</Button><Button variant="primary" onClick={save}>Save</Button></>}>
         {edit && (
           <div className="space-y-3">
-            <Field label="Name"><Input autoFocus value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></Field>
-            <Field label="Kind"><Select value={edit.kind} onChange={(e) => setEdit({ ...edit, kind: e.target.value })}><option value="goods">Goods</option><option value="service">Services</option></Select></Field>
+            <Field label="Name"><Input autoFocus value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && save()} /></Field>
+            <Field label="Kind" hint="Used for grouping and filters. Each product keeps its own goods / service type.">
+              <Select value={edit.kind} onChange={(e) => setEdit({ ...edit, kind: e.target.value })}><option value="goods">Goods</option><option value="service">Services</option></Select>
+            </Field>
           </div>
         )}
       </Modal>
+      <DeleteCategoryModal category={del} categories={data ?? []} onClose={() => setDel(null)} onDone={reload} />
     </>
   )
 }

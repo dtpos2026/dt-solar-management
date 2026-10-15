@@ -231,13 +231,18 @@ function hideFinancials(ctx: Ctx, f: ProjectFinancials): Partial<ProjectFinancia
   }
 }
 
-export function listProjects(ctx: Ctx, f: { q?: string; status?: string; customerId?: number; from?: string; to?: string } = {}): unknown[] {
+export function listProjects(
+  ctx: Ctx,
+  f: { q?: string; status?: string; customerId?: number; from?: string; to?: string; archived?: 'hide' | 'only' | 'all' } = {}
+): unknown[] {
   requirePerm(ctx, 'projects.view')
+  const archived = f.archived === 'only' ? 1 : f.archived === 'all' ? null : 0
   const rows = ctx.db
     .prepare(
       `SELECT pr.*, pa.name AS customer_name, pa.phone AS customer_phone, u.full_name AS manager_name
        FROM projects pr LEFT JOIN parties pa ON pa.id = pr.customer_id LEFT JOIN users u ON u.id = pr.manager_user_id
        WHERE pr.firm_id = @firmId AND (@status IS NULL OR pr.status = @status) AND (@cust IS NULL OR pr.customer_id = @cust)
+         AND (@archived IS NULL OR pr.is_archived = @archived)
          AND (@from IS NULL OR COALESCE(pr.start_date, date(pr.created_at)) >= @from)
          AND (@to IS NULL OR COALESCE(pr.start_date, date(pr.created_at)) <= @to)
          AND (@q IS NULL OR pr.name LIKE @q OR pr.code LIKE @q OR pa.name LIKE @q OR pr.city LIKE @q OR pr.site_address LIKE @q)
@@ -247,11 +252,31 @@ export function listProjects(ctx: Ctx, f: { q?: string; status?: string; custome
       firmId: ctx.firmId,
       status: f.status ?? null,
       cust: f.customerId ?? null,
+      archived,
       from: f.from ?? null,
       to: f.to ?? null,
       q: f.q ? `%${f.q}%` : null
     }) as Array<{ id: number }>
   return rows.map((r) => ({ ...r, financials: hideFinancials(ctx, projectFinancials(ctx.db, r.id)) }))
+}
+
+/** Projects offered in pickers (documents, payments, expenses): active firm, not archived, not cancelled. */
+export function projectOptions(ctx: Ctx): unknown[] {
+  return ctx.db
+    .prepare(
+      `SELECT id, code, name, customer_id, status FROM projects
+       WHERE firm_id = ? AND status <> 'cancelled' AND is_archived = 0 ORDER BY id DESC`
+    )
+    .all(ctx.firmId)
+}
+
+/** The project row if it belongs to the active firm. */
+function projectInFirm(ctx: Ctx, id: number): Record<string, unknown> & { id: number; code: string; name: string; status: string; is_archived: number } {
+  const pr = ctx.db.prepare('SELECT * FROM projects WHERE id = ? AND firm_id = ?').get(id, ctx.firmId) as
+    | (Record<string, unknown> & { id: number; code: string; name: string; status: string; is_archived: number })
+    | undefined
+  if (!pr) throw new AppError('Project not found in the active firm.', 'NOT_FOUND')
+  return pr
 }
 
 export function saveProject(ctx: Ctx, input: ProjectInput): number {
@@ -354,6 +379,7 @@ export function getProject(ctx: Ctx, id: number): Record<string, unknown> {
 /** Every transaction linked to the project, in date order. */
 export function projectLedger(ctx: Ctx, id: number): unknown[] {
   requirePerm(ctx, 'projects.view')
+  projectInFirm(ctx, id)
   const showCost = can(ctx, 'projects.financials')
   const db = ctx.db
   const rows = db
@@ -405,6 +431,7 @@ export function projectLedger(ctx: Ctx, id: number): unknown[] {
 /** Product-wise material usage for a project. */
 export function materialUsage(ctx: Ctx, id: number): unknown[] {
   requirePerm(ctx, 'projects.view')
+  projectInFirm(ctx, id)
   const showCost = can(ctx, 'projects.financials')
   const rows = ctx.db
     .prepare(
@@ -468,10 +495,11 @@ export function createMaterialMove(ctx: Ctx, input: MaterialMoveInput): number {
   const date = requireDate(input.date)
   const direction = input.direction === 'return' ? 'return' : 'issue'
   const project = db.prepare('SELECT * FROM projects WHERE id = ? AND firm_id = ?').get(input.projectId, ctx.firmId) as
-    | { id: number; code: string; customer_id: number | null; status: string }
+    | { id: number; code: string; customer_id: number | null; status: string; is_archived: number }
     | undefined
   if (!project) throw new AppError('Project not found in the active firm.', 'VALIDATION')
   if (project.status === 'cancelled') throw new AppError('Project is cancelled.', 'VALIDATION')
+  if (project.is_archived) throw new AppError('Project is archived. Restore it before issuing or returning materials.', 'VALIDATION')
   assertWarehouseVisible(ctx, input.warehouseId)
   const lines = (input.lines ?? []).filter((l) => l && l.productId && num(l.qty) > 0)
   if (lines.length === 0) throw new AppError('Add at least one product with a quantity.', 'VALIDATION')
@@ -492,6 +520,8 @@ export function createMaterialMove(ctx: Ctx, input: MaterialMoveInput): number {
       if (p.type === 'service') throw new AppError(`"${p.name}" is a service and cannot be issued from stock.`, 'VALIDATION')
       const visible = db.prepare('SELECT 1 FROM products WHERE id = ? AND (firm_id IS NULL OR firm_id = ?)').get(p.id, ctx.firmId)
       if (!visible) throw new AppError(`"${p.name}" is not available in this firm.`, 'VALIDATION')
+      // Archived products cannot be issued; returning already-issued material of an archived product is allowed.
+      if (direction === 'issue' && !p.is_active) throw new AppError(`"${p.name}" is archived. Restore it in Inventory before issuing it.`, 'VALIDATION')
       const qty = round3(num(l.qty))
       const serials = parseSerials(l.serials)
       checkSerialCount(p, qty, serials)
@@ -628,10 +658,111 @@ export function deleteAttachment(ctx: Ctx, dir: string, id: number): void {
   audit(ctx, 'delete', 'attachment', id, 'Removed project attachment')
 }
 
+/* --------------------------- Delete / archive / cancel --------------------------- */
+
+export interface ProjectLinks {
+  documents: number
+  quotations: number
+  invoices: number
+  purchases: number
+  payments: number
+  expenses: number
+  materialMoves: number
+  partyAdjustments: number
+  attachments: number
+  stockMovements: number
+  serials: number
+  total: number
+  summary: string[]
+}
+
+/** Every record that points at a project. A project with any of these is never deleted (only archived / cancelled). */
+export function projectLinks(db: DB, projectId: number): ProjectLinks {
+  const c = (sql: string): number => (db.prepare(sql).get(projectId) as { c: number }).c
+  const documents = c('SELECT COUNT(*) AS c FROM documents WHERE project_id = ?')
+  const quotations = c("SELECT COUNT(*) AS c FROM documents WHERE project_id = ? AND doc_type = 'quotation'")
+  const invoices = c("SELECT COUNT(*) AS c FROM documents WHERE project_id = ? AND doc_type IN ('sale_invoice','sale_return','sale_order','delivery_challan')")
+  const purchases = c("SELECT COUNT(*) AS c FROM documents WHERE project_id = ? AND doc_type IN ('purchase_invoice','purchase_return','purchase_order')")
+  const payments = c('SELECT COUNT(*) AS c FROM payments WHERE project_id = ?')
+  const expenses = c('SELECT COUNT(*) AS c FROM expenses WHERE project_id = ?')
+  const materialMoves = c('SELECT COUNT(*) AS c FROM material_moves WHERE project_id = ?')
+  const partyAdjustments = c('SELECT COUNT(*) AS c FROM party_adjustments WHERE project_id = ?')
+  const attachments = c("SELECT COUNT(*) AS c FROM attachments WHERE entity = 'project' AND entity_id = ?")
+  const stockMovements = c('SELECT COUNT(*) AS c FROM stock_movements WHERE project_id = ?')
+  const serials = c('SELECT COUNT(*) AS c FROM serials WHERE project_id = ?')
+  const n = (v: number, one: string, many = `${one}s`): string => `${v} ${v === 1 ? one : many}`
+  const summary: string[] = []
+  if (quotations) summary.push(n(quotations, 'quotation'))
+  if (invoices) summary.push(n(invoices, 'sales document') + ' (invoices, returns, orders or challans)')
+  if (purchases) summary.push(n(purchases, 'purchase document'))
+  if (payments) summary.push(n(payments, 'payment / receipt', 'payments / receipts'))
+  if (expenses) summary.push(n(expenses, 'expense'))
+  if (materialMoves) summary.push(n(materialMoves, 'material issue / return', 'material issues / returns'))
+  if (partyAdjustments) summary.push(n(partyAdjustments, 'balance adjustment'))
+  if (attachments) summary.push(n(attachments, 'attached file'))
+  if (!materialMoves && !documents && stockMovements) summary.push(n(stockMovements, 'stock movement'))
+  if (!materialMoves && !documents && serials) summary.push(n(serials, 'serial number record'))
+  const total = documents + payments + expenses + materialMoves + partyAdjustments + attachments + stockMovements + serials
+  return { documents, quotations, invoices, purchases, payments, expenses, materialMoves, partyAdjustments, attachments, stockMovements, serials, total, summary }
+}
+
+export function getProjectLinks(ctx: Ctx, id: number): ProjectLinks & { id: number; code: string; name: string; status: string; is_archived: number } {
+  requirePerm(ctx, 'projects.view')
+  const pr = projectInFirm(ctx, id)
+  return { id: pr.id, code: pr.code, name: pr.name, status: pr.status, is_archived: pr.is_archived, ...projectLinks(ctx.db, id) }
+}
+
+/**
+ * Permanently delete a project — only when nothing is linked to it. Projects with documents, payments,
+ * expenses, material moves, adjustments or files are refused (archive or cancel them instead); financial
+ * records are never cascade-deleted.
+ */
+export function deleteProject(ctx: Ctx, id: number): { deleted: true } {
+  requirePerm(ctx, 'projects.delete')
+  const db = ctx.db
+  return db.transaction(() => {
+    const pr = projectInFirm(ctx, id)
+    const links = projectLinks(db, id)
+    if (links.total > 0) {
+      throw new AppError(
+        `Project ${pr.code} cannot be deleted because it has ${links.summary.join(', ')}. Archive it to hide it from lists and pickers (all records stay intact)${pr.status !== 'cancelled' && pr.status !== 'completed' ? ', or mark it as cancelled' : ''}.`,
+        'HAS_RECORDS'
+      )
+    }
+    // A quotation may point back at the project only through projects.quotation_id (the project row itself).
+    db.prepare('DELETE FROM projects WHERE id = ?').run(id)
+    audit(ctx, 'delete', 'project', id, `Deleted project ${pr.code} ${pr.name} permanently (no linked records)`, { project: pr })
+    return { deleted: true as const }
+  })()
+}
+
+/** Archive (hide from lists and pickers, keep everything) or restore a project. */
+export function setProjectArchived(ctx: Ctx, id: number, archived: boolean): { archived: boolean } {
+  requirePerm(ctx, 'projects.delete')
+  const pr = projectInFirm(ctx, id)
+  if (!!pr.is_archived === archived) return { archived }
+  ctx.db
+    .prepare("UPDATE projects SET is_archived = ?, archived_at = CASE WHEN ? = 1 THEN datetime('now','localtime') ELSE NULL END, updated_at = datetime('now','localtime') WHERE id = ?")
+    .run(archived ? 1 : 0, archived ? 1 : 0, id)
+  audit(ctx, archived ? 'archive' : 'restore', 'project', id, `${archived ? 'Archived' : 'Restored'} project ${pr.code} ${pr.name}`)
+  return { archived }
+}
+
+/** Mark a project as cancelled (keeps all its records; no new material issues can be posted). */
+export function cancelProject(ctx: Ctx, id: number, reason?: string): void {
+  requirePerm(ctx, 'projects.manage')
+  const pr = projectInFirm(ctx, id)
+  if (pr.status === 'cancelled') throw new AppError('Project is already cancelled.', 'VALIDATION')
+  if (pr.status === 'completed') throw new AppError('A completed project cannot be cancelled. Archive it instead.', 'VALIDATION')
+  ctx.db.prepare("UPDATE projects SET status = 'cancelled', updated_at = datetime('now','localtime') WHERE id = ?").run(id)
+  audit(ctx, 'cancel', 'project', id, `Cancelled project ${pr.code} ${pr.name}`, { reason: optText(reason, 300), previousStatus: pr.status })
+}
+
 /** Profitability comparison across projects. */
-export function projectProfitReport(ctx: Ctx, f: { status?: string; from?: string; to?: string } = {}): unknown {
+export function projectProfitReport(ctx: Ctx, f: { status?: string; from?: string; to?: string; archived?: 'hide' | 'only' | 'all' } = {}): unknown {
   requirePerm(ctx, 'projects.financials')
-  const rows = listProjects(ctx, f) as Array<{ financials: ProjectFinancials; capacity_kw: number }>
+  // Archiving only hides a project from day-to-day lists: profit reports keep including it unless asked otherwise.
+  const rows = listProjects(ctx, { ...f, archived: f.archived ?? 'all' }) as Array<{ financials: ProjectFinancials; capacity_kw: number }>
   const totals = rows.reduce(
     (a, r) => {
       a.contract += r.financials.contractValue

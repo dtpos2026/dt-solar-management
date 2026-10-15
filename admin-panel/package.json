@@ -13,18 +13,24 @@
   "dependencies": {
     "@noble/ed25519": "2.3.0",
     "firebase": "11.10.0",
+    "leaflet": "1.9.4",
     "lucide-react": "0.544.0",
+    "qrcode": "1.5.4",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-router-dom": "6.30.6"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "4.0.1",
     "@tailwindcss/vite": "4.3.3",
+    "@types/leaflet": "1.9.22",
+    "@types/qrcode": "1.5.6",
     "@types/react": "19.1.8",
     "@types/react-dom": "19.1.6",
     "@vitejs/plugin-react": "5.2.0",
     "tailwindcss": "4.3.3",
     "typescript": "5.9.3",
-    "vite": "7.3.7"
+    "vite": "7.3.7",
+    "vitest": "3.2.7"
   }
 }

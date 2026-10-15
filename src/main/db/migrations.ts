@@ -533,6 +533,122 @@ CREATE TABLE tax_rates (
   is_active INTEGER NOT NULL DEFAULT 1
 );
 `
+  },
+  {
+    version: 2,
+    name: 'v1.1 business features: item details, PIN login, archive, day/month closing, templates, support queue, WhatsApp log, imports',
+    sql: /* sql */ `
+-- Item description printed under the item name (the existing "description" column holds the item name/line title).
+ALTER TABLE document_lines ADD COLUMN details TEXT;
+
+-- Optional PIN login (scrypt hash, never stored in plain text).
+ALTER TABLE users ADD COLUMN pin_hash TEXT;
+ALTER TABLE users ADD COLUMN pin_failed_attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN pin_locked_until TEXT;
+
+-- Archive instead of destructive delete for records with history.
+ALTER TABLE projects ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE projects ADD COLUMN archived_at TEXT;
+ALTER TABLE products ADD COLUMN archived_at TEXT;
+
+-- Day / month closing. One row per firm + kind + period; re-closing a reopened period updates the same row.
+CREATE TABLE day_closings (
+  id INTEGER PRIMARY KEY,
+  firm_id INTEGER NOT NULL REFERENCES firms(id),
+  kind TEXT NOT NULL CHECK (kind IN ('day','month')),
+  period_start TEXT NOT NULL,
+  period_end TEXT NOT NULL,
+  opening_cash REAL NOT NULL DEFAULT 0,
+  cash_in REAL NOT NULL DEFAULT 0,
+  cash_out REAL NOT NULL DEFAULT 0,
+  closing_cash REAL NOT NULL DEFAULT 0,
+  counted_cash REAL,
+  difference REAL NOT NULL DEFAULT 0,
+  sales_total REAL NOT NULL DEFAULT 0,
+  purchases_total REAL NOT NULL DEFAULT 0,
+  expenses_total REAL NOT NULL DEFAULT 0,
+  receipts_total REAL NOT NULL DEFAULT 0,
+  payments_total REAL NOT NULL DEFAULT 0,
+  summary TEXT NOT NULL DEFAULT '{}',
+  notes TEXT,
+  backup_file TEXT,
+  status TEXT NOT NULL DEFAULT 'closed' CHECK (status IN ('closed','reopened')),
+  closed_by INTEGER REFERENCES users(id),
+  closed_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  reopened_by INTEGER REFERENCES users(id),
+  reopened_at TEXT,
+  reopen_reason TEXT,
+  UNIQUE (firm_id, kind, period_start)
+);
+CREATE INDEX idx_closings_period ON day_closings(firm_id, kind, period_start);
+
+-- Saved invoice / quotation print templates (layout + visible fields).
+CREATE TABLE doc_templates (
+  id INTEGER PRIMARY KEY,
+  firm_id INTEGER REFERENCES firms(id),
+  name TEXT NOT NULL,
+  applies_to TEXT NOT NULL DEFAULT 'all',
+  layout TEXT NOT NULL DEFAULT 'classic',
+  options TEXT NOT NULL DEFAULT '{}',
+  is_default INTEGER NOT NULL DEFAULT 0,
+  created_by INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  updated_at TEXT
+);
+
+-- Support messages to / from Digital Target. Outgoing messages are queued offline and synced later.
+CREATE TABLE support_messages (
+  id INTEGER PRIMARY KEY,
+  uid TEXT NOT NULL UNIQUE,
+  direction TEXT NOT NULL CHECK (direction IN ('out','in')),
+  body TEXT NOT NULL,
+  author TEXT,
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','sending','sent','failed','received')),
+  error TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  created_by INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  sent_at TEXT,
+  remote_at TEXT,
+  read_at TEXT
+);
+
+-- WhatsApp send log (status + duplicate-send guard).
+CREATE TABLE whatsapp_log (
+  id INTEGER PRIMARY KEY,
+  firm_id INTEGER REFERENCES firms(id),
+  party_id INTEGER REFERENCES parties(id),
+  phone TEXT NOT NULL,
+  entity TEXT,
+  entity_id INTEGER,
+  file_name TEXT,
+  method TEXT NOT NULL CHECK (method IN ('chat_link','cloud_api')),
+  status TEXT NOT NULL,
+  message_id TEXT,
+  error TEXT,
+  dedupe_key TEXT,
+  created_by INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX idx_wa_dedupe ON whatsapp_log(dedupe_key, created_at);
+
+-- Data import runs (CSV / external backup conversion) with reconciliation results.
+CREATE TABLE import_runs (
+  id INTEGER PRIMARY KEY,
+  firm_id INTEGER REFERENCES firms(id),
+  source TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  file_name TEXT,
+  mapping TEXT,
+  total_rows INTEGER NOT NULL DEFAULT 0,
+  imported INTEGER NOT NULL DEFAULT 0,
+  skipped INTEGER NOT NULL DEFAULT 0,
+  errors TEXT,
+  reconciliation TEXT,
+  created_by INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+`
   }
 ]
 

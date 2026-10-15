@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import { DEFAULT_ROLES } from '../../shared/permissions'
+import { DEFAULT_ROLES, PERMISSION_CATALOGUE_VERSION, PERMISSION_UPGRADES } from '../../shared/permissions'
 import { MIGRATIONS, LATEST_SCHEMA_VERSION } from './migrations'
 
 export type DB = Database.Database
@@ -81,6 +81,21 @@ export const DEFAULT_SETTINGS: Record<string, unknown> = {
   backup_keep: 15,
   last_auto_backup: '',
   show_vendor_branding: true,
+  // v1.1
+  login_show_users: true,
+  print_direct: false,
+  printer_default: '',
+  printer_invoice: '',
+  printer_quotation: '',
+  printer_report: '',
+  printer_receipt: '',
+  paper_size: 'A4',
+  location_sharing: 'off',
+  location_manual: '',
+  whatsapp_mode: 'chat_link',
+  whatsapp_country_code: '92',
+  whatsapp_cloud_phone_id: '',
+  backup_on_day_close: true,
   default_invoice_terms:
     'Goods once sold will not be taken back without prior approval.\nWarranty is subject to manufacturer terms and conditions.\nPayment is due as per agreed terms.',
   default_quotation_terms:
@@ -128,6 +143,8 @@ export function seedDefaults(db: DB): void {
       for (const r of DEFAULT_ROLES) ins.run(r.name, r.description, JSON.stringify(r.permissions))
     }
 
+    upgradeRolePermissions(db)
+
     const catCount = (db.prepare('SELECT COUNT(*) AS c FROM categories').get() as { c: number }).c
     if (catCount === 0) {
       const ins = db.prepare('INSERT INTO categories (name, kind, firm_id) VALUES (?, ?, NULL)')
@@ -146,6 +163,35 @@ export function seedDefaults(db: DB): void {
     }
   })
   tx()
+}
+
+/**
+ * Adds permissions introduced in later versions to the built-in roles that ship with them (once per catalogue
+ * version). Custom roles are never changed; the owner always has every permission anyway.
+ */
+function upgradeRolePermissions(db: DB): void {
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'permissions_version'").get() as { value: string } | undefined
+  const current = row ? Number(JSON.parse(row.value)) || 1 : 1
+  if (current >= PERMISSION_CATALOGUE_VERSION) return
+  const roles = db.prepare('SELECT id, name, permissions FROM roles WHERE is_system = 1').all() as Array<{ id: number; name: string; permissions: string }>
+  const upd = db.prepare('UPDATE roles SET permissions = ? WHERE id = ?')
+  for (const r of roles) {
+    const def = DEFAULT_ROLES.find((d) => d.name === r.name)
+    if (!def) continue
+    let perms: string[] = []
+    try {
+      perms = JSON.parse(r.permissions) as string[]
+    } catch {
+      perms = []
+    }
+    const add = PERMISSION_UPGRADES.filter((u) => u.version > current)
+      .flatMap((u) => u.perms)
+      .filter((p) => def.permissions.includes(p) && !perms.includes(p))
+    if (add.length) upd.run(JSON.stringify([...perms, ...add]), r.id)
+  }
+  db.prepare("INSERT INTO settings (key, value) VALUES ('permissions_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(
+    JSON.stringify(PERMISSION_CATALOGUE_VERSION)
+  )
 }
 
 /** Quick integrity validation used by backup/restore. */

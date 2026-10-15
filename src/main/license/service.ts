@@ -30,6 +30,8 @@ interface State {
   lastCheckAt: string | null
   lastCheckError: string | null
   pendingRequest: { id: string; licenseKey: string; createdAt: string } | null
+  /** Latest "Powered by Digital Target" flag published by the Super Admin (overrides the certificate). */
+  remotePoweredBy?: boolean | null
 }
 
 function readMachineId(): string {
@@ -120,7 +122,8 @@ export class LicenseService {
       remoteStatus: s.remoteStatus ?? null,
       lastCheckAt: s.lastCheckAt ?? null,
       lastCheckError: s.lastCheckError ?? null,
-      pendingRequest: s.pendingRequest ?? null
+      pendingRequest: s.pendingRequest ?? null,
+      remotePoweredBy: typeof s.remotePoweredBy === 'boolean' ? s.remotePoweredBy : null
     }
   }
 
@@ -193,7 +196,9 @@ export class LicenseService {
       onlineConfigured: this.onlineConfigured,
       signingConfigured: this.signingConfigured,
       maxFirms: payload ? payload.maxFirms : TRIAL_LIMITS.maxFirms,
-      maxUsers: payload ? payload.maxUsers : TRIAL_LIMITS.maxUsers
+      maxUsers: payload ? payload.maxUsers : TRIAL_LIMITS.maxUsers,
+      poweredBy: s.remotePoweredBy ?? payload?.poweredBy ?? true,
+      detached: !!payload?.detached
     }
     const changed = !this.cached || this.cached.mode !== st.mode || this.cached.message !== st.message
     this.cached = st

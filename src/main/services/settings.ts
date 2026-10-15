@@ -23,7 +23,41 @@ const VALIDATORS: Record<string, (v: unknown) => unknown> = {
   backup_keep: (v) => Math.min(200, Math.max(1, Math.floor(num(v, 15)))),
   show_vendor_branding: (v) => !!v,
   default_invoice_terms: (v) => String(v ?? '').slice(0, 5000),
-  default_quotation_terms: (v) => String(v ?? '').slice(0, 5000)
+  default_quotation_terms: (v) => String(v ?? '').slice(0, 5000),
+  // v1.1
+  login_show_users: (v) => !!v,
+  print_direct: (v) => !!v,
+  printer_default: (v) => String(v ?? '').slice(0, 300),
+  printer_invoice: (v) => String(v ?? '').slice(0, 300),
+  printer_quotation: (v) => String(v ?? '').slice(0, 300),
+  printer_report: (v) => String(v ?? '').slice(0, 300),
+  printer_receipt: (v) => String(v ?? '').slice(0, 300),
+  paper_size: (v) => (['A4', 'A5', 'Letter', 'Legal', 'thermal80', 'thermal58'].includes(String(v)) ? String(v) : 'A4'),
+  location_sharing: (v) => (['off', 'approximate', 'manual'].includes(String(v)) ? String(v) : 'off'),
+  location_manual: (v) => String(v ?? '').slice(0, 200),
+  whatsapp_mode: (v) => (['chat_link', 'cloud_api'].includes(String(v)) ? String(v) : 'chat_link'),
+  whatsapp_country_code: (v) => String(v ?? '92').replace(/\D/g, '').slice(0, 4) || '92',
+  whatsapp_cloud_phone_id: (v) => String(v ?? '').replace(/\D/g, '').slice(0, 30),
+  backup_on_day_close: (v) => !!v
+}
+
+/** Which permission is needed to change a setting (default: settings.manage). */
+const SETTING_PERMS: Record<string, string> = {
+  multi_firm_enabled: 'firms.manage',
+  max_firms: 'firms.manage',
+  share_inventory: 'firms.manage',
+  share_parties: 'firms.manage',
+  backup_auto: 'backup.manage',
+  backup_dir: 'backup.manage',
+  backup_keep: 'backup.manage',
+  backup_on_day_close: 'backup.manage',
+  print_direct: 'printers.manage',
+  printer_default: 'printers.manage',
+  printer_invoice: 'printers.manage',
+  printer_quotation: 'printers.manage',
+  printer_report: 'printers.manage',
+  printer_receipt: 'printers.manage',
+  paper_size: 'printers.manage'
 }
 
 export function getAllSettings(db: DB): Record<string, unknown> {
@@ -41,13 +75,9 @@ export function getAllSettings(db: DB): Record<string, unknown> {
 
 export function updateSettings(ctx: Ctx, patch: Record<string, unknown>): Record<string, unknown> {
   const keys = Object.keys(patch ?? {})
-  const firmKeys = ['multi_firm_enabled', 'max_firms', 'share_inventory', 'share_parties']
-  const backupKeys = ['backup_auto', 'backup_dir', 'backup_keep']
   for (const k of keys) {
     if (!(k in VALIDATORS)) throw new AppError(`Unknown setting: ${k}`, 'VALIDATION')
-    if (firmKeys.includes(k)) requirePerm(ctx, 'firms.manage')
-    else if (backupKeys.includes(k)) requirePerm(ctx, 'backup.manage')
-    else requirePerm(ctx, 'settings.manage')
+    requirePerm(ctx, SETTING_PERMS[k] ?? 'settings.manage')
   }
   const before: Record<string, unknown> = {}
   ctx.db.transaction(() => {

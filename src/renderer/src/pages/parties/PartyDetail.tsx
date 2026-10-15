@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, HandCoins, Pencil, Phone, Plus, Printer, MapPin, Mail, Scale, Trash2 } from 'lucide-react'
 import { api } from '../../api'
+import { WhatsAppButton } from '../../components/WhatsAppButton'
 import { useCan } from '../../store'
 import { Badge, Button, Card, Field, IconButton, Input, Kv, Loading, Modal, NumberInput, PeriodPicker, Select, StatCard, Tabs, confirmDialog, toast } from '../../components/ui'
 import { DataTable } from '../../components/DataTable'
@@ -44,6 +45,7 @@ export function PartyDetail(): JSX.Element {
           </div>
         </div>
         <Button icon={<Printer className="h-4 w-4" />} onClick={() => api('print.open', { kind: 'statement', id: p.id, params: { from: range[0], to: range[1] } })}>Print statement</Button>
+        <WhatsAppButton entity="statement" id={p.id} partyId={p.id} phone={p.phone} params={{ from: range[0], to: range[1] }} />
         {can('accounts.manage') && <Button icon={<Scale className="h-4 w-4" />} onClick={() => setAdj(true)}>Adjustment</Button>}
         {can('accounts.manage') && (
           <Button variant="success" icon={<HandCoins className="h-4 w-4" />} onClick={() => setPay(isCust ? 'in' : 'out')}>

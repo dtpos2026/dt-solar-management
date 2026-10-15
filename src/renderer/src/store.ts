@@ -45,6 +45,8 @@ export interface LicenseStatus {
   signingConfigured: boolean
   maxFirms: number
   maxUsers: number
+  poweredBy?: boolean
+  detached?: boolean
 }
 
 interface State {

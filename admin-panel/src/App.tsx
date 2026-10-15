@@ -1,16 +1,24 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { HashRouter, NavLink, Navigate, Route, Routes } from 'react-router-dom'
-import { BadgeCheck, FileKey2, Inbox, KeyRound, LayoutDashboard, LogOut, ScrollText, ShieldCheck, Loader2 } from 'lucide-react'
-import { AuthProvider, useAuth } from './lib/auth'
+import { Activity, BadgeCheck, Building2, CreditCard, KeyRound, LayoutDashboard, LifeBuoy, LogOut, Map, MonitorSmartphone, Settings as SettingsIcon, ShieldCheck, Users, Loader2 } from 'lucide-react'
+import { AuthProvider, useAuth, useCan } from './lib/auth'
 import { SigningKeyProvider, useSigningKey } from './lib/signingKey'
 import { cx } from './components/ui'
 import { Dashboard } from './pages/Dashboard'
-import { Requests } from './pages/Requests'
+import { Clients } from './pages/Clients'
 import { Licenses } from './pages/Licenses'
 import { LicenseDetail } from './pages/LicenseDetail'
+import { Devices } from './pages/Devices'
+import { DeviceMap } from './pages/DeviceMap'
+import { Billing } from './pages/Billing'
+import { Support } from './pages/Support'
+import { VerifyKey } from './pages/VerifyKey'
+import { ActivityLog } from './pages/ActivityLog'
+import { Admins } from './pages/Admins'
+import { Settings } from './pages/Settings'
+import { Requests } from './pages/Requests'
 import { Offline } from './pages/Offline'
 import { SigningKeyPage } from './pages/SigningKey'
-import { Audit } from './pages/Audit'
 
 function Login() {
   const { state, notice, signIn, signOut, resetPassword, initialiseSuperAdmin } = useAuth()
@@ -31,13 +39,13 @@ function Login() {
     }
   }
   return (
-    <div className="flex min-h-full items-center justify-center bg-gradient-to-br from-[#3d096d] via-[#2a1b8f] to-[#0d60a6] p-6">
+    <div className="flex min-h-full items-center justify-center bg-gradient-to-br from-[#2b0750] via-[#4c1d95] to-[#7c3aed] p-6">
       <div className="card w-full max-w-md p-7">
         <div className="mb-5 flex items-center gap-3">
           <img src="/icon.png" className="h-12 w-12 rounded-xl" alt="" />
           <div>
-            <div className="text-[19px] font-extrabold">DT Solar Pro — License Control</div>
-            <div className="text-[12.5px] text-[#7a6d92]">Super Admin Panel · Digital Target</div>
+            <div className="text-[19px] font-extrabold">DT Solar Pro — Super Admin</div>
+            <div className="text-[12.5px] text-[#7a6d92]">Licensing, billing & support · Digital Target</div>
           </div>
         </div>
         {state.phase === 'bootstrap' ? (
@@ -64,29 +72,48 @@ function Login() {
   )
 }
 
-const NAV = [
-  { to: '/', label: 'Dashboard', icon: <LayoutDashboard /> },
-  { to: '/requests', label: 'Activation requests', icon: <Inbox /> },
-  { to: '/licenses', label: 'Licenses', icon: <BadgeCheck /> },
-  { to: '/offline', label: 'Offline activation', icon: <FileKey2 /> },
-  { to: '/key', label: 'Signing key', icon: <KeyRound /> },
-  { to: '/audit', label: 'Audit log', icon: <ScrollText /> }
+/** Sidebar (information architecture per the reference design). `perms`: any of them shows the item; empty = all admins. */
+const NAV: { to: string; label: string; icon: ReactNode; perms: string[] }[] = [
+  { to: '/', label: 'Dashboard', icon: <LayoutDashboard />, perms: [] },
+  { to: '/clients', label: 'Clients', icon: <Building2 />, perms: ['clients.view'] },
+  { to: '/licenses', label: 'Licenses', icon: <BadgeCheck />, perms: ['licenses.view', 'licenses.generate', 'licenses.manage'] },
+  { to: '/devices', label: 'Devices', icon: <MonitorSmartphone />, perms: ['devices.view', 'devices.manage'] },
+  { to: '/map', label: 'Device Map', icon: <Map />, perms: ['devices.view', 'devices.manage'] },
+  { to: '/billing', label: 'Billing', icon: <CreditCard />, perms: ['billing.view', 'billing.create', 'billing.payments'] },
+  { to: '/support', label: 'Support', icon: <LifeBuoy />, perms: ['support.manage'] },
+  { to: '/verify', label: 'Verify Key', icon: <KeyRound />, perms: ['verify.use', 'licenses.view'] },
+  { to: '/activity', label: 'Activity Log', icon: <Activity />, perms: ['audit.view'] },
+  { to: '/admins', label: 'Admins', icon: <Users />, perms: ['admins.manage'] },
+  { to: '/settings', label: 'Settings', icon: <SettingsIcon />, perms: [] }
 ]
 
 function Shell() {
   const { state, signOut } = useAuth()
   const { key } = useSigningKey()
+  const can = useCan()
+  const items = NAV.filter((n) => n.perms.length === 0 || n.perms.some(can))
   return (
     <div className="flex h-full">
-      <aside className="flex w-60 shrink-0 flex-col bg-[#2b0750] text-[#dacdf2]">
+      <aside className="flex w-60 shrink-0 flex-col bg-gradient-to-b from-[#1e0538] to-[#2b0750] text-[#dacdf2]">
         <div className="flex items-center gap-3 px-5 py-5">
           <img src="/icon.png" className="h-10 w-10 rounded-xl" alt="" />
-          <div className="leading-tight"><div className="font-extrabold text-white">License Control</div><div className="text-[11px] opacity-70">DT Solar Pro</div></div>
+          <div className="leading-tight"><div className="font-extrabold text-white">Super Admin</div><div className="text-[11px] opacity-70">DT Solar Pro · Digital Target</div></div>
         </div>
-        <nav className="flex-1 space-y-0.5 px-3">
-          {NAV.map((n) => (
-            <NavLink key={n.to} to={n.to} end={n.to === '/'} className={({ isActive }) => cx('flex h-9 items-center gap-3 rounded-lg px-3 text-[13.5px] font-medium [&>svg]:h-[18px] [&>svg]:w-[18px]', isActive ? 'bg-[#7c3aed] text-white' : 'hover:bg-white/10 hover:text-white')}>
-              {n.icon}{n.label}
+        <nav className="flex-1 space-y-0.5 overflow-y-auto px-3">
+          {items.map((n) => (
+            <NavLink
+              key={n.to}
+              to={n.to}
+              end={n.to === '/'}
+              className={({ isActive }) =>
+                cx(
+                  'flex h-9 items-center gap-3 rounded-lg px-3 text-[13.5px] font-medium [&>svg]:h-[18px] [&>svg]:w-[18px]',
+                  isActive ? 'bg-gradient-to-r from-[#7c3aed] to-[#c026d3] text-white shadow-md shadow-purple-900/40' : 'hover:bg-white/10 hover:text-white'
+                )
+              }
+            >
+              {n.icon}
+              {n.label}
             </NavLink>
           ))}
         </nav>
@@ -100,12 +127,25 @@ function Shell() {
       <main className="flex-1 overflow-y-auto p-7">
         <Routes>
           <Route path="/" element={<Dashboard />} />
-          <Route path="/requests" element={<Requests />} />
+          <Route path="/clients" element={<Clients />} />
+          <Route path="/clients/:id" element={<Clients />} />
           <Route path="/licenses" element={<Licenses />} />
           <Route path="/licenses/:id" element={<LicenseDetail />} />
+          <Route path="/devices" element={<Devices />} />
+          <Route path="/map" element={<DeviceMap />} />
+          <Route path="/billing" element={<Billing />} />
+          <Route path="/billing/:id" element={<Billing />} />
+          <Route path="/support" element={<Support />} />
+          <Route path="/support/:id" element={<Support />} />
+          <Route path="/verify" element={<VerifyKey />} />
+          <Route path="/activity" element={<ActivityLog />} />
+          <Route path="/admins" element={<Admins />} />
+          <Route path="/settings" element={<Settings />} />
+          {/* Reached from the Licenses / Devices / Settings pages */}
+          <Route path="/requests" element={<Requests />} />
           <Route path="/offline" element={<Offline />} />
           <Route path="/key" element={<SigningKeyPage />} />
-          <Route path="/audit" element={<Audit />} />
+          <Route path="/audit" element={<Navigate to="/activity" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

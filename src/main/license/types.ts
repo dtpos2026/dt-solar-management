@@ -24,6 +24,19 @@ export interface LicensePayload {
    * period starts. Lets suspension/revocation reach disconnected computers eventually without a signing server.
    */
   checkinDays?: number
+  /** v1.1 (optional, older certificates omit them) */
+  /** Billing cycle of the plan: monthly | yearly | lifetime. */
+  planType?: string
+  /** Super Admin client record this license belongs to. */
+  clientId?: string
+  maxDevices?: number
+  /** Show "Powered by Digital Target" on customer documents (default true). */
+  poweredBy?: boolean
+  /**
+   * Lifetime license detached from central management: no online check-ins are required or performed, so the
+   * installation can no longer be suspended remotely. Can only be set on lifetime (expiresAt null) licenses.
+   */
+  detached?: boolean
 }
 
 export interface LicenseCertificate {
@@ -62,6 +75,9 @@ export interface LicenseStatus {
   signingConfigured: boolean
   maxFirms: number
   maxUsers: number
+  /** v1.1 */
+  poweredBy: boolean
+  detached: boolean
 }
 
 export const TRIAL_DAYS = 15

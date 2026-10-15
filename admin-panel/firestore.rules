@@ -1,39 +1,110 @@
 rules_version = '2';
-// DT Solar Pro licensing — Firebase Spark plan (Firestore + Auth only).
+// DT Solar Pro — Super Admin portal + desktop licensing on the Firebase Spark plan (Firestore + Auth only).
+// The data model is documented in DATA_MODEL.md. Every "server side" check lives here.
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    /* ------------------------------------------------ helpers ------------------------------------------------ */
+
+    function signedIn() { return request.auth != null; }
+    function adminPath() { return /databases/$(database)/documents/admins/$(request.auth.uid); }
+    function adminData() { return get(adminPath()).data; }
     function isAdmin() {
-      return request.auth != null &&
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+      return signedIn() && exists(adminPath()) && adminData().get('active', true) == true;
     }
+    function isOwnerRole(role) { return role in ['owner', 'superadmin']; }
+    function isOwner() { return isAdmin() && isOwnerRole(adminData().get('role', '')); }
+    function can(p) {
+      return isAdmin() && (isOwnerRole(adminData().get('role', '')) || p in adminData().get('permissions', []));
+    }
+    function canAny(ps) {
+      return isAdmin() && (isOwnerRole(adminData().get('role', '')) || adminData().get('permissions', []).hasAny(ps));
+    }
+    function str(v, max) { return v is string && v.size() <= max; }
+    function optStr(d, k, max) { return !(k in d) || str(d[k], max); }
+    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+    // Secret ids: long random strings (never listed).
+    function secretId(id, min) { return id.size() >= min && id.size() <= 64 && id.matches('^[A-Za-z0-9_-]+$'); }
 
-    // Super admins. Bootstrap: the owner email may create its own admin record once.
+    /* ------------------------------------------------ admins ------------------------------------------------ */
+
     match /admins/{uid} {
-      allow get: if request.auth != null && (request.auth.uid == uid || isAdmin());
-      allow list, update, delete: if isAdmin();
-      allow create: if isAdmin() || (request.auth != null && request.auth.uid == uid &&
-        request.auth.token.email == 'digitaltarget.digital@gmail.com');
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if can('admins.manage');
+      // Bootstrap: the owner e-mail creates its own owner record once. Otherwise owners create anyone, and admins
+      // holding admins.manage create non-owner admins that cannot manage admins themselves.
+      allow create: if
+        (signedIn() && request.auth.uid == uid && request.auth.token.email == 'digitaltarget.digital@gmail.com'
+          && isOwnerRole(request.resource.data.role))
+        || isOwner()
+        || (can('admins.manage') && !isOwnerRole(request.resource.data.get('role', ''))
+            && !('admins.manage' in request.resource.data.get('permissions', [])));
+      // Nobody changes their own role / permissions / active flag. Only owners touch owner records or grant admins.manage.
+      allow update: if isAdmin() && (
+        (request.auth.uid == uid && changed().hasOnly(['name', 'updatedAt']))
+        || (request.auth.uid != uid && isOwner())
+        || (request.auth.uid != uid && can('admins.manage')
+            && !isOwnerRole(resource.data.get('role', '')) && !isOwnerRole(request.resource.data.get('role', ''))
+            && !('admins.manage' in request.resource.data.get('permissions', []))
+            && !('admins.manage' in resource.data.get('permissions', [])))
+      );
+      allow delete: if isOwner() && request.auth.uid != uid;
     }
 
-    // Full license records (customer info, limits, devices, history): admins only.
+    /* ----------------------------------------------- clients ----------------------------------------------- */
+
+    match /clients/{clientId} {
+      allow read: if can('clients.view');
+      allow create, update: if can('clients.manage')
+        && str(request.resource.data.get('company', ''), 200)
+        && request.resource.data.get('status', 'active') in ['active', 'suspended', 'archived']
+        && (!('logo' in request.resource.data) || request.resource.data.logo == null || str(request.resource.data.logo, 300000));
+      allow delete: if isOwner();
+    }
+
+    /* ----------------------------------------------- licenses ----------------------------------------------- */
+
     match /licenses/{licenseId} {
-      allow read, write: if isAdmin();
-      match /{sub=**} { allow read, write: if isAdmin(); }
+      allow read: if canAny(['licenses.view', 'licenses.manage', 'licenses.generate', 'devices.view', 'devices.manage', 'verify.use', 'billing.create', 'clients.view']);
+      allow create: if canAny(['licenses.generate', 'licenses.manage'])
+        && request.resource.data.licenseKey is string
+        && request.resource.data.licenseKey.matches('^DTSP(-[A-Z0-9]{4}){4}$')
+        && request.resource.data.status in ['active', 'suspended', 'revoked'];
+      // Status / terms changes need licenses.manage; device approvals only touch the device counter.
+      allow update: if (can('licenses.manage') && request.resource.data.status in ['active', 'suspended', 'revoked']
+                        && request.resource.data.licenseKey == resource.data.licenseKey)
+        || (canAny(['devices.manage', 'licenses.generate'])
+            && changed().hasOnly(['activeDevices', 'updatedAt', 'lastVerifiedAt', 'activatedAt', 'clientId']));
+      allow delete: if isOwner();
+
+      match /devices/{deviceId} {
+        allow read: if canAny(['licenses.view', 'licenses.manage', 'devices.view', 'devices.manage']);
+        allow write: if canAny(['licenses.manage', 'devices.manage']);
+      }
+      match /history/{entryId} {
+        allow read: if canAny(['licenses.view', 'licenses.manage', 'devices.view', 'devices.manage']);
+        allow create: if canAny(['licenses.manage', 'licenses.generate', 'devices.manage']);
+        allow update, delete: if false;
+      }
     }
 
     // Public status of one license, read by the desktop app by id (cannot be listed).
     match /licenseStatus/{licenseId} {
       allow get: if true;
-      allow list, write: if isAdmin();
+      allow list: if canAny(['licenses.view', 'licenses.manage', 'devices.view']);
+      allow write: if canAny(['licenses.manage', 'licenses.generate', 'devices.manage']);
     }
 
-    // Desktop app creates an activation/deactivation request and reads it back by its random id.
+    /* ------------------------------------------ desktop → cloud ------------------------------------------ */
+
+    // Activation / deactivation requests created by the desktop app; read back by their random id.
     match /activationRequests/{requestId} {
       allow get: if true;
-      allow list, update, delete: if isAdmin();
-      allow create: if request.resource.data.status == 'pending'
-        && request.resource.data.keys().hasOnly(['type','licenseKey','licenseId','deviceId',
-             'deviceName','appVersion','os','status','createdAt'])
+      allow list, update, delete: if canAny(['devices.manage', 'licenses.manage']);
+      allow create: if secretId(requestId, 20)
+        && request.resource.data.status == 'pending'
+        && request.resource.data.keys().hasOnly(['type', 'licenseKey', 'licenseId', 'deviceId', 'deviceName', 'appVersion',
+             'os', 'status', 'createdAt', 'companyName', 'ownerName', 'phone', 'address', 'installToken'])
         && request.resource.data.type in ['activate', 'deactivate']
         && request.resource.data.deviceId is string
         && request.resource.data.deviceId.size() >= 10
@@ -41,10 +112,163 @@ service cloud.firestore {
         && (request.resource.data.type != 'activate' ||
             (request.resource.data.licenseKey is string &&
              request.resource.data.licenseKey.matches('^DTSP(-[A-Z0-9]{4}){4}$')))
-        && (!('deviceName' in request.resource.data) || request.resource.data.deviceName.size() <= 200)
-        && (!('os' in request.resource.data) || request.resource.data.os.size() <= 200);
+        && optStr(request.resource.data, 'licenseId', 64)
+        && optStr(request.resource.data, 'deviceName', 200)
+        && optStr(request.resource.data, 'appVersion', 40)
+        && optStr(request.resource.data, 'os', 200)
+        && optStr(request.resource.data, 'companyName', 200)
+        && optStr(request.resource.data, 'ownerName', 200)
+        && optStr(request.resource.data, 'phone', 60)
+        && optStr(request.resource.data, 'address', 300)
+        && optStr(request.resource.data, 'installToken', 64);
     }
 
-    match /auditLogs/{id} { allow read, write: if isAdmin(); }
+    // Device heartbeat (online status, version, optional consented location). Id = the installation's secret token.
+    function validLocation(l) {
+      return l is map
+        && l.keys().hasOnly(['lat', 'lng', 'accuracyKm', 'source', 'label', 'consent', 'updatedAt'])
+        && l.lat is number && l.lat >= -90 && l.lat <= 90
+        && l.lng is number && l.lng >= -180 && l.lng <= 180
+        && l.source in ['approximate', 'manual']
+        && l.consent == true
+        && (!('accuracyKm' in l) || l.accuracyKm is number)
+        && (!('label' in l) || str(l.label, 200))
+        && (!('updatedAt' in l) || str(l.updatedAt, 40));
+    }
+    function validHeartbeat(d) {
+      return d.keys().hasOnly(['deviceId', 'licenseId', 'deviceName', 'os', 'appVersion', 'companyName', 'mode',
+             'lastCheckAt', 'firms', 'users', 'lastSeen', 'location'])
+        && d.deviceId is string && d.deviceId.size() >= 10 && d.deviceId.size() <= 64
+        && d.lastSeen == request.time
+        && optStr(d, 'licenseId', 64) && optStr(d, 'deviceName', 200) && optStr(d, 'os', 200)
+        && optStr(d, 'appVersion', 40) && optStr(d, 'companyName', 200) && optStr(d, 'mode', 30)
+        && optStr(d, 'lastCheckAt', 40)
+        && (!('firms' in d) || d.firms is int) && (!('users' in d) || d.users is int)
+        && (!('location' in d) || d.location == null || validLocation(d.location));
+    }
+    match /heartbeats/{token} {
+      allow get, list: if canAny(['devices.view', 'devices.manage', 'licenses.view']);
+      allow create, update: if secretId(token, 32) && validHeartbeat(request.resource.data);
+      allow delete: if can('devices.manage');
+    }
+
+    // Support conversation of one installation. Id = the installation's secret token.
+    function customerThreadFields() {
+      return ['deviceId', 'licenseId', 'companyName', 'contactName', 'phone', 'status', 'lastMessageAt',
+              'lastMessageFrom', 'lastMessagePreview', 'unreadByAdmin', 'unreadByCustomer', 'createdAt'];
+    }
+    function validCustomerThread(d) {
+      return d.keys().hasOnly(customerThreadFields())
+        && d.deviceId is string && d.deviceId.size() >= 10 && d.deviceId.size() <= 64
+        && optStr(d, 'licenseId', 64) && optStr(d, 'companyName', 200) && optStr(d, 'contactName', 200)
+        && optStr(d, 'phone', 60) && optStr(d, 'lastMessagePreview', 200)
+        && d.get('status', 'open') in ['open', 'pending', 'resolved']
+        && d.get('lastMessageFrom', 'customer') in ['customer', 'admin'];
+    }
+    match /supportThreads/{token} {
+      allow get: if secretId(token, 32) || can('support.manage');
+      allow list: if can('support.manage');
+      allow create: if secretId(token, 32) && validCustomerThread(request.resource.data)
+        && request.resource.data.get('status', 'open') == 'open'
+        && request.resource.data.get('lastMessageFrom', 'customer') == 'customer';
+      // The customer may post (re-opens the thread) or mark replies read; admins manage status and replies.
+      allow update: if can('support.manage')
+        || (secretId(token, 32) && validCustomerThread(request.resource.data)
+            && changed().hasOnly(['companyName', 'contactName', 'phone', 'licenseId', 'status', 'lastMessageAt',
+                                  'lastMessageFrom', 'lastMessagePreview', 'unreadByAdmin', 'unreadByCustomer'])
+            && (!('status' in changed()) || request.resource.data.status == 'open')
+            && (!('lastMessageFrom' in changed()) || request.resource.data.lastMessageFrom == 'customer')
+            && (!('lastMessageAt' in changed()) || request.resource.data.lastMessageAt == request.time)
+            && (!('unreadByAdmin' in changed()) || request.resource.data.unreadByAdmin == true)
+            && (!('unreadByCustomer' in changed()) || request.resource.data.unreadByCustomer == false));
+      allow delete: if isOwner();
+
+      match /messages/{messageId} {
+        allow get, list: if secretId(token, 32) || can('support.manage');
+        allow create: if secretId(messageId, 8)
+          && request.resource.data.keys().hasOnly(['from', 'body', 'authorName', 'at'])
+          && str(request.resource.data.body, 4000) && request.resource.data.body.size() > 0
+          && optStr(request.resource.data, 'authorName', 120)
+          && request.resource.data.at == request.time
+          && ((secretId(token, 32) && request.resource.data.from == 'customer')
+              || (can('support.manage') && request.resource.data.from == 'admin'));
+        allow update: if false;
+        allow delete: if isOwner();
+      }
+    }
+
+    /* ----------------------------------------------- billing ----------------------------------------------- */
+
+    function validInvoice(d) {
+      return d.number is string && d.number.size() <= 40
+        && d.total is number && d.total >= 0
+        && d.paid is number && d.paid >= 0 && d.paid <= d.total + 0.01
+        && d.balance is number
+        && d.status in ['unpaid', 'partial', 'paid', 'cancelled']
+        && d.lines is list && d.lines.size() <= 100
+        && d.verifyToken is string && d.verifyToken.size() >= 24;
+    }
+    match /invoices/{invoiceId} {
+      allow read: if canAny(['billing.view', 'billing.create', 'billing.payments']);
+      allow create: if can('billing.create') && validInvoice(request.resource.data)
+        && request.resource.data.paid == 0 && request.resource.data.status == 'unpaid';
+      // Editing terms needs billing.create; recording payments only moves the paid/balance/status fields.
+      allow update: if validInvoice(request.resource.data)
+        && request.resource.data.verifyToken == resource.data.verifyToken
+        && request.resource.data.number == resource.data.number
+        && resource.data.status != 'cancelled'
+        && (can('billing.create')
+            || (can('billing.payments') && changed().hasOnly(['paid', 'balance', 'status', 'updatedAt', 'lastPaymentAt'])));
+      allow delete: if false;
+
+      match /payments/{paymentId} {
+        allow read: if canAny(['billing.view', 'billing.create', 'billing.payments']);
+        allow create: if can('billing.payments') && request.resource.data.amount is number && request.resource.data.amount > 0;
+        allow update: if can('billing.payments')
+          && changed().hasOnly(['cancelled', 'cancelledAt', 'cancelledBy', 'cancelReason'])
+          && request.resource.data.cancelled == true;
+        allow delete: if false;
+      }
+    }
+
+    // Public verification copy of an invoice, fetched by its unguessable token (QR code). Never listable.
+    match /publicInvoices/{token} {
+      allow get: if true;
+      allow list: if false;
+      allow create, update: if canAny(['billing.create', 'billing.payments']) && secretId(token, 24)
+        && request.resource.data.status in ['valid', 'cancelled'];
+      allow delete: if false;
+    }
+
+    match /counters/{name} {
+      allow read, write: if canAny(['billing.create', 'billing.payments', 'clients.manage', 'licenses.generate']);
+    }
+
+    /* ---------------------------------------------- settings ---------------------------------------------- */
+
+    match /settings/{docId} {
+      allow read: if isAdmin();
+      allow write: if can('branding.manage');
+    }
+    match /publicSettings/{docId} {
+      allow get: if true;
+      allow list: if false;
+      allow write: if can('branding.manage');
+    }
+
+    /* --------------------------------------------- audit log --------------------------------------------- */
+
+    match /auditLogs/{id} {
+      allow read: if can('audit.view');
+      allow create: if isAdmin() && request.resource.data.byUid == request.auth.uid
+        && request.resource.data.at == request.time
+        && request.resource.data.get('archived', false) == false;
+      allow update: if can('audit.manage') && changed().hasOnly(['archived', 'archivedAt', 'archivedBy'])
+        && request.resource.data.archived == true;
+      // Retention: only owners delete, only entries older than 90 days, never security / financial / license records.
+      allow delete: if isOwner()
+        && !(resource.data.get('category', 'general') in ['security', 'financial', 'license'])
+        && resource.data.at < request.time - duration.value(90, 'd');
+    }
   }
 }

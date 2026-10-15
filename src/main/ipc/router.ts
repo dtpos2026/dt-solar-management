@@ -4,6 +4,13 @@
  * (writes are refused while the license is read-only). Services perform their own finer checks as well.
  */
 import { BrowserWindow, WebContents, dialog, shell } from 'electron'
+import { type Args, type Route, ownerOnly, licenseLimits, publicCtx, saveDialog, csvEscape } from './common'
+import { documentRoutes } from './routes/documents'
+import { catalogRoutes } from './routes/catalog'
+import { dataRoutes } from './routes/data'
+import { accessRoutes } from './routes/access'
+import { cloudRoutes } from './routes/cloud'
+import { assistRoutes } from './routes/assist'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { runtime, getDb } from '../runtime'
@@ -25,49 +32,7 @@ import { openPrintWindow } from '../windows'
 import { reopenDatabase } from '../database'
 import { VENDOR } from '../../shared/branding'
 
-type Args = Record<string, any> // eslint-disable-line @typescript-eslint/no-explicit-any
-
-interface CallContext {
-  ctx: Ctx
-  sender: WebContents
-}
-
-interface Route {
-  /** Route works without login */
-  public?: boolean
-  /** Any of these permissions is required */
-  perm?: string | string[]
-  /** Mutates business data (blocked when license is read-only) */
-  write?: boolean
-  handler: (c: CallContext, a: Args) => unknown | Promise<unknown>
-}
-
-const ownerOnly = (c: CallContext): void => {
-  if (!c.ctx.user.isOwner) throw new AppError('Only the owner can do this.', 'FORBIDDEN')
-}
-
-function licenseLimits(): { maxFirms: number; maxUsers: number } {
-  const st = runtime.license?.status()
-  return { maxFirms: st?.maxFirms ?? 1, maxUsers: st?.maxUsers ?? 1 }
-}
-
-function publicCtx(): Ctx {
-  // A minimal context for public routes that need the DB (never used for business data).
-  return { db: getDb(), user: { id: 0, username: 'system', fullName: 'System', roleId: 0, roleName: '', isOwner: false, permissions: [], allFirms: false, firmIds: [], mustChangePassword: false }, firmId: 0 }
-}
-
-async function saveDialog(sender: WebContents, defaultPath: string, filters: Electron.FileFilter[]): Promise<string | null> {
-  const win = BrowserWindow.fromWebContents(sender) ?? undefined
-  const r = await dialog.showSaveDialog(win!, { defaultPath, filters })
-  return r.canceled || !r.filePath ? null : r.filePath
-}
-
-function csvEscape(v: unknown): string {
-  const s = v === null || v === undefined ? '' : String(v)
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-}
-
-export const routes: Record<string, Route> = {
+const coreRoutes: Record<string, Route> = {
   /* ---------------- app & session ---------------- */
   'app.info': {
     public: true,
@@ -472,6 +437,17 @@ export const routes: Record<string, Route> = {
   },
   'license.checkIn': { public: true, handler: () => runtime.license!.checkIn(false) },
   'license.deactivate': { perm: 'license.manage', handler: () => runtime.license!.deactivate() }
+}
+
+/** Feature areas are merged after the core routes (an area may re-define a core route it owns). */
+export const routes: Record<string, Route> = {
+  ...coreRoutes,
+  ...documentRoutes,
+  ...catalogRoutes,
+  ...dataRoutes,
+  ...accessRoutes,
+  ...cloudRoutes,
+  ...assistRoutes
 }
 
 /* ------------------------------------------------------------------------------------------ */

@@ -24,7 +24,8 @@ import { UsersPage } from './pages/users/UsersPage'
 import { MultiFirmPage } from './pages/firms/MultiFirmPage'
 import { SettingsPage } from './pages/settings/SettingsPage'
 import { BackupPage } from './pages/backup/BackupPage'
-import { LicensePage } from './pages/license/LicensePage'
+import { HelpPage } from './pages/help/HelpPage'
+import { ClosingPage } from './pages/closing/ClosingPage'
 
 interface AppInfo {
   version: string
@@ -104,7 +105,9 @@ function Boot(): JSX.Element {
         <Route path="/firms" element={<MultiFirmPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/backup" element={<BackupPage />} />
-        <Route path="/license" element={<LicensePage />} />
+        <Route path="/license" element={<Navigate to="/settings?tab=license" replace />} />
+        <Route path="/closing" element={<ClosingPage />} />
+        <Route path="/help" element={<HelpPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Shell>

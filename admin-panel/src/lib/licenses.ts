@@ -22,9 +22,9 @@ import {
   type Transaction,
   type WriteBatch
 } from 'firebase/firestore'
-import { db } from '../firebase'
+import { auth, db } from '../firebase'
 import { generateLicenseKey, normaliseLicenseKey } from './crypto'
-import type { ActivationRequest, AuditEntry, Device, HistoryEntry, License, LicenseState, Plan } from './types'
+import type { ActivationRequest, AuditCategory, AuditEntry, Device, HistoryEntry, License, LicenseState, Plan } from './types'
 import { DEFAULT_CHECKIN_DAYS, DEFAULT_GRACE_DAYS } from './types'
 import { fmtDate } from './format'
 
@@ -52,6 +52,13 @@ export function licenseFromSnap(s: Snap): License {
   const d = s.data() ?? {}
   return {
     id: s.id,
+    clientId: str(d.clientId),
+    planType: (['monthly', 'yearly', 'lifetime'].includes(d.planType) ? d.planType : d.expiresAt ? 'yearly' : 'lifetime') as License['planType'],
+    poweredBy: d.poweredBy !== false,
+    detached: d.detached === true,
+    paymentStatus: (['paid', 'partial', 'unpaid', 'none'].includes(d.paymentStatus) ? d.paymentStatus : 'none') as License['paymentStatus'],
+    activatedAt: ts(d.activatedAt),
+    lastVerifiedAt: ts(d.lastVerifiedAt),
     licenseKey: str(d.licenseKey),
     customerName: str(d.customerName),
     businessName: str(d.businessName),
@@ -98,7 +105,20 @@ export function historyFromSnap(s: Snap): HistoryEntry {
 
 export function auditFromSnap(s: Snap): AuditEntry {
   const d = s.data() ?? {}
-  return { id: s.id, action: str(d.action), by: str(d.by), at: ts(d.at), licenseId: d.licenseId ? str(d.licenseId) : null, details: str(d.details) }
+  return {
+    id: s.id,
+    action: str(d.action),
+    by: str(d.by),
+    at: ts(d.at),
+    licenseId: d.licenseId ? str(d.licenseId) : null,
+    details: str(d.details),
+    category: (str(d.category, 'license') || 'license') as AuditEntry['category'],
+    byUid: str(d.byUid),
+    target: str(d.target, d.licenseId ? str(d.licenseId) : ''),
+    targetType: str(d.targetType, d.licenseId ? 'license' : ''),
+    status: d.status === 'failure' ? 'failure' : 'success',
+    archived: d.archived === true
+  }
 }
 
 export function requestFromSnap(s: Snap): ActivationRequest {
@@ -165,8 +185,20 @@ export function writeHistory(w: Writer, licenseId: string, action: string, by: s
   ;(w as WriteBatch).set(doc(historyCol(licenseId)), { action, by, at: serverTimestamp(), details })
 }
 
-export function writeAudit(w: Writer, action: string, by: string, licenseId: string | null, details: string): void {
-  ;(w as WriteBatch).set(doc(auditCol()), { action, by, at: serverTimestamp(), licenseId, details })
+export function writeAudit(w: Writer, action: string, by: string, licenseId: string | null, details: string, category: AuditCategory = 'license'): void {
+  ;(w as WriteBatch).set(doc(auditCol()), {
+    action,
+    category,
+    by,
+    byUid: auth.currentUser?.uid ?? '',
+    target: licenseId ?? '',
+    targetType: licenseId ? 'license' : '',
+    licenseId,
+    details,
+    status: 'success',
+    archived: false,
+    at: serverTimestamp()
+  })
 }
 
 /** Writes a history entry on the license AND an audit log entry. */

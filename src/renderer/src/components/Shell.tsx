@@ -1,7 +1,7 @@
 import { ReactNode, useEffect, useRef, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
-  BadgeCheck, BarChart3, Bell, Boxes, Building2, CalendarDays, ChevronDown, DatabaseBackup, FileText, KeyRound, Landmark,
+  BarChart3, CalendarCheck, LifeBuoy, Bell, Boxes, Building2, CalendarDays, ChevronDown, DatabaseBackup, FileText, KeyRound, Landmark,
   LayoutDashboard, Lock, LogOut, Palette, Receipt, Search, Settings, ShieldCheck, ShoppingBag, ShoppingCart, SunMedium, Truck, Users, Check, AlertTriangle
 } from 'lucide-react'
 import { api } from '../api'
@@ -11,6 +11,7 @@ import { THEMES, applyTheme, getTheme } from '../lib/theme'
 import { date, label as nice } from '../lib/format'
 import appIcon from '../assets/app-icon.png'
 import { DtMark } from './Brand'
+import { SETTINGS_ENTRY_PERMS } from '../pages/settings/sections'
 
 const NAV: Array<{ to: string; label: string; icon: ReactNode; perm?: string | string[]; section?: string }> = [
   { to: '/', label: 'Dashboard', icon: <LayoutDashboard />, perm: 'dashboard.view' },
@@ -23,27 +24,38 @@ const NAV: Array<{ to: string; label: string; icon: ReactNode; perm?: string | s
   { to: '/projects', label: 'Solar Projects', icon: <SunMedium />, perm: 'projects.view', section: 'Projects & Money' },
   { to: '/accounts', label: 'Accounts', icon: <Landmark />, perm: 'accounts.view' },
   { to: '/expenses', label: 'Expenses', icon: <Receipt />, perm: 'expenses.view' },
+  { to: '/closing', label: 'Day Closing', icon: <CalendarCheck />, perm: 'closing.manage' },
   { to: '/reports', label: 'Reports', icon: <BarChart3 />, perm: ['reports.view', 'reports.profit'] },
   { to: '/users', label: 'Users & Permissions', icon: <ShieldCheck />, perm: ['users.manage', 'audit.view'], section: 'Administration' },
   { to: '/firms', label: 'Multi-Firm Settings', icon: <Building2 />, perm: 'firms.manage' },
-  { to: '/settings', label: 'Settings', icon: <Settings />, perm: 'settings.manage' },
-  { to: '/backup', label: 'Backup & Restore', icon: <DatabaseBackup />, perm: 'backup.manage' },
-  { to: '/license', label: 'License & About', icon: <BadgeCheck /> }
+  { to: '/backup', label: 'Backup & Restore', icon: <DatabaseBackup />, perm: ['backup.manage', 'import.manage'] },
+  { to: '/settings', label: 'Settings', icon: <Settings />, perm: SETTINGS_ENTRY_PERMS },
+  { to: '/help', label: 'Help & Support', icon: <LifeBuoy /> }
 ]
 
 function Sidebar(): JSX.Element {
   const can = useCan()
+  const firm = useApp((s) => s.firm)
   const items = NAV.filter((n) => !n.perm || (Array.isArray(n.perm) ? n.perm.some(can) : can(n.perm)))
   let lastSection = ''
   return (
     <aside className="no-print flex w-[232px] shrink-0 flex-col bg-side text-side-ink">
+      {/* White-label: the licensed business (active firm) is shown here; Digital Target stays in the footer. */}
       <div className="flex items-center gap-3 px-5 pt-5 pb-4">
-        <img src={appIcon} className="h-10 w-10 rounded-xl shadow-lg" alt="" />
-        <div className="leading-tight">
-          <div className="text-[17px] font-extrabold text-white">
-            DT Solar <span className="text-sun">Pro</span>
-          </div>
-          <div className="text-[10.5px] opacity-70">Powering a Greener Future</div>
+        {firm?.logo ? (
+          <img src={firm.logo} className="h-10 w-10 shrink-0 rounded-xl bg-white object-contain p-0.5 shadow-lg" alt="" />
+        ) : (
+          <img src={appIcon} className="h-10 w-10 shrink-0 rounded-xl shadow-lg" alt="" />
+        )}
+        <div className="min-w-0 leading-tight">
+          {firm?.name ? (
+            <div className="line-clamp-2 text-[14px] font-extrabold break-words text-white" title={firm.name}>{firm.name}</div>
+          ) : (
+            <div className="text-[17px] font-extrabold text-white">
+              DT Solar <span className="text-sun">Pro</span>
+            </div>
+          )}
+          <div className="text-[10.5px] opacity-70">{firm?.name ? 'DT Solar Pro' : 'Powering a Greener Future'}</div>
         </div>
       </div>
       <nav className="flex-1 overflow-y-auto px-3 pb-3">
@@ -74,7 +86,7 @@ function Sidebar(): JSX.Element {
         <div className="flex items-center gap-2">
           <DtMark className="h-3.5 w-3.5" />
           <span>
-            by <b className="tracking-wider">DIGITAL TARGET</b>
+            DT Solar Pro by <b className="tracking-wider">DIGITAL TARGET</b>
           </span>
         </div>
       </div>
@@ -214,7 +226,7 @@ function Notifications(): JSX.Element {
   useEffect(() => {
     const load = async (): Promise<void> => {
       const out: Array<{ text: string; to: string; tone: string }> = []
-      if (license && license.mode !== 'active') out.push({ text: license.message, to: '/license', tone: license.canWrite ? 'warn' : 'bad' })
+      if (license && license.mode !== 'active') out.push({ text: license.message, to: '/settings?tab=license', tone: license.canWrite ? 'warn' : 'bad' })
       if (can('inventory.view')) {
         try {
           const low = await api<{ total: number }>('products.list', { stock: 'low', limit: 1 })
@@ -427,7 +439,7 @@ function LicenseBanner(): JSX.Element | null {
         {license.message}
         {bad && ' Read-only mode: you can view, print and back up, but not add or change records.'}
       </span>
-      <button type="button" className="font-semibold underline cursor-pointer" onClick={() => nav('/license')}>
+      <button type="button" className="font-semibold underline cursor-pointer" onClick={() => nav('/settings?tab=license')}>
         Activate / renew
       </button>
     </div>

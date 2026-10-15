@@ -4,6 +4,7 @@ import {
   ArrowLeft, Pencil, Printer, PackageMinus, PackagePlus, FilePlus2, ShoppingBag, Receipt, HandCoins, Paperclip, ExternalLink, Trash2, Zap, MapPin, Phone, User, CalendarDays, Plus, Ban
 } from 'lucide-react'
 import { api } from '../../api'
+import { WhatsAppButton } from '../../components/WhatsAppButton'
 import { useCan } from '../../store'
 import { Badge, Button, Card, Empty, Field, IconButton, Input, Kv, Loading, Modal, NumberInput, Progress, Select, StatCard, Tabs, confirmDialog, cx, toast } from '../../components/ui'
 import { DataTable } from '../../components/DataTable'
@@ -55,6 +56,7 @@ export function ProjectDetail(): JSX.Element {
           </div>
         </div>
         <Button icon={<Printer className="h-4 w-4" />} onClick={() => api('print.open', { kind: 'project', id: p.id })}>Project statement</Button>
+        <WhatsAppButton entity="project" id={p.id} partyId={p.customer_id} phone={p.contact_phone || p.customer_phone} />
         {can('projects.manage') && <Button icon={<Pencil className="h-4 w-4" />} onClick={() => setEdit(true)}>Edit</Button>}
       </div>
 

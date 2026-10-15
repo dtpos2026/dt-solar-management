@@ -2,6 +2,7 @@ import { ReactNode, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Ban, Copy, FileDown, HandCoins, Pencil, Printer, RefreshCcw, Trash2, Undo2, Truck, FileCheck2, CheckCircle2, XCircle, Send } from 'lucide-react'
 import { api } from '../../api'
+import { WhatsAppButton } from '../../components/WhatsAppButton'
 import { useCan } from '../../store'
 import { Badge, Button, Card, IconButton, Kv, Loading, promptDialog, confirmDialog, toast } from '../../components/ui'
 import { PaymentModal } from '../../components/PaymentModal'
@@ -113,6 +114,7 @@ export function DocumentView(): JSX.Element {
           </div>
         </div>
         <Button icon={<Printer className="h-4 w-4" />} variant="primary" onClick={printDoc}>Print / PDF</Button>
+        <WhatsAppButton entity="document" id={d.id} partyId={d.party_id} phone={d.party_phone} />
         {canEdit && <Button icon={<Pencil className="h-4 w-4" />} onClick={() => nav(`/doc/${d.id}/edit`)}>Edit</Button>}
         {meta.financial && !cancelled && d.due > 0.5 && can('accounts.manage') && (
           <Button icon={<HandCoins className="h-4 w-4" />} variant="success" onClick={() => setPayOpen(true)}>

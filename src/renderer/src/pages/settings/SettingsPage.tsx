@@ -8,6 +8,7 @@ import { Badge, Button, Card, Checkbox, Field, IconButton, Input, Loading, Modal
 import { useLoad } from '../../lib/hooks'
 import { THEMES, applyTheme, getTheme } from '../../lib/theme'
 import { amountInWords, formatMoney } from '@shared/money'
+import { EXTRA_SECTIONS } from './sections'
 
 type TabKey = 'general' | 'inventory' | 'projects' | 'documents' | 'security' | 'appearance' | 'printing'
 
@@ -32,9 +33,13 @@ export function SettingsPage(): JSX.Element {
   const licenseWritable = useApp((s) => s.license?.canWrite ?? false)
   const editable = canEdit && licenseWritable
   const [params, setParams] = useSearchParams()
-  const tabParam = params.get('tab') as TabKey | null
-  const tab: TabKey = tabParam && TAB_ORDER.includes(tabParam) ? tabParam : 'general'
-  const setTab = (t: TabKey): void => setParams({ tab: t }, { replace: true })
+  const extras = EXTRA_SECTIONS.filter((x) => x.perms.length === 0 || x.perms.some(can))
+  const tabParam = params.get('tab')
+  const builtIn = canEdit ? TAB_ORDER : []
+  const allTabs: string[] = [...builtIn, ...extras.map((x) => x.key)]
+  const tab: string = tabParam && allTabs.includes(tabParam) ? tabParam : allTabs[0] ?? 'license'
+  const setTab = (t: string): void => setParams({ tab: t }, { replace: true })
+  const extra = extras.find((x) => x.key === tab)
 
   const loaded = useLoad(() => api<Record<string, any>>('settings.get'), [])
   const [orig, setOrig] = useState<Record<string, any> | null>(null)
@@ -93,7 +98,39 @@ export function SettingsPage(): JSX.Element {
 
   if (!orig) return <Loading label="Loading settings…" />
 
-  const count = (t: TabKey): number | undefined => {
+  const tabsBar = (
+    <Tabs
+      value={tab}
+      onChange={setTab}
+      tabs={[
+        ...(canEdit
+          ? [
+              { key: 'general', label: 'General', count: count('general') },
+              { key: 'inventory', label: 'Inventory & tax', count: count('inventory') },
+              { key: 'projects', label: 'Projects', count: count('projects') },
+              { key: 'documents', label: 'Documents', count: count('documents') },
+              { key: 'security', label: 'Security', count: count('security') },
+              { key: 'appearance', label: 'Appearance' },
+              { key: 'printing', label: 'Printing', count: count('printing') }
+            ]
+          : []),
+        ...extras.map((x) => ({ key: x.key, label: x.label }))
+      ]}
+    />
+  )
+
+  if (extra) {
+    const Section = extra.component
+    return (
+      <div className="space-y-4">
+        <PageHeader title="Settings" subtitle="Application-wide preferences for all firms on this computer" icon={<Settings className="h-5 w-5" />} />
+        {tabsBar}
+        <Section />
+      </div>
+    )
+  }
+
+  function count(t: TabKey): number | undefined {
     const n = TAB_KEYS[t].filter((k) => changed.includes(k)).length
     return n > 0 ? n : undefined
   }
@@ -122,21 +159,9 @@ export function SettingsPage(): JSX.Element {
       {!canEdit && (
         <Notice tone="info">You can view these settings but you do not have permission to change them. Ask the owner or an administrator (permission: “Change application settings”).</Notice>
       )}
-      {canEdit && !licenseWritable && <Notice tone="warn">The license is currently read-only, so settings cannot be saved. Open “License &amp; About” to resolve the license problem — your data is safe.</Notice>}
+      {canEdit && !licenseWritable && <Notice tone="warn">The license is currently read-only, so settings cannot be saved. Open Settings → “License &amp; About” to resolve the license problem — your data is safe.</Notice>}
 
-      <Tabs
-        value={tab}
-        onChange={setTab}
-        tabs={[
-          { key: 'general', label: 'General', count: count('general') },
-          { key: 'inventory', label: 'Inventory & tax', count: count('inventory') },
-          { key: 'projects', label: 'Projects', count: count('projects') },
-          { key: 'documents', label: 'Documents', count: count('documents') },
-          { key: 'security', label: 'Security', count: count('security') },
-          { key: 'appearance', label: 'Appearance' },
-          { key: 'printing', label: 'Printing', count: count('printing') }
-        ]}
-      />
+      {tabsBar}
 
       {tab === 'general' && <GeneralTab draft={draft} set={set} editable={editable} />}
       {tab === 'inventory' && <InventoryTab draft={draft} set={set} editable={editable} canEdit={canEdit} licenseWritable={licenseWritable} />}

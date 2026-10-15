@@ -24,7 +24,8 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: 'sales.edit', label: 'Edit unpaid sales documents' },
       { key: 'sales.edit_locked', label: 'Edit / cancel paid or finalized sales documents' },
       { key: 'sales.cancel', label: 'Cancel sales documents' },
-      { key: 'sales.discount', label: 'Give discounts / sell below sale price' }
+      { key: 'sales.discount', label: 'Give discounts / sell below sale price' },
+      { key: 'sales.delete', label: 'Delete unpaid sales invoices permanently' }
     ]
   },
   {
@@ -41,7 +42,8 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: 'purchases.create', label: 'Create purchases, orders & returns' },
       { key: 'purchases.edit', label: 'Edit unpaid purchases' },
       { key: 'purchases.edit_locked', label: 'Edit / cancel paid purchases' },
-      { key: 'purchases.cancel', label: 'Cancel purchases' }
+      { key: 'purchases.cancel', label: 'Cancel purchases' },
+      { key: 'purchases.delete', label: 'Delete unpaid purchases permanently' }
     ]
   },
   {
@@ -50,7 +52,8 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: 'inventory.view', label: 'View products & stock' },
       { key: 'inventory.manage', label: 'Create / edit products, categories, warehouses' },
       { key: 'inventory.adjust', label: 'Stock adjustments & opening stock' },
-      { key: 'inventory.cost', label: 'See purchase cost & stock value' }
+      { key: 'inventory.cost', label: 'See purchase cost & stock value' },
+      { key: 'inventory.delete', label: 'Delete / archive products' }
     ]
   },
   {
@@ -67,7 +70,8 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     items: [
       { key: 'projects.view', label: 'View projects' },
       { key: 'projects.manage', label: 'Create / edit projects & issue materials' },
-      { key: 'projects.financials', label: 'See project cost & profit' }
+      { key: 'projects.financials', label: 'See project cost & profit' },
+      { key: 'projects.delete', label: 'Delete / archive projects' }
     ]
   },
   {
@@ -76,7 +80,9 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: 'accounts.view', label: 'View cash / bank accounts & payments' },
       { key: 'accounts.manage', label: 'Receive / make payments, transfers, adjustments' },
       { key: 'expenses.view', label: 'View expenses' },
-      { key: 'expenses.manage', label: 'Record / edit expenses' }
+      { key: 'expenses.manage', label: 'Record / edit expenses' },
+      { key: 'closing.manage', label: 'Day & month closing' },
+      { key: 'closing.reopen', label: 'Reopen a closed day / month' }
     ]
   },
   {
@@ -95,6 +101,11 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: 'firms.manage', label: 'Manage firms & multi-firm settings' },
       { key: 'settings.manage', label: 'Change application settings' },
       { key: 'backup.manage', label: 'Backup & restore' },
+      { key: 'import.manage', label: 'Import data (CSV / other software backups)' },
+      { key: 'printers.manage', label: 'Printer settings' },
+      { key: 'templates.manage', label: 'Design invoice / quotation templates' },
+      { key: 'whatsapp.send', label: 'Send documents on WhatsApp' },
+      { key: 'support.use', label: 'Send support messages to Digital Target' },
       { key: 'license.view', label: 'View license information' },
       { key: 'license.manage', label: 'Activate / change license' }
     ]
@@ -125,7 +136,7 @@ export const DEFAULT_ROLES: DefaultRole[] = [
       'dashboard.view', 'dashboard.financials', 'sales.view', 'quotations.view', 'purchases.view', 'inventory.view',
       'inventory.cost', 'customers.view', 'customers.manage', 'suppliers.view', 'suppliers.manage', 'projects.view',
       'projects.financials', 'accounts.view', 'accounts.manage', 'expenses.view', 'expenses.manage', 'reports.view',
-      'reports.profit', 'license.view'
+      'reports.profit', 'license.view', 'closing.manage', 'whatsapp.send'
     ]
   },
   {
@@ -133,7 +144,7 @@ export const DEFAULT_ROLES: DefaultRole[] = [
     description: 'Quotations, sales invoices and customers.',
     permissions: [
       'dashboard.view', 'sales.view', 'sales.create', 'sales.edit', 'quotations.view', 'quotations.manage',
-      'inventory.view', 'customers.view', 'customers.manage', 'projects.view', 'accounts.view'
+      'inventory.view', 'customers.view', 'customers.manage', 'projects.view', 'accounts.view', 'whatsapp.send'
     ]
   },
   {
@@ -149,9 +160,24 @@ export const DEFAULT_ROLES: DefaultRole[] = [
     description: 'Solar projects, material issues and project costs.',
     permissions: [
       'dashboard.view', 'projects.view', 'projects.manage', 'projects.financials', 'inventory.view', 'customers.view',
-      'quotations.view', 'quotations.manage', 'sales.view', 'expenses.view', 'expenses.manage', 'reports.view'
+      'quotations.view', 'quotations.manage', 'sales.view', 'expenses.view', 'expenses.manage', 'reports.view', 'whatsapp.send'
     ]
   }
 ]
 
 export const OWNER_ROLE_NAME = 'Super Administrator'
+
+/**
+ * Permissions introduced after v1.0, by catalogue version. On upgrade they are added to the matching built-in
+ * roles so existing installations get the new features without the owner editing every role.
+ */
+export const PERMISSION_UPGRADES: Array<{ version: number; perms: string[] }> = [
+  {
+    version: 2,
+    perms: [
+      'sales.delete', 'purchases.delete', 'inventory.delete', 'projects.delete', 'closing.manage', 'closing.reopen',
+      'import.manage', 'printers.manage', 'templates.manage', 'whatsapp.send', 'support.use'
+    ]
+  }
+]
+export const PERMISSION_CATALOGUE_VERSION = 2

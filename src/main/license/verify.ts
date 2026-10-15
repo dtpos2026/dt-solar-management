@@ -71,13 +71,15 @@ export function evaluate(i: EvalInput): { mode: LicenseMode; message: string; tr
     return { mode: 'trial_expired', message: 'The trial period has ended. Your data is safe — activate a license to continue adding records.', trialDaysLeft: 0, daysLeft: null, graceDaysLeft: null }
   }
   const p = i.payload
-  if (i.remoteStatus === 'revoked') return { mode: 'revoked', message: 'This license has been revoked. Contact Digital Target. Your data is safe and can be viewed, printed and backed up.', ...none }
-  if (i.remoteStatus === 'suspended') return { mode: 'suspended', message: 'This license is suspended. Contact Digital Target to restore access. Your data is safe.', ...none }
+  // A lifetime license detached from central management ignores remote status and check-in requirements.
+  const detached = p.detached === true && !p.expiresAt
+  if (!detached && i.remoteStatus === 'revoked') return { mode: 'revoked', message: 'This license has been revoked. Contact Digital Target. Your data is safe and can be viewed, printed and backed up.', ...none }
+  if (!detached && i.remoteStatus === 'suspended') return { mode: 'suspended', message: 'This license is suspended. Contact Digital Target to restore access. Your data is safe.', ...none }
   const daysLeft = p.expiresAt ? Math.ceil((Date.parse(p.expiresAt) - i.now) / DAY) : null
   if (daysLeft !== null && daysLeft <= 0) {
     return { mode: 'expired', message: 'Your license has expired. Renew it to continue adding records. Your data is safe.', trialDaysLeft: null, daysLeft: 0, graceDaysLeft: null }
   }
-  if (p.leaseUntil && i.now > Date.parse(p.leaseUntil)) {
+  if (!detached && p.leaseUntil && i.now > Date.parse(p.leaseUntil)) {
     const graceEnd = Date.parse(p.leaseUntil) + Math.max(0, p.graceDays) * DAY
     const graceLeft = Math.ceil((graceEnd - i.now) / DAY)
     if (graceLeft > 0) {
@@ -85,7 +87,7 @@ export function evaluate(i: EvalInput): { mode: LicenseMode; message: string; tr
     }
     return { mode: 'lease_expired', message: 'License verification is overdue. Connect to the internet and click "Check license now".', trialDaysLeft: null, daysLeft, graceDaysLeft: 0 }
   }
-  if (p.checkinDays && p.checkinDays > 0) {
+  if (!detached && p.checkinDays && p.checkinDays > 0) {
     const baseline = Math.max(i.lastCheckAt ?? 0, Date.parse(p.issuedAt) || 0)
     const due = baseline + p.checkinDays * DAY
     if (i.now > due) {

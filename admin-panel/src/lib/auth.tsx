@@ -4,6 +4,7 @@ import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
 import { auth, db, BOOTSTRAP_OWNER_EMAIL } from '../firebase'
 import type { AdminDoc } from './types'
 import { errorMessage } from './format'
+import { hasPerm, isOwnerRole } from './perm'
 
 export type AuthPhase =
   | { phase: 'loading' }
@@ -42,6 +43,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (snap.exists()) adminDoc = snap.data() as AdminDoc
     } catch (e) {
       readError = e
+    }
+    if (adminDoc && adminDoc.active === false) {
+      setNotice(`Your admin account (${user.email ?? ''}) has been disabled. Contact the owner.`)
+      await fbSignOut(auth)
+      return
     }
     if (adminDoc) {
       setNotice(null)
@@ -87,8 +93,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await setDoc(doc(db, 'admins', user.uid), {
         email: user.email,
         name: name.trim() || 'Digital Target',
-        role: 'superadmin',
-        createdAt: serverTimestamp()
+        role: 'owner',
+        permissions: [],
+        active: true,
+        createdAt: serverTimestamp(),
+        createdBy: user.email
       })
       await evaluateUser(user)
     },
@@ -112,4 +121,18 @@ export function useAuth(): AuthContextValue {
 export function useAdminEmail(): string {
   const { state } = useAuth()
   return state.phase === 'admin' ? (state.user.email ?? state.admin.email ?? 'admin') : 'admin'
+}
+
+/** The signed-in admin record (null while signed out). */
+export function useAdmin(): (AdminDoc & { uid: string; isOwner: boolean }) | null {
+  const { state } = useAuth()
+  if (state.phase !== 'admin') return null
+  return { ...state.admin, uid: state.user.uid, isOwner: isOwnerRole(state.admin.role) }
+}
+
+/** Permission check for the UI (the Firestore rules enforce the same permissions server side). */
+export function useCan(): (perm: string) => boolean {
+  const { state } = useAuth()
+  const admin = state.phase === 'admin' ? state.admin : null
+  return useCallback((perm: string) => hasPerm(admin, perm), [admin])
 }

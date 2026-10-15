@@ -13,6 +13,8 @@ Status keys: [x] done & tested · [~] partial · [ ] not started · [!] blocked 
 ## Desktop areas
 - [ ] documents — item name + description in editor/preview/print/PDF, invoice delete rules, template designer, thermal layout, Powered-by toggle
 - [x] catalog — product delete/archive/restore + bulk category + category delete-with-reassign, project delete/archive/cancel (list + detail), firm activate/deactivate + active-firm limit, firm isolation fixes, assign shared records (unit tested; e2e pending integrator run)
+- [x] documents — item name + description in editor/preview/print/PDF, invoice delete rules, template designer, thermal layout, Powered-by from license (unit-tested; UI e2e left to the integrator run)
+- [ ] catalog — product delete/archive + category change, project delete/archive, firm activate/deactivate, firm isolation + limit tests
 - [ ] data — day/month closing + closing backup, backup history/export/import/validation, CSV import + reconciliation
 - [ ] access — user selection + PIN login, PIN lock screen, forced password change, printers page + per-document printer, test print
 - [ ] cloud — registration in setup wizard, heartbeat + consented location, support messages with offline queue, certificate refresh, License & About in Settings

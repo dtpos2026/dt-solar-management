@@ -18,6 +18,7 @@ export const documentRoutes: RouteMap = {
   'templates.get': { handler: (c, a) => tpl.getTemplate(c.ctx, Number(a.id)) },
   'templates.forKind': { handler: (c, a) => tpl.templatesForKind(c.ctx, String(a.kind ?? '')) },
   'templates.defaults': { handler: (c) => tpl.getTemplateDefaults(c.ctx) },
+  'templates.previewSource': { perm: 'templates.manage', handler: (c, a) => tpl.previewSource(c.ctx, String(a.kind ?? '')) },
   'templates.save': { perm: 'templates.manage', write: true, handler: (c, a) => tpl.saveTemplate(c.ctx, a as never) },
   'templates.duplicate': { perm: 'templates.manage', write: true, handler: (c, a) => tpl.duplicateTemplate(c.ctx, Number(a.id)) },
   'templates.delete': { perm: 'templates.manage', write: true, handler: (c, a) => tpl.deleteTemplate(c.ctx, Number(a.id)) },

@@ -9,7 +9,7 @@
  *    ({ "<firmId>": { "<kind>": <templateId> | "builtin:<layout>" } }). No entry = built-in Classic.
  */
 import { DOC_TYPES } from '../../shared/docTypes'
-import { AppError, Ctx, audit, getSetting, optId, requirePerm, requireText, setSetting } from './context'
+import { AppError, Ctx, audit, can, getSetting, optId, requirePerm, requireText, setSetting } from './context'
 
 export const TEMPLATE_KINDS = [
   'sale_invoice',
@@ -308,4 +308,28 @@ export function setDefaultTemplate(ctx: Ctx, kind: string, ref: number | string 
     writeDefaults(ctx, map)
     audit(ctx, 'settings', 'doc_template', typeof map[kind] === 'number' ? (map[kind] as number) : null, `Default print template for ${kindLabel(kind)}: ${label}`)
   })()
+}
+
+/**
+ * The most recent real record of a kind that the designer can use for its live preview (null = none exists, or the
+ * user may not view that kind; the designer then shows a clearly labelled sample).
+ */
+export function previewSource(ctx: Ctx, kind: string): { entity: 'doc' | 'payment'; id: number; number: string } | null {
+  if (!isKind(kind)) throw new AppError('Unknown document kind.', 'VALIDATION')
+  if (kind === 'payment') {
+    if (!can(ctx, 'accounts.view')) return null
+    const r = ctx.db
+      .prepare("SELECT id, number FROM payments WHERE firm_id = ? AND status <> 'cancelled' AND direction = 'in' ORDER BY date DESC, id DESC LIMIT 1")
+      .get(ctx.firmId) as { id: number; number: string } | undefined
+    return r ? { entity: 'payment', ...r } : null
+  }
+  if (!can(ctx, `${DOC_TYPES[kind].perm}.view`)) return null
+  // Prefer a document that uses item descriptions so the preview shows how they print.
+  const r = ctx.db
+    .prepare(
+      `SELECT d.id, d.number FROM documents d WHERE d.firm_id = ? AND d.doc_type = ? AND d.status <> 'cancelled'
+       ORDER BY EXISTS (SELECT 1 FROM document_lines l WHERE l.document_id = d.id AND l.details IS NOT NULL) DESC, d.date DESC, d.id DESC LIMIT 1`
+    )
+    .get(ctx.firmId, kind) as { id: number; number: string } | undefined
+  return r ? { entity: 'doc', ...r } : null
 }

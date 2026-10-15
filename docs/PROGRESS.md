@@ -16,7 +16,7 @@ Status keys: [x] done & tested · [~] partial · [ ] not started · [!] blocked 
 - [x] documents — item name + description in editor/preview/print/PDF, invoice delete rules, template designer, thermal layout, Powered-by from license (unit-tested; UI e2e left to the integrator run)
 - [ ] catalog — product delete/archive + category change, project delete/archive, firm activate/deactivate, firm isolation + limit tests
 - [ ] data — day/month closing + closing backup, backup history/export/import/validation, CSV import + reconciliation
-- [ ] access — user selection + PIN login, PIN lock screen, forced password change, printers page + per-document printer, test print
+- [x] access — user selection + PIN login (lockout 5/5min), PIN lock screen, forced password change gate, printers page + per-document printer + paper size + direct print, test print (unit-tested; consolidated e2e pending)
 - [ ] cloud — registration in setup wizard, heartbeat + consented location, support messages with offline queue, certificate refresh, License & About in Settings
 - [ ] assist — offline Urdu/English help assistant, built-in WhatsApp Web module (QR link device) + send document flow with log
 

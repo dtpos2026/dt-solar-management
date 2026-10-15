@@ -32,7 +32,7 @@ const STOP = new Set(
     'a an the to of in on for and or is are am be do does did i me my we our you your it this that these those how what where when which who why can could should would will ' +
     'please pls plz with from by at as into about there here want need get show tell using use way kindly ' +
     'kaise kaisay kese kesay kesy kaisy kya kia kyun ka ki ke ko se sy me mein main mai mujhe mujhay hai hain he hy tha thi ho hota hoti karna karni karen kare karein karo kar karte karta ' +
-    'krna krne kren kro kr apna apni apne yeh ye woh wo is us aur ya bhi koi kuch sakta sakte sakti skta jata jati ' +
+    'lein lain len lena lo liya gaya gya gayi gai hua hui raha rahi rha rhi krna krne kren kro kr apna apni apne yeh ye woh wo is us aur ya bhi koi kuch sakta sakte sakti skta jata jati ' +
     normalize('کیسے کیا کا کی کے کو سے میں ہے ہیں ہو تھا تھی کرنا کرنی کریں کرے کرو کر اپنا اپنی اپنے یہ وہ اس اور یا بھی کوئی کچھ سکتا سکتے مجھے')
   ).split(/\s+/)
 )
@@ -51,7 +51,7 @@ const SYNONYM_GROUPS: string[][] = [
   ['sale', 'sales', 'sell', 'sold', 'becha', 'bechna', 'farokht', 'فروخت', 'بیچنا', 'سیل'],
   ['return', 'returns', 'wapas', 'wapsi', 'waapsi', 'واپس', 'واپسی', 'ریٹرن'],
   ['payment', 'payments', 'pay', 'paid', 'paisa', 'paise', 'raqam', 'adaigi', 'adayegi', 'ادائیگی', 'رقم', 'پیسے', 'پیمنٹ'],
-  ['receive', 'received', 'collect', 'collection', 'wasool', 'wasooli', 'wasul', 'lena', 'وصول', 'وصولی'],
+  ['receive', 'received', 'collect', 'collection', 'wasool', 'wasooli', 'wasul', 'وصول', 'وصولی'],
   ['customer', 'customers', 'client', 'clients', 'buyer', 'gahak', 'grahak', 'گاہک', 'کسٹمر'],
   ['supplier', 'suppliers', 'vendor', 'vendors', 'dealer', 'سپلائر', 'ڈیلر'],
   ['party', 'parties', 'account holder', 'پارٹی'],
@@ -279,7 +279,7 @@ export interface SearchResult {
 const K1 = 1.2
 const B = 0.75
 /** Minimum BM25 score and query coverage for a confident answer. */
-export const MIN_SCORE = 4
+export const MIN_SCORE = 1.5
 export const MIN_COVERAGE = 0.5
 
 export function search(index: HelpIndex, query: string, limit = 5): SearchResult {

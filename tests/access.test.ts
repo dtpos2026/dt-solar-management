@@ -225,7 +225,7 @@ describe('sign-in user list', () => {
     runtime.session = null
     const r2 = accessRoutes['auth.pinLogin'].handler({ ctx: null as never, sender: fakeSender }, { userId: a.user.id, pin: '4821' }) as { user: { id: number } }
     expect(r2.user.id).toBe(a.user.id)
-    expect(runtime.session?.firmId).toBe(owner.firmId)
+    expect((runtime.session as { firmId: number } | null)?.firmId).toBe(owner.firmId)
   })
 
   it('the users list for administrators never contains hashes', () => {

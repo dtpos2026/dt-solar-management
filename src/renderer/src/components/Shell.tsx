@@ -2,7 +2,8 @@ import { ReactNode, useEffect, useRef, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   BarChart3, CalendarCheck, LifeBuoy, Bell, Boxes, Building2, CalendarDays, ChevronDown, DatabaseBackup, FileText, KeyRound, Landmark,
-  LayoutDashboard, Lock, LogOut, Palette, Receipt, Search, Settings, ShieldCheck, ShoppingBag, ShoppingCart, SunMedium, Truck, Users, Check, AlertTriangle
+  LayoutDashboard, Lock, LogOut, Palette, Receipt, Search, Settings, ShieldCheck, ShoppingBag, ShoppingCart, SunMedium, Truck, Users, Check, AlertTriangle,
+  RectangleEllipsis
 } from 'lucide-react'
 import { api } from '../api'
 import { useApp, useCan } from '../store'
@@ -12,6 +13,7 @@ import { date, label as nice } from '../lib/format'
 import appIcon from '../assets/app-icon.png'
 import { DtMark } from './Brand'
 import { SETTINGS_ENTRY_PERMS } from '../pages/settings/sections'
+import { PIN_RE, PinInput } from '../pages/users/PinInput'
 
 const NAV: Array<{ to: string; label: string; icon: ReactNode; perm?: string | string[]; section?: string }> = [
   { to: '/', label: 'Dashboard', icon: <LayoutDashboard />, perm: 'dashboard.view' },
@@ -268,6 +270,7 @@ function UserMenu({ onLogout }: { onLogout: () => void }): JSX.Element {
   const user = useApp((s) => s.user)
   const [open, setOpen] = useState(false)
   const [pw, setPw] = useState(false)
+  const [pinOpen, setPinOpen] = useState(false)
   const [themeOpen, setThemeOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -278,9 +281,13 @@ function UserMenu({ onLogout }: { onLogout: () => void }): JSX.Element {
     return () => window.removeEventListener('mousedown', h)
   }, [])
   const initials = (user?.fullName ?? '?').split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase()
+  const signOut = async (): Promise<void> => {
+    await api('auth.logout').catch(() => undefined)
+    onLogout()
+  }
   return (
     <div ref={ref} className="relative">
-      <button type="button" onClick={() => setOpen(!open)} className="flex items-center gap-2.5 rounded-xl px-2 py-1 hover:bg-surface-2 cursor-pointer">
+      <button type="button" onClick={() => setOpen(!open)} className="flex items-center gap-2.5 rounded-xl px-2 py-1 hover:bg-surface-2 cursor-pointer" aria-label="User menu">
         <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-brand to-brand-600 text-[13px] font-bold text-on-brand">{initials}</span>
         <span className="text-left leading-tight">
           <span className="block max-w-[140px] truncate text-[13px] font-semibold">{user?.fullName}</span>
@@ -292,12 +299,14 @@ function UserMenu({ onLogout }: { onLogout: () => void }): JSX.Element {
         <div className="card fade-in absolute right-0 z-40 mt-2 w-60 p-1 shadow-xl">
           <MenuItem icon={<Palette />} onClick={() => { setThemeOpen(true); setOpen(false) }}>Theme & appearance</MenuItem>
           <MenuItem icon={<KeyRound />} onClick={() => { setPw(true); setOpen(false) }}>Change password</MenuItem>
+          <MenuItem icon={<RectangleEllipsis />} onClick={() => { setPinOpen(true); setOpen(false) }}>Set my PIN</MenuItem>
           <MenuItem icon={<Lock />} onClick={async () => { await api('auth.lock'); useApp.getState().setLocked(true); setOpen(false) }}>Lock screen</MenuItem>
           <div className="my-1 border-t border-line" />
-          <MenuItem icon={<LogOut />} onClick={async () => { await api('auth.logout').catch(() => undefined); onLogout() }}>Sign out</MenuItem>
+          <MenuItem icon={<LogOut />} onClick={signOut}>Sign out</MenuItem>
         </div>
       )}
-      <ChangePassword open={pw || !!user?.mustChangePassword} forced={!!user?.mustChangePassword} onClose={() => setPw(false)} />
+      <ChangePassword open={pw || !!user?.mustChangePassword} forced={!!user?.mustChangePassword} onClose={() => setPw(false)} onSignOut={signOut} />
+      <MyPinDialog open={pinOpen} onClose={() => setPinOpen(false)} />
       <ThemePicker open={themeOpen} onClose={() => setThemeOpen(false)} />
     </div>
   )
@@ -344,11 +353,33 @@ export function ThemePicker({ open, onClose }: { open: boolean; onClose: () => v
   )
 }
 
-function ChangePassword({ open, forced, onClose }: { open: boolean; forced: boolean; onClose: () => void }): JSX.Element {
+/** Client-side mirror of the server password rules (the server is authoritative). */
+function passwordProblem(pw: string, username?: string): string | null {
+  if (!pw) return null
+  if (pw.length < 6) return 'At least 6 characters.'
+  const lower = pw.toLowerCase()
+  const codes = [...lower].map((c) => c.charCodeAt(0))
+  const step = codes[1] - codes[0]
+  const sequence = Math.abs(step) === 1 && codes.every((c, i) => i === 0 || c - codes[i - 1] === step)
+  if (/^(.)\1+$/.test(pw) || sequence || ['password', 'password1', 'qwerty', 'qwerty123', 'abc123', 'admin', 'welcome', 'letmein', 'iloveyou'].includes(lower)) {
+    return 'Too easy to guess — mix letters and numbers.'
+  }
+  if (username && lower === username.toLowerCase()) return 'Must not be the same as your username.'
+  return null
+}
+
+function ChangePassword({ open, forced, onClose, onSignOut }: { open: boolean; forced: boolean; onClose: () => void; onSignOut: () => void }): JSX.Element {
+  const user = useApp((s) => s.user)
   const [f, setF] = useState({ old: '', next: '', confirm: '' })
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const weak = passwordProblem(f.next, user?.username)
   const submit = async (): Promise<void> => {
-    if (f.next !== f.confirm) return toast.error('New passwords do not match.')
+    setError(null)
+    if (!f.old) return setError(forced ? 'Enter the temporary password you signed in with.' : 'Enter your current password.')
+    if (weak || !f.next) return setError(weak ?? 'Enter a new password.')
+    if (f.next !== f.confirm) return setError('New passwords do not match.')
+    if (f.next === f.old) return setError('Choose a new password that is different from the current one.')
     setBusy(true)
     try {
       await api('auth.changePassword', { oldPassword: f.old, newPassword: f.next })
@@ -357,7 +388,7 @@ function ChangePassword({ open, forced, onClose }: { open: boolean; forced: bool
       setF({ old: '', next: '', confirm: '' })
       onClose()
     } catch (e) {
-      toast.error(e)
+      setError((e as Error).message)
     } finally {
       setBusy(false)
     }
@@ -367,11 +398,17 @@ function ChangePassword({ open, forced, onClose }: { open: boolean; forced: bool
       open={open}
       onClose={() => !forced && onClose()}
       title={forced ? 'Set a new password' : 'Change password'}
-      subtitle={forced ? 'Your administrator requires you to choose a new password before continuing.' : undefined}
+      subtitle={forced ? 'Your administrator gave you a temporary password. Choose your own password before continuing.' : undefined}
       size="sm"
       footer={
         <>
-          {!forced && <Button onClick={onClose}>Cancel</Button>}
+          {forced ? (
+            <Button variant="ghost" icon={<LogOut className="h-4 w-4" />} onClick={onSignOut} className="mr-auto">
+              Sign out
+            </Button>
+          ) : (
+            <Button onClick={onClose}>Cancel</Button>
+          )}
           <Button variant="primary" loading={busy} onClick={submit}>
             Save password
           </Button>
@@ -379,15 +416,106 @@ function ChangePassword({ open, forced, onClose }: { open: boolean; forced: bool
       }
     >
       <div className="space-y-3">
+        <Field label={forced ? 'Temporary password' : 'Current password'}>
+          <Input type="password" value={f.old} onChange={(e) => setF({ ...f, old: e.target.value })} autoFocus autoComplete="current-password" />
+        </Field>
+        <Field label="New password" hint={weak ? undefined : 'At least 6 characters — a word plus a few numbers works well.'} error={weak ?? undefined}>
+          <Input type="password" value={f.next} onChange={(e) => setF({ ...f, next: e.target.value })} autoComplete="new-password" />
+        </Field>
+        <Field label="Confirm new password" error={f.confirm && f.confirm !== f.next ? 'Passwords do not match.' : undefined}>
+          <Input type="password" value={f.confirm} onChange={(e) => setF({ ...f, confirm: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && submit()} autoComplete="new-password" />
+        </Field>
+        {error && <div role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-[12.5px] text-bad">{error}</div>}
+      </div>
+    </Modal>
+  )
+}
+
+interface PinState {
+  hasPin: boolean
+  pinLocked: boolean
+  pinLockedMinutes: number
+}
+
+/** "Set my PIN" — confirm with the current password, then choose a 4–6 digit PIN (or remove it). */
+function MyPinDialog({ open, onClose }: { open: boolean; onClose: () => void }): JSX.Element {
+  const [st, setSt] = useState<PinState | null>(null)
+  const [f, setF] = useState({ password: '', pin: '', confirm: '' })
+  const [busy, setBusy] = useState<'save' | 'remove' | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    if (!open) return
+    setF({ password: '', pin: '', confirm: '' })
+    setError(null)
+    api<PinState | null>('auth.pinStatus').then(setSt).catch(() => setSt(null))
+  }, [open])
+  const save = async (): Promise<void> => {
+    setError(null)
+    if (!f.password) return setError('Enter your current password to confirm it is you.')
+    if (!PIN_RE.test(f.pin)) return setError('The PIN must be 4 to 6 digits.')
+    if (f.pin !== f.confirm) return setError('The two PINs do not match.')
+    setBusy('save')
+    try {
+      await api('auth.pinSet', { currentPassword: f.password, pin: f.pin })
+      toast.ok('Your PIN is set. Pick your name on the sign-in screen or lock screen and enter the PIN.')
+      onClose()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(null)
+    }
+  }
+  const remove = async (): Promise<void> => {
+    setError(null)
+    if (!f.password) return setError('Enter your current password to remove the PIN.')
+    setBusy('remove')
+    try {
+      await api('auth.pinRemove', { currentPassword: f.password })
+      toast.ok('PIN removed. Sign in with your password.')
+      onClose()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(null)
+    }
+  }
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="sm"
+      title={st?.hasPin ? 'Change my PIN' : 'Set my PIN'}
+      subtitle="A 4–6 digit PIN for quick sign-in and unlocking on this computer"
+      footer={
+        <>
+          {st?.hasPin && (
+            <Button variant="ghost" className="mr-auto text-bad" loading={busy === 'remove'} disabled={!!busy} onClick={remove}>
+              Remove PIN
+            </Button>
+          )}
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="primary" loading={busy === 'save'} disabled={!!busy} onClick={save}>
+            {st?.hasPin ? 'Change PIN' : 'Set PIN'}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        {st?.pinLocked && (
+          <div className="rounded-lg bg-warn-soft px-3 py-2 text-[12.5px] text-warn">Your PIN is locked for {st.pinLockedMinutes} more minute(s) after wrong attempts. Setting a new PIN unlocks it.</div>
+        )}
         <Field label="Current password">
-          <Input type="password" value={f.old} onChange={(e) => setF({ ...f, old: e.target.value })} autoFocus />
+          <Input type="password" value={f.password} autoFocus onChange={(e) => setF({ ...f, password: e.target.value })} autoComplete="current-password" />
         </Field>
-        <Field label="New password" hint="At least 6 characters">
-          <Input type="password" value={f.next} onChange={(e) => setF({ ...f, next: e.target.value })} />
-        </Field>
-        <Field label="Confirm new password">
-          <Input type="password" value={f.confirm} onChange={(e) => setF({ ...f, confirm: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && submit()} />
-        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="New PIN" hint="4–6 digits, not 1234 or 0000">
+            <PinInput size="md" label="PIN" value={f.pin} onChange={(v) => setF({ ...f, pin: v })} />
+          </Field>
+          <Field label="Repeat PIN">
+            <PinInput size="md" label="PIN" value={f.confirm} onChange={(v) => setF({ ...f, confirm: v })} onEnter={save} />
+          </Field>
+        </div>
+        {error && <div role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-[12.5px] text-bad">{error}</div>}
       </div>
     </Modal>
   )
@@ -395,33 +523,73 @@ function ChangePassword({ open, forced, onClose }: { open: boolean; forced: bool
 
 function LockScreen({ onLogout }: { onLogout: () => void }): JSX.Element {
   const user = useApp((s) => s.user)
+  const [st, setSt] = useState<PinState | null>(null)
+  const [method, setMethod] = useState<'pin' | 'password' | null>(null)
   const [pw, setPw] = useState('')
+  const [pin, setPin] = useState('')
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    api<PinState | null>('auth.pinStatus')
+      .then((s) => {
+        setSt(s)
+        setMethod(s?.hasPin && !s.pinLocked ? 'pin' : 'password')
+        if (s?.pinLocked) setError(`PIN is locked for ${s.pinLockedMinutes} more minute(s). Use your password.`)
+      })
+      .catch(() => setMethod('password'))
+  }, [])
   const unlock = async (): Promise<void> => {
+    setError(null)
+    if (method === 'pin' && !PIN_RE.test(pin)) return setError('Enter your 4–6 digit PIN.')
+    if (method === 'password' && !pw) return setError('Enter your password.')
     setBusy(true)
     try {
-      await api('auth.unlock', { password: pw })
+      await api('auth.unlock', method === 'pin' ? { pin } : { password: pw })
       useApp.getState().setLocked(false)
       setPw('')
+      setPin('')
     } catch (e) {
-      toast.error(e)
+      const msg = (e as Error).message
+      setError(msg)
+      setPw('')
+      setPin('')
+      if (method === 'pin' && /PIN is locked/i.test(msg)) setMethod('password')
     } finally {
       setBusy(false)
     }
+  }
+  const switchTo = (m: 'pin' | 'password'): void => {
+    setError(null)
+    setPw('')
+    setPin('')
+    setMethod(m)
   }
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gradient-to-br from-side via-side to-brand-600 p-6">
       <div className="card fade-in w-full max-w-sm p-7 text-center shadow-2xl">
         <img src={appIcon} className="mx-auto mb-3 h-14 w-14 rounded-2xl" alt="" />
         <div className="text-[18px] font-bold">Session locked</div>
-        <div className="mb-5 text-[13px] text-muted">Signed in as {user?.fullName}. Enter your password to continue.</div>
-        <Input type="password" autoFocus placeholder="Password" value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && unlock()} />
-        <Button variant="primary" className="mt-3 w-full" loading={busy} onClick={unlock} icon={<Lock className="h-4 w-4" />}>
+        <div className="mb-5 text-[13px] text-muted">
+          Signed in as <b className="text-ink">{user?.fullName}</b>. {method === 'pin' ? 'Enter your PIN to continue.' : 'Enter your password to continue.'}
+        </div>
+        {method === 'pin' && <PinInput value={pin} onChange={setPin} onEnter={unlock} autoFocus invalid={!!error} />}
+        {method === 'password' && (
+          <Input type="password" autoFocus placeholder="Password" value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && unlock()} />
+        )}
+        {error && <div role="alert" className="mt-3 rounded-lg bg-bad-soft px-3 py-2 text-left text-[12.5px] text-bad">{error}</div>}
+        <Button variant="primary" className="mt-3 w-full" loading={busy} disabled={!method} onClick={unlock} icon={<Lock className="h-4 w-4" />}>
           Unlock
         </Button>
-        <button type="button" className="mt-4 text-[12.5px] text-muted hover:text-ink cursor-pointer" onClick={async () => { await api('auth.logout').catch(() => undefined); onLogout() }}>
-          Sign out instead
-        </button>
+        {st?.hasPin && method && (
+          <button type="button" className="mt-3 text-[12.5px] font-medium text-brand hover:underline cursor-pointer" onClick={() => switchTo(method === 'pin' ? 'password' : 'pin')}>
+            {method === 'pin' ? 'Use password instead' : 'Use PIN instead'}
+          </button>
+        )}
+        <div>
+          <button type="button" className="mt-3 text-[12.5px] text-muted hover:text-ink cursor-pointer" onClick={async () => { await api('auth.logout').catch(() => undefined); onLogout() }}>
+            Sign out instead
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -447,7 +615,7 @@ function LicenseBanner(): JSX.Element | null {
 }
 
 export function Shell({ children, onLogout }: { children: ReactNode; onLogout: () => void }): JSX.Element {
-  const { locked, firm, settings } = useApp()
+  const { locked, firm, settings, user } = useApp()
   const lastActivity = useRef(Date.now())
   const lastPing = useRef(Date.now())
 
@@ -497,7 +665,7 @@ export function Shell({ children, onLogout }: { children: ReactNode; onLogout: (
         </header>
         <LicenseBanner />
         <main key={firm?.id} className="flex-1 overflow-y-auto p-6">
-          {children}
+          {user?.mustChangePassword ? null : children}
         </main>
       </div>
       {locked && <LockScreen onLogout={onLogout} />}

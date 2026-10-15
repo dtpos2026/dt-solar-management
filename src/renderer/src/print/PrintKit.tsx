@@ -146,6 +146,65 @@ export function Letterhead({ ctx, title, meta, subtitle, showLogo }: { ctx: Prin
   )
 }
 
+/** Modern layout header: bold colour band with the firm on the left and the document title / number on the right. */
+export function ModernHeader({ ctx, title, number, date, showLogo, subtitle }: { ctx: PrintContext; title: string; number: string; date: string; showLogo: boolean; subtitle?: string }): JSX.Element {
+  const f = ctx.firm
+  const contact = [f.phone, f.phone2].filter(Boolean).join(' / ')
+  return (
+    <div className="avoid-break mb-4 rounded-xl px-5 py-4 text-white" style={{ background: 'linear-gradient(120deg, var(--pc), color-mix(in srgb, var(--pc) 70%, #000))' }}>
+      <div className="flex items-start justify-between gap-6">
+        <div className="flex min-w-0 items-center gap-4">
+          {showLogo && f.logo && (
+            <div className="shrink-0 rounded-lg bg-white p-1.5">
+              <img src={f.logo} alt="" className="max-h-[60px] max-w-[120px] object-contain" />
+            </div>
+          )}
+          <div className="min-w-0">
+            <div className="text-[22px] leading-tight font-extrabold tracking-tight">{f.name}</div>
+            {f.tagline && <div className="text-[9.5px] text-white/80">{f.tagline}</div>}
+            <div className="mt-1 text-[9.8px] leading-snug text-white/90">
+              {[f.address, f.city].filter(Boolean).join(', ')}
+              {(contact || f.email) && <div>{[contact && `Phone: ${contact}`, f.email, f.website].filter(Boolean).join('  ·  ')}</div>}
+              {(f.ntn || f.strn) && <div>{[f.ntn && `NTN: ${f.ntn}`, f.strn && `STRN: ${f.strn}`].filter(Boolean).join('  ·  ')}</div>}
+            </div>
+          </div>
+        </div>
+        <div className="shrink-0 text-right">
+          <div className="text-[26px] leading-none font-black tracking-[0.06em] uppercase">{title}</div>
+          {subtitle && <div className="mt-1 text-[9.5px] text-white/80">{subtitle}</div>}
+          <div className="mt-2 text-[12px] font-bold">{number}</div>
+          <div className="text-[10px] text-white/85">{date}</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Compact layout header: one tight row with a coloured rule. */
+export function CompactHeader({ ctx, title, number, date, showLogo }: { ctx: PrintContext; title: string; number: string; date: string; showLogo: boolean }): JSX.Element {
+  const f = ctx.firm
+  const contact = [f.phone, f.phone2].filter(Boolean).join(' / ')
+  return (
+    <div className="avoid-break flex items-center justify-between gap-4 border-b-2 pb-2" style={{ borderColor: 'var(--pc)' }}>
+      <div className="flex min-w-0 items-center gap-3">
+        {showLogo && f.logo && <img src={f.logo} alt="" className="max-h-[40px] max-w-[90px] object-contain" />}
+        <div className="min-w-0">
+          <div className="text-[15px] leading-tight font-extrabold" style={{ color: 'var(--pc)' }}>{f.name}</div>
+          <div className="text-[8.8px] leading-snug text-[#2d3748]">
+            {[[f.address, f.city].filter(Boolean).join(', '), contact && `Ph: ${contact}`, f.email, f.ntn && `NTN: ${f.ntn}`, f.strn && `STRN: ${f.strn}`].filter(Boolean).join(' · ')}
+          </div>
+        </div>
+      </div>
+      <div className="shrink-0 text-right">
+        <div className="text-[14px] font-black tracking-[0.06em] uppercase" style={{ color: 'var(--pc)' }}>{title}</div>
+        <div className="text-[9.5px]">
+          <b>{number}</b> · {date}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /** A labelled info box (Bill To, Project, etc.). */
 export function InfoBox({ title, children, className }: { title: string; children: ReactNode; className?: string }): JSX.Element {
   return (

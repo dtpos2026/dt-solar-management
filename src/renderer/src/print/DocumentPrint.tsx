@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useState } from 'react'
 import { api } from '../api'
-import { InfoBox, Letterhead, PrintContext, PrintFooter, PrintTable, Sheet, Signatures, TemplateProps, TotalsBox, pd, pm, pq } from './PrintKit'
+import { CompactHeader, InfoBox, Letterhead, ModernHeader, PrintContext, PrintFooter, PrintTable, Sheet, Signatures, TemplateProps, TotalsBox, pd, pm, pq } from './PrintKit'
 import { TemplateOptions, firmOptions } from './design'
 import { ThermalDocument } from './ThermalPrint'
 import { amountInWords, round2 } from '@shared/money'
@@ -389,35 +389,9 @@ function DetailsGrid({ v }: { v: DocView }): JSX.Element {
 /* ------------------------------------------ Modern ------------------------------------------ */
 function ModernLayout({ v, ctx }: { v: DocView; ctx: PrintContext }): JSX.Element {
   const d = v.d
-  const f = ctx.firm
-  const contact = [f.phone, f.phone2].filter(Boolean).join(' / ')
   return (
     <Sheet ctx={ctx} watermark={v.watermark} accent={v.o.accentColor}>
-      <div className="avoid-break mb-4 rounded-xl px-5 py-4 text-white" style={{ background: 'linear-gradient(120deg, var(--pc), color-mix(in srgb, var(--pc) 70%, #000))' }}>
-        <div className="flex items-start justify-between gap-6">
-          <div className="flex min-w-0 items-center gap-4">
-            {v.o.showLogo && f.logo && (
-              <div className="shrink-0 rounded-lg bg-white p-1.5">
-                <img src={f.logo} alt="" className="max-h-[60px] max-w-[120px] object-contain" />
-              </div>
-            )}
-            <div className="min-w-0">
-              <div className="text-[22px] leading-tight font-extrabold tracking-tight">{f.name}</div>
-              {f.tagline && <div className="text-[9.5px] text-white/80">{f.tagline}</div>}
-              <div className="mt-1 text-[9.8px] leading-snug text-white/90">
-                {[f.address, f.city].filter(Boolean).join(', ')}
-                {(contact || f.email) && <div>{[contact && `Phone: ${contact}`, f.email, f.website].filter(Boolean).join('  ·  ')}</div>}
-                {(f.ntn || f.strn) && <div>{[f.ntn && `NTN: ${f.ntn}`, f.strn && `STRN: ${f.strn}`].filter(Boolean).join('  ·  ')}</div>}
-              </div>
-            </div>
-          </div>
-          <div className="shrink-0 text-right">
-            <div className="text-[26px] leading-none font-black tracking-[0.06em] uppercase">{v.title}</div>
-            <div className="mt-2 text-[12px] font-bold">{d.number}</div>
-            <div className="text-[10px] text-white/85">{pd(d.date)}</div>
-          </div>
-        </div>
-      </div>
+      <ModernHeader ctx={ctx} title={v.title} number={d.number} date={pd(d.date)} showLogo={v.o.showLogo} />
 
       <div className="avoid-break mb-4 grid grid-cols-[1.3fr_1fr_1fr] gap-5 text-[10.5px] leading-snug">
         <div>
@@ -475,27 +449,9 @@ function FragmentRow({ k, v }: { k: string; v: string }): JSX.Element {
 /* ------------------------------------------ Compact ------------------------------------------ */
 function CompactLayout({ v, ctx }: { v: DocView; ctx: PrintContext }): JSX.Element {
   const d = v.d
-  const f = ctx.firm
-  const contact = [f.phone, f.phone2].filter(Boolean).join(' / ')
   return (
     <Sheet ctx={ctx} watermark={v.watermark} accent={v.o.accentColor} className="!text-[10px]">
-      <div className="avoid-break flex items-center justify-between gap-4 border-b-2 pb-2" style={{ borderColor: 'var(--pc)' }}>
-        <div className="flex min-w-0 items-center gap-3">
-          {v.o.showLogo && f.logo && <img src={f.logo} alt="" className="max-h-[40px] max-w-[90px] object-contain" />}
-          <div className="min-w-0">
-            <div className="text-[15px] leading-tight font-extrabold" style={{ color: 'var(--pc)' }}>{f.name}</div>
-            <div className="text-[8.8px] leading-snug text-[#2d3748]">
-              {[[f.address, f.city].filter(Boolean).join(', '), contact && `Ph: ${contact}`, f.email, f.ntn && `NTN: ${f.ntn}`, f.strn && `STRN: ${f.strn}`].filter(Boolean).join(' · ')}
-            </div>
-          </div>
-        </div>
-        <div className="shrink-0 text-right">
-          <div className="text-[14px] font-black tracking-[0.06em] uppercase" style={{ color: 'var(--pc)' }}>{v.title}</div>
-          <div className="text-[9.5px]">
-            <b>{d.number}</b> · {pd(d.date)}
-          </div>
-        </div>
-      </div>
+      <CompactHeader ctx={ctx} title={v.title} number={d.number} date={pd(d.date)} showLogo={v.o.showLogo} />
       <div className="avoid-break my-2 grid grid-cols-[1.4fr_1fr] gap-4 text-[9.5px] leading-snug">
         <div>
           <span className="font-bold tracking-wider text-[#718096] uppercase">{v.partyLabel}: </span>
@@ -569,7 +525,8 @@ export function DocumentPrint({ id, ctx, setTitle, design, onKind, data }: Templ
 
   const layout = design?.layout ?? 'classic'
   const v = buildDocView(d, ctx, design?.options ?? firmOptions(ctx.ps))
-  if (layout === 'thermal80') return <ThermalDocument v={v} ctx={ctx} />
+  // The 80 mm receipt exists for sales invoices only (and payment receipts, see PaymentPrint).
+  if (layout === 'thermal80' && v.t === 'sale_invoice') return <ThermalDocument v={v} ctx={ctx} />
   if (layout === 'modern') return <ModernLayout v={v} ctx={ctx} />
   if (layout === 'compact') return <CompactLayout v={v} ctx={ctx} />
   return <ClassicLayout v={v} ctx={ctx} />

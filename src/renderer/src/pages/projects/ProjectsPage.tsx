@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Plus, SunMedium, LayoutGrid, List, MapPin, Zap } from 'lucide-react'
+import { Plus, SunMedium, LayoutGrid, List, MapPin, Zap, Archive, ArchiveRestore, Trash2 } from 'lucide-react'
 import { api } from '../../api'
 import { useCan } from '../../store'
-import { Badge, Button, Empty, Field, Input, Loading, Modal, NumberInput, PageHeader, Progress, Select, Textarea, cx, toast } from '../../components/ui'
+import { Badge, Button, Empty, Field, IconButton, Input, Loading, Modal, NumberInput, PageHeader, Progress, Select, Textarea, cx, toast } from '../../components/ui'
 import { DataTable, Column } from '../../components/DataTable'
 import { Combobox } from '../../components/Combobox'
 import { PartyForm } from '../../components/PartyForm'
 import { useLoad, useParties } from '../../lib/hooks'
 import { date, label, money, pct, qty, statusTone } from '../../lib/format'
 import { PROJECT_STATUSES, PROJECT_STATUS_LABELS, PROJECT_TYPES, SYSTEM_TYPES, SYSTEM_TYPE_LABELS } from '@shared/docTypes'
+import { ProjectDeleteDialog, archiveProjectFlow, restoreProjectFlow } from './projectActions'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export function ProjectsPage(): JSX.Element {
@@ -19,25 +20,44 @@ export function ProjectsPage(): JSX.Element {
   const [status, setStatus] = useState('')
   const [view, setView] = useState<'cards' | 'table'>('cards')
   const [q, setQ] = useState('')
+  const [archived, setArchived] = useState<'hide' | 'only' | 'all'>('hide')
+  const [del, setDel] = useState<any>(null)
   const [form, setForm] = useState<{ open: boolean; project?: any }>({ open: params.get('new') === '1' })
   useEffect(() => {
     if (params.get('new') === '1') setParams({}, { replace: true })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
-  const { data, loading, reload } = useLoad(() => api<any[]>('projects.list', { status: status || undefined }), [status])
+  const { data, loading, reload } = useLoad(() => api<any[]>('projects.list', { status: status || undefined, archived }), [status, archived])
   const rows = (data ?? []).filter((r) => !q || `${r.code} ${r.name} ${r.customer_name ?? ''} ${r.city ?? ''}`.toLowerCase().includes(q.toLowerCase()))
   const showFin = rows.some((r) => r.financials?.netProfit !== undefined)
+  const canDelete = can('projects.delete')
+  const actions = (r: any): JSX.Element | null =>
+    canDelete ? (
+      <div className="flex justify-end">
+        {r.is_archived
+          ? <IconButton title="Restore project" onClick={async () => { if (await restoreProjectFlow(r)) reload() }}><ArchiveRestore className="h-4 w-4" /></IconButton>
+          : <IconButton title="Archive project" onClick={async () => { if (await archiveProjectFlow(r)) reload() }}><Archive className="h-4 w-4" /></IconButton>}
+        <IconButton title="Delete project" tone="bad" onClick={() => setDel(r)}><Trash2 className="h-4 w-4" /></IconButton>
+      </div>
+    ) : null
+  const statusBadges = (r: any): JSX.Element => (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      <Badge tone={statusTone(r.status)}>{PROJECT_STATUS_LABELS[r.status as keyof typeof PROJECT_STATUS_LABELS]}</Badge>
+      {!!r.is_archived && <Badge tone="warn">Archived</Badge>}
+    </span>
+  )
   const cols: Array<Column<any>> = [
     { key: 'code', header: 'Project', render: (r) => <div><div className="font-semibold">{r.name}</div><div className="text-[11.5px] text-muted">{r.code} · {r.customer_name ?? '—'}</div></div>, value: (r) => `${r.code} ${r.name}` },
     { key: 'capacity_kw', header: 'Size', align: 'right', render: (r) => `${qty(r.capacity_kw)} kW` },
     { key: 'system_type', header: 'System', render: (r) => SYSTEM_TYPE_LABELS[r.system_type] },
-    { key: 'status', header: 'Status', render: (r) => <Badge tone={statusTone(r.status)}>{PROJECT_STATUS_LABELS[r.status as keyof typeof PROJECT_STATUS_LABELS]}</Badge> },
+    { key: 'status', header: 'Status', render: statusBadges },
     { key: 'progress', header: 'Progress', render: (r) => <div className="flex w-28 items-center gap-2"><Progress value={r.progress} /><span className="text-[11.5px] text-muted">{r.progress}%</span></div> },
     { key: 'contract', header: 'Contract', align: 'right', value: (r) => r.financials.contractValue, render: (r) => money(r.financials.contractValue) },
     { key: 'revenue', header: 'Revenue', align: 'right', hidden: !showFin, value: (r) => r.financials.revenue, render: (r) => money(r.financials.revenue) },
     { key: 'cost', header: 'Direct cost', align: 'right', hidden: !showFin, value: (r) => r.financials.totalDirectCost, render: (r) => money(r.financials.totalDirectCost) },
     { key: 'profit', header: 'Net profit', align: 'right', hidden: !showFin, value: (r) => r.financials.netProfit, render: (r) => <span className={r.financials.netProfit < 0 ? 'font-semibold text-bad' : 'font-semibold text-ok'}>{money(r.financials.netProfit)}</span> },
     { key: 'margin', header: 'Margin', align: 'right', hidden: !showFin, value: (r) => r.financials.marginPct, render: (r) => pct(r.financials.marginPct) },
-    { key: 'outstanding', header: 'Customer due', align: 'right', value: (r) => r.financials.customerOutstanding, render: (r) => <span className={r.financials.customerOutstanding > 0.5 ? 'text-bad' : ''}>{money(r.financials.customerOutstanding)}</span> }
+    { key: 'outstanding', header: 'Customer due', align: 'right', value: (r) => r.financials.customerOutstanding, render: (r) => <span className={r.financials.customerOutstanding > 0.5 ? 'text-bad' : ''}>{money(r.financials.customerOutstanding)}</span> },
+    { key: 'actions', header: '', sortable: false, csv: false, hidden: !canDelete, render: actions }
   ]
   return (
     <div>
@@ -61,25 +81,36 @@ export function ProjectsPage(): JSX.Element {
           <option value="">All statuses</option>
           {PROJECT_STATUSES.map((s) => <option key={s} value={s}>{PROJECT_STATUS_LABELS[s]}</option>)}
         </Select>
+        <Select className="w-48" value={archived} onChange={(e) => setArchived(e.target.value as 'hide' | 'only' | 'all')} aria-label="Archived filter">
+          <option value="hide">Hide archived</option>
+          <option value="only">Show archived</option>
+          <option value="all">Active + archived</option>
+        </Select>
         <span className="ml-auto text-[13px] text-muted">{rows.length} project(s) · {qty(rows.reduce((a, r) => a + (r.capacity_kw || 0), 0))} kW</span>
       </div>
       {loading ? (
         <Loading />
       ) : rows.length === 0 ? (
-        <div className="card"><Empty icon={<SunMedium />} title="No projects yet" action={can('projects.manage') && <Button variant="primary" onClick={() => setForm({ open: true })}>Create your first project</Button>}>Create a project for each installation to track its quotation, invoices, materials, labor, payments and profit.</Empty></div>
+        archived === 'only' ? (
+          <div className="card"><Empty icon={<Archive />} title="No archived projects">Projects you archive are hidden from the list and from pickers but keep all their records. They appear here and can be restored.</Empty></div>
+        ) : q || status ? (
+          <div className="card"><Empty icon={<SunMedium />} title="No matching projects">Change the search or status filter.</Empty></div>
+        ) : (
+          <div className="card"><Empty icon={<SunMedium />} title="No projects yet" action={can('projects.manage') && <Button variant="primary" onClick={() => setForm({ open: true })}>Create your first project</Button>}>Create a project for each installation to track its quotation, invoices, materials, labor, payments and profit.</Empty></div>
+        )
       ) : view === 'table' ? (
         <DataTable rows={rows} columns={cols} searchable={false} exportName="Projects" onRowClick={(r) => nav(`/projects/${r.id}`)} />
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
           {rows.map((r) => (
-            <button key={r.id} type="button" onClick={() => nav(`/projects/${r.id}`)} className="card fade-in p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md cursor-pointer">
+            <div key={r.id} role="link" tabIndex={0} onClick={() => nav(`/projects/${r.id}`)} onKeyDown={(e) => e.key === 'Enter' && nav(`/projects/${r.id}`)} className={cx('card fade-in p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md cursor-pointer', !!r.is_archived && 'opacity-75')}>
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <div className="text-[11.5px] font-semibold text-muted">{r.code}</div>
                   <div className="text-[15px] font-semibold">{r.name}</div>
                   <div className="text-[12.5px] text-muted">{r.customer_name ?? 'No customer'}</div>
                 </div>
-                <Badge tone={statusTone(r.status)}>{PROJECT_STATUS_LABELS[r.status as keyof typeof PROJECT_STATUS_LABELS]}</Badge>
+                {statusBadges(r)}
               </div>
               <div className="mt-3 flex flex-wrap gap-3 text-[12.5px] text-muted">
                 <span className="inline-flex items-center gap-1"><Zap className="h-3.5 w-3.5 text-sun" />{qty(r.capacity_kw)} kW {SYSTEM_TYPE_LABELS[r.system_type]}</span>
@@ -96,10 +127,12 @@ export function ProjectsPage(): JSX.Element {
                 )}
                 <div><div className="text-muted">Customer due</div><div className={cx('num font-semibold', r.financials.customerOutstanding > 0.5 && 'text-bad')}>{money(r.financials.customerOutstanding)}</div></div>
               </div>
-            </button>
+              {canDelete && <div className="-mb-2 mt-2 flex justify-end border-t border-line pt-1">{actions(r)}</div>}
+            </div>
           ))}
         </div>
       )}
+      <ProjectDeleteDialog project={del} onClose={() => setDel(null)} onDone={() => reload()} />
       <ProjectForm open={form.open} project={form.project} onClose={() => setForm({ open: false })} onSaved={(id) => { reload(); if (!form.project) nav(`/projects/${id}`) }} />
     </div>
   )

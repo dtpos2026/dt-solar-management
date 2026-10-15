@@ -37,6 +37,7 @@ const VALIDATORS: Record<string, (v: unknown) => unknown> = {
   location_manual: (v) => String(v ?? '').slice(0, 200),
   whatsapp_mode: (v) => (['web', 'chat_link'].includes(String(v)) ? String(v) : 'web'),
   whatsapp_country_code: (v) => String(v ?? '92').replace(/\D/g, '').slice(0, 4) || '92',
+  whatsapp_notifications: (v) => v === true,
   backup_on_day_close: (v) => !!v
 }
 

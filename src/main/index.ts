@@ -9,6 +9,7 @@ import { broadcast, createMainWindow, createSplash, getMainWindow, isTrustedSend
 import { autoBackupIfDue } from './backup'
 import { initLog, log } from './log'
 import { AppError } from './services/context'
+import { registerDragHandler } from './whatsapp/outbox'
 
 const SPLASH_MIN_MS = 3200
 /**
@@ -138,6 +139,7 @@ async function boot(): Promise<void> {
   openAppDatabase()
   setupLicense()
   setupIpc()
+  registerDragHandler()
   const main: BrowserWindow = createMainWindow()
   main.once('ready-to-show', () => {
     const wait = Math.max(0, SPLASH_MIN_MS - (Date.now() - started))

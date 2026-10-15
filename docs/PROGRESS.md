@@ -23,7 +23,7 @@ Status keys: [x] done & tested · [~] partial · [ ] not started · [!] blocked 
 - [ ] assist — offline Urdu/English help assistant, built-in WhatsApp Web module (QR link device) + send document flow with log
 
 ## Super Admin portal areas
-- [ ] portal-admin — Admins (RBAC users), Settings (branding/invoice/bank/QR/signing key), Activity Log (filters/export/archive/retention), Verify Key, rules tests
+- [x] portal-admin — Admins (RBAC users), Settings (branding/invoice/bank/QR/signing key), Activity Log (filters/export/archive/retention), Verify Key, rules tests
 - [ ] portal-licensing — Dashboard metrics/charts, Clients, Licenses lifecycle (renew/plan/limits/detach/history), Devices (+requests), Device Map
 - [ ] portal-billing — Billing invoices/payments/receipts/reports/PDF, public QR verification page, Support conversations
 

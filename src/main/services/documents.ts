@@ -45,10 +45,14 @@ import {
 } from './inventory'
 import { applyAdvances, docAllocated, docDue, docReturned, insertPayment } from './payments'
 import { partyBalance } from './parties'
+import { assertPeriodOpen } from './closing'
 
 export interface DocLineInput {
   productId?: number | null
+  /** Item name / line title (printed in bold). */
   description: string
+  /** Optional item description printed under the item name (multi-line). */
+  details?: string | null
   unit?: string
   qty: number
   rate: number
@@ -93,6 +97,7 @@ export interface DocInput {
 interface ComputedLine {
   productId: number | null
   description: string
+  details: string | null
   unit: string | null
   qty: number
   rate: number
@@ -114,6 +119,23 @@ export type { ComputedTotals } from '../../shared/totals'
 
 function permPrefix(type: DocType): string {
   return DOC_TYPES[type].perm
+}
+
+/** Multi-line free text (item description): keeps line breaks, trims, caps length; empty -> null. */
+function optMultiline(s: unknown, max: number): string | null {
+  if (s === null || s === undefined) return null
+  const v = String(s)
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((x) => x.replace(/\s+$/, ''))
+    .join('\n')
+    .replace(/^\n+|\n+$/g, '')
+  return v.trim() ? v.slice(0, max) : null
+}
+
+/** Closed days / months freeze every document that affects the books (invoices, bills and returns). */
+function assertOpenFor(ctx: Ctx, type: DocType, date: string): void {
+  if (DOC_TYPES[type].financial) assertPeriodOpen(ctx.db, ctx.firmId, date)
 }
 
 function assertCanCreate(ctx: Ctx, type: DocType): void {
@@ -175,6 +197,7 @@ function validateAndCompute(ctx: Ctx, input: DocInput): { lines: ComputedLine[];
     return {
       productId,
       description,
+      details: optMultiline(l.details, 4000),
       unit: optText(l.unit, 20) ?? product?.unit ?? null,
       qty,
       rate,
@@ -367,9 +390,9 @@ function insertLines(ctx: Ctx, docId: number, input: DocInput, lines: ComputedLi
   const isPurchaseCost = input.docType === 'purchase_invoice' || input.docType === 'purchase_order'
   const costs = isPurchaseCost ? landedCosts(ctx, lines, totals) : lines.map(() => 0)
   const ins = ctx.db.prepare(
-    `INSERT INTO document_lines (document_id, line_no, product_id, description, unit, qty, rate, discount_pct, discount_amt, tax_rate,
+    `INSERT INTO document_lines (document_id, line_no, product_id, description, details, unit, qty, rate, discount_pct, discount_amt, tax_rate,
        tax_amt, net_amount, line_total, unit_cost, cost_total, serials, batch_no, warranty, ref_line_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
   lines.forEach((l, i) => {
     const stockAffecting =
@@ -387,6 +410,7 @@ function insertLines(ctx: Ctx, docId: number, input: DocInput, lines: ComputedLi
       i + 1,
       l.productId,
       l.description,
+      l.details,
       l.unit,
       l.qty,
       l.rate,
@@ -540,6 +564,7 @@ function inheritReturnFlags(ctx: Ctx, input: DocInput): DocInput {
 export function createDocument(ctx: Ctx, rawInput: DocInput): number {
   if (!rawInput || !DOC_TYPES[rawInput.docType]) throw new AppError('Unknown document type.', 'VALIDATION')
   assertCanCreate(ctx, rawInput.docType)
+  assertOpenFor(ctx, rawInput.docType, requireDate(rawInput.date))
   const input = inheritReturnFlags(ctx, rawInput)
   const db = ctx.db
   return db.transaction(() => {
@@ -578,6 +603,8 @@ export function updateDocument(ctx: Ctx, rawInput: DocInput): number {
   if (before.status === 'cancelled') throw new AppError('Cancelled documents cannot be edited.', 'VALIDATION')
   if (before.status === 'converted') throw new AppError('This document has already been converted and cannot be edited.', 'VALIDATION')
   assertCanEdit(ctx, before.doc_type, before.id, 'edit')
+  assertOpenFor(ctx, before.doc_type, before.date)
+  assertOpenFor(ctx, before.doc_type, requireDate(input.date))
   return db.transaction(() => {
     const snapshot = getDocument(ctx, before.id)
     unpostStock(ctx, before)
@@ -625,6 +652,7 @@ export function cancelDocument(ctx: Ctx, id: number, reason?: string): void {
   const d = getDocRow(ctx, id)
   if (d.status === 'cancelled') throw new AppError('Document is already cancelled.', 'VALIDATION')
   assertCanEdit(ctx, d.doc_type, d.id, 'cancel')
+  assertOpenFor(ctx, d.doc_type, d.date)
   const returns = db
     .prepare("SELECT number FROM documents WHERE ref_doc_id = ? AND status <> 'cancelled' AND doc_type IN ('sale_return','purchase_return')")
     .all(id) as Array<{ number: string }>
@@ -667,6 +695,110 @@ export function deleteDraft(ctx: Ctx, id: number): void {
     ctx.db.prepare('DELETE FROM documents WHERE id = ?').run(id)
   })()
   audit(ctx, 'delete', d.doc_type, id, `Deleted ${DOC_TYPES[d.doc_type].label} ${d.number}`)
+}
+
+const VOID_HINT = 'Cancel (void) it instead, or create a Return / credit note, so the books keep a record.'
+
+/**
+ * Why a document cannot be deleted permanently (null = it can). Invoices, bills and returns may be deleted only
+ * by users with sales.delete / purchases.delete, when nothing is settled against them, nothing refers to them and
+ * their date is in an open period. Stock reversal is checked when the delete runs (it rolls back on failure).
+ */
+export function deleteBlockReason(ctx: Ctx, id: number): string | null {
+  return blockReason(ctx, getDocRow(ctx, id))?.message ?? null
+}
+
+function blockReason(ctx: Ctx, d: DocRow): { message: string; code: string } | null {
+  const db = ctx.db
+  const meta = DOC_TYPES[d.doc_type]
+  const p = permPrefix(d.doc_type)
+  if (!meta.financial) {
+    if (!can(ctx, p === 'quotations' ? 'quotations.manage' : `${p}.cancel`)) {
+      return { message: 'You do not have permission to delete this document.', code: 'FORBIDDEN' }
+    }
+    const linked = db.prepare('SELECT number FROM documents WHERE ref_doc_id = ? LIMIT 1').get(d.id) as { number: string } | undefined
+    if (linked) return { message: `This document was converted to ${linked.number}; it cannot be deleted.`, code: 'VALIDATION' }
+    return null
+  }
+  if (!can(ctx, `${p}.delete`)) {
+    return {
+      message: `You do not have permission to delete ${p === 'sales' ? 'sales' : 'purchase'} documents permanently. ${VOID_HINT}`,
+      code: 'FORBIDDEN'
+    }
+  }
+  const alloc = db
+    .prepare(
+      `SELECT p.number FROM payment_allocations a JOIN payments p ON p.id = a.payment_id WHERE a.document_id = ?
+       ORDER BY p.id LIMIT 3`
+    )
+    .all(d.id) as Array<{ number: string }>
+  if (alloc.length) {
+    return {
+      message: `${d.number} has payments allocated to it (${alloc.map((a) => a.number).join(', ')}), so it cannot be deleted. ${VOID_HINT}`,
+      code: 'VALIDATION'
+    }
+  }
+  const refs = db
+    .prepare(
+      `SELECT DISTINCT r.id, r.number, r.doc_type, r.status FROM documents r
+       WHERE r.id <> @id AND (r.ref_doc_id = @id OR r.id IN (SELECT dl.document_id FROM document_lines dl
+         WHERE dl.ref_line_id IN (SELECT id FROM document_lines WHERE document_id = @id)))
+       ORDER BY r.id LIMIT 3`
+    )
+    .all({ id: d.id }) as Array<{ number: string; doc_type: DocType; status: string }>
+  if (refs.length) {
+    const list = refs.map((r) => `${DOC_TYPES[r.doc_type]?.label ?? 'Document'} ${r.number}${r.status === 'cancelled' ? ' (cancelled)' : ''}`).join(', ')
+    return { message: `${d.number} is referenced by ${list}, so it cannot be deleted. ${VOID_HINT}`, code: 'VALIDATION' }
+  }
+  try {
+    assertPeriodOpen(db, ctx.firmId, d.date)
+  } catch (e) {
+    return { message: (e as AppError).message, code: (e as AppError).code ?? 'PERIOD_CLOSED' }
+  }
+  return null
+}
+
+/** Source documents go back to their open status when the only document converted from them is deleted. */
+function reopenSource(ctx: Ctx, d: DocRow): string | null {
+  if (!d.ref_doc_id) return null
+  const src = ctx.db.prepare('SELECT id, doc_type, status, number FROM documents WHERE id = ? AND firm_id = ?').get(d.ref_doc_id, ctx.firmId) as
+    | { id: number; doc_type: DocType; status: string; number: string }
+    | undefined
+  if (!src || src.status !== 'converted') return null
+  const other = ctx.db
+    .prepare("SELECT 1 FROM documents WHERE ref_doc_id = ? AND id <> ? AND doc_type NOT IN ('sale_return','purchase_return') LIMIT 1")
+    .get(src.id, d.id)
+  if (other) return null
+  const status = src.doc_type === 'quotation' ? 'accepted' : src.doc_type === 'delivery_challan' ? 'final' : 'open'
+  ctx.db.prepare('UPDATE documents SET status = ? WHERE id = ?').run(status, src.id)
+  return `${src.number} set back to ${status}`
+}
+
+/**
+ * Permanently deletes a document. Quotations / orders / challans keep the draft rules (deleteDraft). Invoices, bills
+ * and returns: stock and serials are reversed exactly like a cancel, then the lines and the document are removed, all
+ * in one transaction, and the audit log keeps a full JSON snapshot of what was deleted.
+ */
+export function deleteDocument(ctx: Ctx, id: number): void {
+  const d = getDocRow(ctx, id)
+  if (!DOC_TYPES[d.doc_type].financial) return deleteDraft(ctx, id)
+  const block = blockReason(ctx, d)
+  if (block) throw new AppError(block.message, block.code)
+  const db = ctx.db
+  db.transaction(() => {
+    const docRow = db.prepare('SELECT * FROM documents WHERE id = ?').get(id)
+    const lineRows = db.prepare('SELECT * FROM document_lines WHERE document_id = ? ORDER BY line_no').all(id)
+    if (d.status !== 'cancelled') unpostStock(ctx, d)
+    const movements = db.prepare('SELECT * FROM stock_movements WHERE ref_type = ? AND ref_id = ? ORDER BY id').all(d.doc_type, id)
+    const reopened = reopenSource(ctx, d)
+    db.prepare('DELETE FROM document_lines WHERE document_id = ?').run(id)
+    db.prepare('DELETE FROM documents WHERE id = ?').run(id)
+    audit(ctx, 'delete', d.doc_type, id, `Deleted ${DOC_TYPES[d.doc_type].label} ${d.number} permanently (${round2(d.grand_total)})`, {
+      snapshot: { document: docRow, lines: lineRows },
+      stockMovements: movements,
+      sourceReopened: reopened
+    })
+  })()
 }
 
 /* ------------------------------ Queries ------------------------------ */
@@ -793,7 +925,9 @@ export function getDocument(ctx: Ctx, id: number): Record<string, unknown> {
     due: d.status === 'cancelled' ? 0 : Math.max(0, docDue(ctx.db, id)),
     locked: isLocked(ctx, id),
     previous_balance: previousBalance,
-    current_balance: currentBalance
+    current_balance: currentBalance,
+    // Shown to the UI so the Delete button appears only when the delete would be accepted (re-checked on delete).
+    delete_block: blockReason(ctx, d as unknown as DocRow)?.message ?? null
   }
 }
 
@@ -814,6 +948,7 @@ export function prepareConversion(ctx: Ctx, id: number, target: DocType): DocInp
     .map((l) => ({
       productId: (l.product_id as number) ?? null,
       description: String(l.description),
+      details: (l.details as string) ?? null,
       unit: (l.unit as string) ?? undefined,
       qty: isReturn ? round3(Number(l.qty) - Number(l.returned_qty || 0)) : Number(l.qty),
       rate: Number(l.rate),
@@ -843,4 +978,60 @@ export function prepareConversion(ctx: Ctx, id: number, target: DocType): DocInp
     terms: isReturn ? undefined : ((src.terms as string) ?? undefined),
     lines
   }
+}
+
+/** Builds a pre-filled input for duplicating a document as a new one of the same type (opened in the editor). */
+export function prepareCopy(ctx: Ctx, id: number): DocInput {
+  const src = getDocument(ctx, id) as Record<string, unknown> & { doc_type: DocType; lines: Array<Record<string, unknown>> }
+  if (src.doc_type === 'sale_return' || src.doc_type === 'purchase_return') {
+    throw new AppError('Returns cannot be duplicated. Create a new return from the invoice instead.', 'VALIDATION')
+  }
+  assertCanCreate(ctx, src.doc_type)
+  const lines: DocLineInput[] = src.lines.map((l) => ({
+    productId: (l.product_id as number) ?? null,
+    description: String(l.description),
+    details: (l.details as string) ?? null,
+    unit: (l.unit as string) ?? undefined,
+    qty: Number(l.qty),
+    rate: Number(l.rate),
+    discountPct: Number(l.discount_pct),
+    discountAmt: Number(l.discount_pct) > 0 ? 0 : Number(l.discount_amt),
+    taxRate: Number(l.tax_rate),
+    // Serial numbers identify single units that were already sold / received, so they are never copied.
+    serials: '',
+    warranty: (l.warranty as string) ?? undefined,
+    refLineId: null
+  }))
+  return {
+    docType: src.doc_type,
+    date: new Date().toISOString().slice(0, 10),
+    partyId: (src.party_id as number) ?? null,
+    partyName: src.party_id ? undefined : ((src.party_name as string) ?? undefined),
+    partyPhone: src.party_id ? undefined : ((src.party_phone as string) ?? undefined),
+    partyAddress: src.party_id ? undefined : ((src.party_address as string) ?? undefined),
+    projectId: (src.project_id as number) ?? null,
+    warehouseId: (src.warehouse_id as number) ?? null,
+    isTaxInvoice: !!src.is_tax_invoice,
+    deductStock: src.deduct_stock === undefined ? true : !!src.deduct_stock,
+    directToProject: !!src.direct_to_project,
+    docDiscount: Number(src.doc_discount),
+    otherCharges: Number(src.other_charges),
+    otherChargesLabel: (src.other_charges_label as string) ?? undefined,
+    roundOff: Number(src.round_off),
+    notes: (src.notes as string) ?? undefined,
+    terms: (src.terms as string) ?? undefined,
+    lines
+  }
+}
+
+/** Item descriptions of products, used to pre-fill the "Item description" of a document line. */
+export function productDetails(ctx: Ctx, ids: unknown): Array<{ id: number; description: string | null; brand: string | null; model: string | null }> {
+  const list = (Array.isArray(ids) ? ids : [ids]).map((x) => optId(x)).filter((x): x is number => !!x).slice(0, 500)
+  if (!list.length) return []
+  return ctx.db
+    .prepare(
+      `SELECT p.id, p.description, p.brand, p.model FROM products p
+       WHERE p.id IN (${list.map(() => '?').join(',')}) AND (p.firm_id IS NULL OR p.firm_id = ?)`
+    )
+    .all(...list, ctx.firmId) as Array<{ id: number; description: string | null; brand: string | null; model: string | null }>
 }

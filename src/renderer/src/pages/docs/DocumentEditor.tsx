@@ -16,7 +16,14 @@ import { DOC_TYPES, DocType, PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from '@sha
 interface Line {
   key: string
   productId: number | null
+  /** Item name / line title (printed in bold) */
   description: string
+  /** Item description printed under the name (multi-line, optional) */
+  details: string
+  /** Description last filled in from the product (so a product change only replaces untouched text) */
+  autoDetails: string
+  /** Description box opened by the user (it is always shown when the line has a description) */
+  showDetails: boolean
   unit: string
   qty: number
   rate: number
@@ -29,13 +36,16 @@ interface Line {
 }
 
 let seq = 0
-const newLine = (): Line => ({ key: `l${++seq}`, productId: null, description: '', unit: '', qty: 1, rate: 0, discountPct: 0, taxRate: 0, serials: '', warranty: '', batchNo: '', refLineId: null })
+const newLine = (): Line => ({ key: `l${++seq}`, productId: null, description: '', details: '', autoDetails: '', showDetails: false, unit: '', qty: 1, rate: 0, discountPct: 0, taxRate: 0, serials: '', warranty: '', batchNo: '', refLineId: null })
 
 function fromInput(l: any): Line {
   return {
     key: `l${++seq}`,
     productId: l.productId ?? l.product_id ?? null,
     description: l.description ?? '',
+    details: l.details ?? '',
+    autoDetails: '',
+    showDetails: false,
     unit: l.unit ?? '',
     qty: Number(l.qty) || 0,
     rate: Number(l.rate) || 0,
@@ -111,7 +121,12 @@ export function DocumentEditor(): JSX.Element {
         } else {
           const t = (typeParam as DocType) || 'sale_invoice'
           const from = params.get('from')
-          if (from) {
+          const copy = params.get('copy')
+          if (copy) {
+            const c = await api<any>('docs.copy', { id: Number(copy) })
+            setH({ ...c, dueDate: c.dueDate ?? '', validUntil: t === 'quotation' ? addDays(today(), 7) : (c.validUntil ?? ''), partyRef: '', notes: c.notes ?? '', terms: c.terms ?? '', status: t === 'quotation' ? 'draft' : undefined })
+            setLines(c.lines.length ? c.lines.map(fromInput) : [newLine()])
+          } else if (from) {
             const c = await api<any>('docs.convert', { id: Number(from), target: t })
             setH({ ...c, dueDate: c.dueDate ?? '', validUntil: c.validUntil ?? '', partyRef: '', notes: c.notes ?? '', terms: c.terms ?? defaultTerms(t), deductStock: c.deductStock ?? true, directToProject: false })
             setLines(c.lines.length ? c.lines.map(fromInput) : [newLine()])
@@ -144,7 +159,7 @@ export function DocumentEditor(): JSX.Element {
       }
     }
     load()
-  }, [id, typeParam]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [id, typeParam, params.get('copy'), params.get('from')]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function defaultTerms(t: DocType): string {
     if (t === 'quotation') return settings.default_quotation_terms ?? ''
@@ -169,6 +184,23 @@ export function DocumentEditor(): JSX.Element {
 
   const setLine = (key: string, patch: Partial<Line>): void => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)))
 
+  /** Fills the item description from the product, unless the user already typed their own text on that line. */
+  const fillDetails = async (key: string, productId: number): Promise<void> => {
+    try {
+      const [info] = await api<Array<{ id: number; description: string | null }>>('docs.productDetails', { ids: [productId] })
+      const text = (info?.description ?? '').trim()
+      setLines((ls) =>
+        ls.map((l) => {
+          if (l.key !== key || l.productId !== productId) return l
+          const untouched = !l.details.trim() || l.details === l.autoDetails
+          return untouched ? { ...l, details: text, autoDetails: text } : l
+        })
+      )
+    } catch (e) {
+      toast.error(e)
+    }
+  }
+
   const pickProduct = (key: string, p: ProductLite | undefined): void => {
     if (!p) return setLine(key, { productId: null })
     const warranty = isSales && p.warranty_months ? (p.warranty_months % 12 === 0 ? `${p.warranty_months / 12} Year${p.warranty_months === 12 ? '' : 's'}` : `${p.warranty_months} Months`) : ''
@@ -180,6 +212,7 @@ export function DocumentEditor(): JSX.Element {
       taxRate: p.tax_rate,
       warranty
     })
+    void fillDetails(key, p.id)
   }
 
   const stockAffecting = meta.stock !== 0 && !((docType === 'sale_invoice' || docType === 'sale_return') && !h.deductStock) && !(docType === 'purchase_invoice' && h.directToProject)
@@ -195,7 +228,7 @@ export function DocumentEditor(): JSX.Element {
         validUntil: h.validUntil || null,
         lines: lines
           .filter((l) => l.productId || l.description.trim())
-          .map((l) => ({ productId: l.productId, description: l.description, unit: l.unit, qty: l.qty, rate: l.rate, discountPct: l.discountPct, taxRate: l.taxRate, serials: l.serials, warranty: l.warranty, batchNo: l.batchNo, refLineId: l.refLineId })),
+          .map((l) => ({ productId: l.productId, description: l.description, details: l.details, unit: l.unit, qty: l.qty, rate: l.rate, discountPct: l.discountPct, taxRate: l.taxRate, serials: l.serials, warranty: l.warranty, batchNo: l.batchNo, refLineId: l.refLineId })),
         payment: meta.financial && payment.amount > 0 ? payment : null,
         applyAdvance: meta.financial && applyAdvance
       }
@@ -391,7 +424,21 @@ export function DocumentEditor(): JSX.Element {
                           onCreate={can('inventory.manage') ? (name) => setProductModal({ open: true, name, lineKey: l.key }) : undefined}
                           createLabel="New product"
                         />
-                        <Input sm value={l.description} onChange={(e) => setLine(l.key, { description: e.target.value })} placeholder="Description printed on the document" />
+                        <Input sm aria-label="Item name" className="font-medium" value={l.description} onChange={(e) => setLine(l.key, { description: e.target.value })} placeholder="Item name printed on the document (bold)" />
+                        {l.showDetails || l.details ? (
+                          <Textarea
+                            aria-label="Item description"
+                            rows={Math.min(6, Math.max(2, l.details.split('\n').length))}
+                            className="min-h-0 py-1.5 text-[12.5px] leading-snug"
+                            value={l.details}
+                            onChange={(e) => setLine(l.key, { details: e.target.value })}
+                            placeholder="Item description (optional) — printed under the item name, e.g. specifications, model details, scope of work"
+                          />
+                        ) : (
+                          <button type="button" className="flex items-center gap-1 text-[12px] font-medium text-brand hover:underline cursor-pointer" onClick={() => setLine(l.key, { showDetails: true })}>
+                            <Plus className="h-3.5 w-3.5" /> Add item description
+                          </button>
+                        )}
                         {(p?.track_serial || l.serials) && stockAffecting ? (
                           <Input sm value={l.serials} onChange={(e) => setLine(l.key, { serials: e.target.value })} placeholder={`Serial numbers (comma separated)${p?.track_serial ? ` — ${l.qty} required` : ''}`} />
                         ) : null}
@@ -557,6 +604,7 @@ export function DocumentEditor(): JSX.Element {
           await reloadProducts()
           if (productModal.lineKey) {
             setLine(productModal.lineKey, { productId: pid, description: p.name, unit: p.unit, rate: isSales ? p.salePrice : p.purchasePrice })
+            void fillDetails(productModal.lineKey, pid)
           }
         }}
       />

@@ -16,7 +16,7 @@ Status keys: [x] done & tested · [~] partial · [ ] not started · [!] blocked 
 - [ ] data — day/month closing + closing backup, backup history/export/import/validation, CSV import + reconciliation
 - [ ] access — user selection + PIN login, PIN lock screen, forced password change, printers page + per-document printer, test print
 - [ ] cloud — registration in setup wizard, heartbeat + consented location, support messages with offline queue, certificate refresh, License & About in Settings
-- [ ] assist — offline Urdu/English help assistant, WhatsApp (chat link + optional Cloud API) with send log
+- [ ] assist — offline Urdu/English help assistant, built-in WhatsApp Web module (QR link device) + send document flow with log
 
 ## Super Admin portal areas
 - [ ] portal-admin — Admins (RBAC users), Settings (branding/invoice/bank/QR/signing key), Activity Log (filters/export/archive/retention), Verify Key, rules tests
@@ -25,5 +25,4 @@ Status keys: [x] done & tested · [~] partial · [ ] not started · [!] blocked 
 
 ## Blocked / needs input
 - [!] External backup conversion: no sample backup was supplied — generic CSV import pipeline provided instead
-- [!] WhatsApp Cloud API: needs Meta Business phone-number id + access token (chat-link mode works without)
 - [!] Multi-factor auth for admins: needs Firebase Identity Platform (paid upgrade)

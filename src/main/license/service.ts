@@ -148,6 +148,11 @@ export class LicenseService {
     return `${platform()} ${release()}`
   }
 
+  private log(level: 'info' | 'warn' | 'error', message: string): void {
+    const fn = this.opts.log ?? appLog
+    fn(level, message)
+  }
+
   get appVersion(): string {
     return this.opts.appVersion
   }
@@ -468,9 +473,9 @@ export class LicenseService {
       if (decision.install) {
         this.writeCert(decision.cert)
         s.certUpdate = { at: new Date().toISOString(), summary: decision.summary }
-        (this.opts.log ?? appLog)('info', `License certificate updated from Digital Target: ${decision.summary}`)
+        this.log('info', `License certificate updated from Digital Target: ${decision.summary}`)
       } else if (decision.reason !== 'none' && decision.reason !== 'same') {
-        (this.opts.log ?? appLog)('warn', `Published license certificate ignored: ${decision.message}`)
+        this.log('warn', `Published license certificate ignored: ${decision.message}`)
       }
       // 2. Status of the license and of this device.
       const status = typeof d.status === 'string' ? d.status : 'active'

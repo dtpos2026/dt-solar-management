@@ -1,8 +1,9 @@
 import { ReactNode, useEffect, useState } from 'react'
-import { AlertTriangle, CalendarClock, CheckCircle2, DatabaseBackup, FileUp, FolderOpen, FolderSync, HardDrive, LifeBuoy, Mail, MessageCircle, PlayCircle, RefreshCw, RotateCcw, ShieldCheck, Usb, XCircle } from 'lucide-react'
+import { AlertTriangle, CalendarClock, Download, FileJson, CheckCircle2, DatabaseBackup, FileUp, FolderOpen, FolderSync, HardDrive, LifeBuoy, Mail, MessageCircle, PlayCircle, RefreshCw, RotateCcw, ShieldCheck, Usb, XCircle } from 'lucide-react'
 import { api } from '../../api'
 import { useApp, useCan } from '../../store'
-import { Badge, Button, Card, Empty, Field, Kv, Loading, Modal, NumberInput, PageHeader, Select, cx, promptDialog, toast } from '../../components/ui'
+import { Badge, Button, Card, Empty, Field, Kv, Loading, Modal, NumberInput, PageHeader, Select, Tabs, cx, promptDialog, toast } from '../../components/ui'
+import { ImportPanel } from './ImportPanel'
 import { DataTable } from '../../components/DataTable'
 import { useLoad } from '../../lib/hooks'
 import { date } from '../../lib/format'
@@ -13,6 +14,8 @@ interface BackupFile {
   name: string
   size: number
   modified: string
+  kind: string
+  meta: { firmName?: string | null; userName?: string | null; note?: string | null; integrity?: 'ok' | 'failed'; integrityError?: string | null; verifiedAt?: string } | null
 }
 
 interface BackupInfo {
@@ -68,9 +71,10 @@ function sinceText(iso: string | null | undefined): string {
   return `${days} days ago`
 }
 
-function backupKind(name: string): { label: string; tone: string } {
-  const m = /^DTSolarPro-(manual|auto|pre-restore|pre-migration)-/.exec(name)
-  switch (m?.[1]) {
+function backupKind(kind: string): { label: string; tone: string } {
+  switch (kind) {
+    case 'day-close':
+      return { label: 'Day close', tone: 'ok' }
     case 'manual':
       return { label: 'Manual', tone: 'brand' }
     case 'auto':
@@ -105,7 +109,32 @@ const SUMMARY_LABELS: Array<[string, string]> = [
   ['payments', 'Payments']
 ]
 
+type PageTab = 'backup' | 'import'
+
 export function BackupPage(): JSX.Element {
+  const can = useCan()
+  const canBackup = can('backup.manage')
+  const canImport = can('import.manage')
+  const [tab, setTab] = useState<PageTab>(canBackup || !canImport ? 'backup' : 'import')
+  return (
+    <div className="space-y-4">
+      <PageHeader title="Backup & Restore" subtitle="Keep a copy of your business data safe, export it, and import data from CSV files" icon={<DatabaseBackup className="h-5 w-5" />} />
+      {canImport && (
+        <Tabs<PageTab>
+          tabs={[
+            { key: 'backup', label: 'Backups' },
+            { key: 'import', label: 'Import data' }
+          ]}
+          value={tab}
+          onChange={setTab}
+        />
+      )}
+      {tab === 'import' && canImport ? <ImportPanel /> : <BackupPanel />}
+    </div>
+  )
+}
+
+function BackupPanel(): JSX.Element {
   const can = useCan()
   const user = useApp((s) => s.user)
   const settings = useApp((s) => s.settings)
@@ -125,7 +154,6 @@ export function BackupPage(): JSX.Element {
   if (!allowed) {
     return (
       <div className="space-y-4">
-        <PageHeader title="Backup & Restore" icon={<DatabaseBackup className="h-5 w-5" />} />
         <Card>
           <Empty icon={<ShieldCheck className="h-6 w-6" />} title="No access">
             You do not have permission to manage backups. Ask the owner or an administrator (permission: “Backup &amp; restore”).
@@ -242,21 +270,37 @@ export function BackupPage(): JSX.Element {
     }
   }
 
+  const verify = async (file: string): Promise<void> => {
+    const r = await run(`verify:${file}`, () => api<{ ok: boolean; error?: string }>('backup.verify', { file }))
+    if (!r) return
+    if (r.ok) toast.ok('Integrity check passed — this backup can be restored.')
+    else toast.error(`Integrity check failed: ${r.error ?? 'the backup is damaged.'}`)
+    await info.reload()
+  }
+
+  const exportOne = async (file: string): Promise<void> => {
+    const r = await run(`export:${file}`, () => api<{ file: string; size: number } | null>('backup.export', { file }))
+    if (r) toast.ok(`Backup exported and verified: ${r.file}`)
+  }
+
+  const exportFirm = async (): Promise<void> => {
+    const r = await run('firm', () => api<{ file: string; size: number } | null>('backup.exportFirm'))
+    if (r) toast.ok(`Firm data exported (${fmtSize(r.size)}): ${r.file}`)
+  }
+
   const safetyDir = I ? joinPath(I.defaultDir, 'safety') : ''
   const lastAutoTime = I?.lastAuto ? `${localDateTime(I.lastAuto)} (${sinceText(I.lastAuto)})` : 'Never'
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Backup & Restore"
-        subtitle="Keep a copy of your business data safe — on this computer and on a USB drive"
-        icon={<DatabaseBackup className="h-5 w-5" />}
-        actions={
-          <Button icon={<RefreshCw className="h-4 w-4" />} onClick={() => info.reload()} loading={info.loading && !!I}>
-            Refresh
-          </Button>
-        }
-      />
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button icon={<FileJson className="h-4 w-4" />} loading={busy === 'firm'} disabled={!!busy && busy !== 'firm'} onClick={exportFirm}>
+          Export firm data (JSON)…
+        </Button>
+        <Button icon={<RefreshCw className="h-4 w-4" />} onClick={() => info.reload()} loading={info.loading && !!I}>
+          Refresh
+        </Button>
+      </div>
 
       {!I && info.loading ? (
         <Loading label="Loading backup information…" />
@@ -378,7 +422,7 @@ export function BackupPage(): JSX.Element {
             {/* ------------------------------ Backups list ------------------------------ */}
             <Card
               pad={false}
-              title={<span className="inline-flex items-center gap-2"><RotateCcw className="h-4 w-4 text-brand" /> Backups in this folder</span>}
+              title={<span className="inline-flex items-center gap-2"><RotateCcw className="h-4 w-4 text-brand" /> Backup history</span>}
               actions={
                 <Button size="sm" variant={isOwner ? 'soft' : 'secondary'} icon={<FileUp className="h-4 w-4" />} loading={busy === 'inspect'} disabled={!!busy && busy !== 'inspect'} onClick={() => startInspect()}>
                   {isOwner ? 'Restore from file…' : 'Verify a backup file…'}
@@ -406,7 +450,7 @@ export function BackupPage(): JSX.Element {
                     key: 'name',
                     header: 'Backup',
                     render: (r) => {
-                      const k = backupKind(r.name)
+                      const k = backupKind(r.kind)
                       return (
                         <div className="min-w-0">
                           <div className="truncate font-medium" title={r.file}>
@@ -422,15 +466,51 @@ export function BackupPage(): JSX.Element {
                   { key: 'modified', header: 'Date', render: (r) => <span className="whitespace-nowrap">{localDateTime(r.modified)}</span>, value: (r) => r.modified },
                   { key: 'size', header: 'Size', align: 'right', render: (r) => <span className="num whitespace-nowrap">{fmtSize(r.size)}</span>, value: (r) => r.size },
                   {
+                    key: 'integrity',
+                    header: 'Integrity',
+                    value: (r) => r.meta?.integrity ?? 'not checked',
+                    render: (r) =>
+                      r.meta?.integrity === 'ok' ? (
+                        <Badge tone="ok">Verified</Badge>
+                      ) : r.meta?.integrity === 'failed' ? (
+                        <span title={r.meta.integrityError ?? ''}>
+                          <Badge tone="bad">Failed</Badge>
+                        </span>
+                      ) : (
+                        <Badge tone="muted">Not checked</Badge>
+                      )
+                  },
+                  {
+                    key: 'who',
+                    header: 'Firm / user',
+                    value: (r) => [r.meta?.firmName, r.meta?.userName].filter(Boolean).join(' / '),
+                    render: (r) => (
+                      <div className="min-w-0 text-[12px]">
+                        <div className="truncate">{r.meta?.firmName || '—'}</div>
+                        <div className="truncate text-muted">{r.meta?.userName || (r.kind === 'auto' ? 'Scheduled' : '')}</div>
+                      </div>
+                    )
+                  },
+                  {
                     key: 'actions',
                     header: '',
                     align: 'right',
                     sortable: false,
                     csv: false,
                     render: (r) => (
-                      <Button size="sm" variant={isOwner ? 'secondary' : 'ghost'} icon={isOwner ? <RotateCcw className="h-3.5 w-3.5" /> : <ShieldCheck className="h-3.5 w-3.5" />} loading={busy === `inspect:${r.file}`} disabled={!!busy && busy !== `inspect:${r.file}`} onClick={() => startInspect(r.file)}>
-                        {isOwner ? 'Restore…' : 'Verify'}
-                      </Button>
+                      <div className="flex justify-end gap-1">
+                        <Button size="sm" variant="ghost" icon={<ShieldCheck className="h-3.5 w-3.5" />} loading={busy === `verify:${r.file}`} disabled={!!busy && busy !== `verify:${r.file}`} onClick={() => verify(r.file)}>
+                          Verify
+                        </Button>
+                        <Button size="sm" variant="ghost" icon={<Download className="h-3.5 w-3.5" />} loading={busy === `export:${r.file}`} disabled={!!busy && busy !== `export:${r.file}`} onClick={() => exportOne(r.file)}>
+                          Export
+                        </Button>
+                        {isOwner && (
+                          <Button size="sm" variant="secondary" icon={<RotateCcw className="h-3.5 w-3.5" />} loading={busy === `inspect:${r.file}`} disabled={!!busy && busy !== `inspect:${r.file}`} onClick={() => startInspect(r.file)}>
+                            Restore…
+                          </Button>
+                        )}
+                      </div>
                     )
                   }
                 ]}

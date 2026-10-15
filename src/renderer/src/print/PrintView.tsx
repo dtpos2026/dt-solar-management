@@ -10,6 +10,7 @@ import { ProjectPrint } from './ProjectPrint'
 import { MaterialPrint } from './MaterialPrint'
 import { StockPrint } from './StockPrint'
 import { ReportPrint } from './ReportPrint'
+import { ClosingPrint } from './ClosingPrint'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const TEMPLATES: Record<string, ComponentType<TemplateProps>> = {
@@ -19,7 +20,8 @@ const TEMPLATES: Record<string, ComponentType<TemplateProps>> = {
   project: ProjectPrint,
   material: MaterialPrint,
   stock: StockPrint,
-  report: ReportPrint
+  report: ReportPrint,
+  closing: ClosingPrint
 }
 
 /** Print preview window: A4 sheets on a grey desk with a screen-only toolbar. */

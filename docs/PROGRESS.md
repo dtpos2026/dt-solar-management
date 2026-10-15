@@ -13,7 +13,7 @@ Status keys: [x] done & tested · [~] partial · [ ] not started · [!] blocked 
 ## Desktop areas
 - [ ] documents — item name + description in editor/preview/print/PDF, invoice delete rules, template designer, thermal layout, Powered-by toggle
 - [ ] catalog — product delete/archive + category change, project delete/archive, firm activate/deactivate, firm isolation + limit tests
-- [ ] data — day/month closing + closing backup, backup history/export/import/validation, CSV import + reconciliation
+- [x] data — day/month closing + closing backup + reopen + print/CSV, backup history (kind/integrity/firm/user) + verify/export/restore + firm JSON export + in-app daily schedule, CSV import + mapping + validation + reconciliation (unit-tested; UI e2e pending integrator run)
 - [ ] access — user selection + PIN login, PIN lock screen, forced password change, printers page + per-document printer, test print
 - [ ] cloud — registration in setup wizard, heartbeat + consented location, support messages with offline queue, certificate refresh, License & About in Settings
 - [ ] assist — offline Urdu/English help assistant, built-in WhatsApp Web module (QR link device) + send document flow with log

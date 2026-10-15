@@ -10,6 +10,7 @@ import { EPS, num, round2 } from '../../shared/money'
 import { AppError, Ctx, audit, optId, optText, requireDate, requirePerm, requireText } from './context'
 import { nextNumber } from './firms'
 import { assertAccount, expenseAllocated } from './payments'
+import { assertPeriodOpen } from './closing'
 
 export interface ExpenseInput {
   id?: number
@@ -29,6 +30,7 @@ export interface ExpenseInput {
 function validate(ctx: Ctx, input: ExpenseInput): Record<string, unknown> {
   const db = ctx.db
   const date = requireDate(input.date)
+  assertPeriodOpen(db, ctx.firmId, date)
   const amount = round2(num(input.amount))
   if (amount <= 0) throw new AppError('Amount must be greater than zero.', 'VALIDATION')
   const cat = db.prepare('SELECT id, is_active FROM expense_categories WHERE id = ?').get(input.categoryId) as { is_active: number } | undefined
@@ -89,6 +91,7 @@ export function updateExpense(ctx: Ctx, input: ExpenseInput): number {
     | undefined
   if (!before) throw new AppError('Expense not found.', 'NOT_FOUND')
   if (before.status === 'cancelled') throw new AppError('Cancelled expenses cannot be edited.', 'VALIDATION')
+  assertPeriodOpen(ctx.db, ctx.firmId, String(before.date))
   const allocated = expenseAllocated(ctx.db, input.id)
   const v = validate(ctx, input)
   if (allocated > EPS) {
@@ -109,10 +112,11 @@ export function updateExpense(ctx: Ctx, input: ExpenseInput): number {
 export function cancelExpense(ctx: Ctx, id: number, reason?: string): void {
   requirePerm(ctx, 'expenses.manage')
   const e = ctx.db.prepare('SELECT * FROM expenses WHERE id = ? AND firm_id = ?').get(id, ctx.firmId) as
-    | { number: string; status: string }
+    | { number: string; status: string; date: string }
     | undefined
   if (!e) throw new AppError('Expense not found.', 'NOT_FOUND')
   if (e.status === 'cancelled') throw new AppError('Already cancelled.', 'VALIDATION')
+  assertPeriodOpen(ctx.db, ctx.firmId, e.date)
   if (expenseAllocated(ctx.db, id) > EPS) throw new AppError('Cancel the payments made against this expense first.', 'VALIDATION')
   ctx.db
     .prepare("UPDATE expenses SET status = 'cancelled', cancelled_by = ?, cancelled_at = datetime('now','localtime'), cancel_reason = ? WHERE id = ?")

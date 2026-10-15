@@ -78,6 +78,37 @@ export interface LicenseStatus {
   /** v1.1 */
   poweredBy: boolean
   detached: boolean
+  /** Customer registration details sent with the last online activation (company, owner, phone, address). */
+  registration: Registration | null
+  /** Installation id (secret token) shortened for display — never the full value. */
+  installId: string
+  /** Last certificate that reached this computer through a check-in (renewal / plan / limits / detachment). */
+  certUpdate: { at: string; summary: string } | null
+  /** Outcome of the last online activation request (shown until the next request). */
+  activationNotice: ActivationNotice | null
+}
+
+export interface Registration {
+  companyName: string
+  ownerName: string
+  phone: string
+  address: string
+}
+
+export interface ActivationNotice {
+  kind: 'approved' | 'rejected'
+  message: string
+  at: string
+  licenseKey?: string
+}
+
+export interface ActivationResult {
+  pending: boolean
+  /** 'pending' while Digital Target has not answered, 'approved' when the license was installed, 'none' when nothing is pending. */
+  state: 'pending' | 'approved' | 'rejected' | 'none'
+  requestId: string | null
+  message: string
+  status: LicenseStatus
 }
 
 export const TRIAL_DAYS = 15

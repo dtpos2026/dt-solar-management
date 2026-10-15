@@ -1,12 +1,14 @@
 /**
  * Firestore data access for licenses (admin side).
  * Every change that affects what the desktop app sees also updates licenseStatus/{licenseId}.
+ * Certificate re-signing after a change of terms lives in approve.ts (it needs the signing key).
  */
 import {
   Timestamp,
   arrayRemove,
   arrayUnion,
   collection,
+  deleteField,
   doc,
   getDocs,
   limit,
@@ -24,9 +26,11 @@ import {
 } from 'firebase/firestore'
 import { auth, db } from '../firebase'
 import { generateLicenseKey, normaliseLicenseKey } from './crypto'
-import type { ActivationRequest, AuditCategory, AuditEntry, Device, HistoryEntry, License, LicenseState, Plan } from './types'
+import type { ActivationRequest, AuditCategory, AuditEntry, Device, HistoryEntry, License, LicenseState, Plan, PlanType } from './types'
 import { DEFAULT_CHECKIN_DAYS, DEFAULT_GRACE_DAYS } from './types'
 import { fmtDate } from './format'
+import { detachEligibility, deviceLimitGuard, firmLimitGuard, holdsSlot, planTermsError } from './terms'
+import { licenseBucket, type LicenseBucket } from './stats'
 
 /* ------------------------------------------------ refs ------------------------------------------------ */
 
@@ -54,8 +58,11 @@ export function licenseFromSnap(s: Snap): License {
     id: s.id,
     clientId: str(d.clientId),
     planType: (['monthly', 'yearly', 'lifetime'].includes(d.planType) ? d.planType : d.expiresAt ? 'yearly' : 'lifetime') as License['planType'],
-    poweredBy: d.poweredBy !== false,
+    // Customer documents are white-label unless "Powered by" was explicitly switched on (desktop default false).
+    poweredBy: d.poweredBy === true,
     detached: d.detached === true,
+    detachedAt: ts(d.detachedAt),
+    detachedBy: str(d.detachedBy),
     paymentStatus: (['paid', 'partial', 'unpaid', 'none'].includes(d.paymentStatus) ? d.paymentStatus : 'none') as License['paymentStatus'],
     activatedAt: ts(d.activatedAt),
     lastVerifiedAt: ts(d.lastVerifiedAt),
@@ -90,11 +97,14 @@ export function deviceFromSnap(s: Snap): Device {
     deviceName: str(d.deviceName),
     os: str(d.os),
     appVersion: str(d.appVersion),
-    status: d.status === 'deactivated' ? 'deactivated' : 'active',
+    status: (['suspended', 'revoked', 'deactivated'].includes(d.status) ? d.status : 'active') as Device['status'],
     activatedAt: ts(d.activatedAt),
     activationType: d.activationType === 'offline' ? 'offline' : 'online',
     lastIssuedAt: ts(d.lastIssuedAt),
-    deactivatedAt: ts(d.deactivatedAt)
+    deactivatedAt: ts(d.deactivatedAt),
+    statusNote: str(d.statusNote),
+    statusChangedAt: ts(d.statusChangedAt),
+    statusBy: str(d.statusBy)
   }
 }
 
@@ -123,11 +133,12 @@ export function auditFromSnap(s: Snap): AuditEntry {
 
 export function requestFromSnap(s: Snap): ActivationRequest {
   const d = s.data() ?? {}
+  const opt = (v: unknown) => (typeof v === 'string' && v ? v : undefined)
   return {
     id: s.id,
     type: d.type === 'deactivate' ? 'deactivate' : 'activate',
-    licenseKey: d.licenseKey ? str(d.licenseKey) : undefined,
-    licenseId: d.licenseId ? str(d.licenseId) : undefined,
+    licenseKey: opt(d.licenseKey),
+    licenseId: opt(d.licenseId),
     deviceId: str(d.deviceId),
     deviceName: str(d.deviceName),
     appVersion: str(d.appVersion),
@@ -135,9 +146,14 @@ export function requestFromSnap(s: Snap): ActivationRequest {
     status: (['pending', 'approved', 'rejected', 'processed'].includes(d.status) ? d.status : 'pending') as ActivationRequest['status'],
     createdAt: ts(d.createdAt),
     processedAt: ts(d.processedAt),
-    processedBy: d.processedBy ? str(d.processedBy) : undefined,
-    message: d.message ? str(d.message) : undefined,
-    certificate: d.certificate ? str(d.certificate) : undefined
+    processedBy: opt(d.processedBy),
+    message: opt(d.message),
+    certificate: opt(d.certificate),
+    companyName: opt(d.companyName),
+    ownerName: opt(d.ownerName),
+    phone: opt(d.phone),
+    address: opt(d.address),
+    installToken: opt(d.installToken)
   }
 }
 
@@ -151,6 +167,14 @@ export function isExpired(l: Pick<License, 'expiresAt'>, now = Date.now()): bool
 export function effectiveStatus(l: License): LicenseState | 'expired' {
   if (l.status === 'active' && isExpired(l)) return 'expired'
   return l.status
+}
+
+/** Dashboard bucket incl. "pending" (no device ever activated). `deviceCount` = known device documents. */
+export function licenseBucketOf(l: License, deviceCount?: number, now = Date.now()): LicenseBucket {
+  return licenseBucket(
+    { status: l.status, expiresAtMs: l.expiresAt ? l.expiresAt.toMillis() : null, activeDevices: l.activeDevices, everActivated: !!l.activatedAt || (deviceCount ?? 0) > 0 },
+    now
+  )
 }
 
 export function expiryLabel(l: Pick<License, 'expiresAt'>): string {
@@ -170,13 +194,27 @@ export function isValidDocId(id: string): boolean {
 export function statusPatch(
   status: LicenseState,
   expiresAt: Timestamp | null,
-  devices?: { add?: string[]; remove?: string[] }
+  devices?: { add?: string[]; remove?: string[] },
+  extra?: { poweredBy?: boolean; detached?: boolean; dropCerts?: string[] }
 ): Record<string, unknown> {
   let deactivatedDevices: FieldValue
   if (devices?.add?.length) deactivatedDevices = arrayUnion(...devices.add)
   else if (devices?.remove?.length) deactivatedDevices = arrayRemove(...devices.remove)
   else deactivatedDevices = arrayUnion() // keeps the existing list, creates [] when missing
-  return { status, expiresAt, deactivatedDevices, updatedAt: serverTimestamp() }
+  const out: Record<string, unknown> = { status, expiresAt, deactivatedDevices, updatedAt: serverTimestamp() }
+  if (extra?.poweredBy !== undefined) out.poweredBy = extra.poweredBy
+  if (extra?.detached !== undefined) out.detached = extra.detached
+  if (extra?.dropCerts?.length) out.certs = Object.fromEntries(extra.dropCerts.map((id) => [id, deleteField()]))
+  return out
+}
+
+/** licenseStatus patch carrying everything the desktop reads from the license (status, expiry, poweredBy, detached). */
+export function licenseStatusPatch(
+  l: Pick<License, 'status' | 'expiresAt' | 'poweredBy' | 'detached'>,
+  devices?: { add?: string[]; remove?: string[] },
+  dropCerts?: string[]
+): Record<string, unknown> {
+  return statusPatch(l.status, l.expiresAt, devices, { poweredBy: l.poweredBy, detached: l.detached, dropCerts })
 }
 
 type Writer = Pick<WriteBatch, 'set' | 'update'> | Pick<Transaction, 'set' | 'update'>
@@ -186,15 +224,25 @@ export function writeHistory(w: Writer, licenseId: string, action: string, by: s
 }
 
 export function writeAudit(w: Writer, action: string, by: string, licenseId: string | null, details: string, category: AuditCategory = 'license'): void {
+  writeAuditEntry(w, { action, by, licenseId, details, category })
+}
+
+/** Audit entry with an explicit target (e.g. a client) — for use inside batches / transactions. */
+export function writeAuditEntry(
+  w: Writer,
+  a: { action: string; by: string; category: AuditCategory; details: string; licenseId?: string | null; target?: string; targetType?: string; meta?: Record<string, unknown> }
+): void {
+  const licenseId = a.licenseId ?? null
   ;(w as WriteBatch).set(doc(auditCol()), {
-    action,
-    category,
-    by,
+    action: a.action,
+    category: a.category,
+    by: a.by,
     byUid: auth.currentUser?.uid ?? '',
-    target: licenseId ?? '',
-    targetType: licenseId ? 'license' : '',
+    target: a.target ?? licenseId ?? '',
+    targetType: a.targetType ?? (licenseId ? 'license' : ''),
     licenseId,
-    details,
+    details: a.details,
+    meta: a.meta ?? {},
     status: 'success',
     archived: false,
     at: serverTimestamp()
@@ -202,10 +250,12 @@ export function writeAudit(w: Writer, action: string, by: string, licenseId: str
 }
 
 /** Writes a history entry on the license AND an audit log entry. */
-export function writeLog(w: Writer, licenseId: string, action: string, by: string, details: string): void {
+export function writeLog(w: Writer, licenseId: string, action: string, by: string, details: string, category: AuditCategory = 'license'): void {
   writeHistory(w, licenseId, action, by, details)
-  writeAudit(w, action, by, licenseId, details)
+  writeAudit(w, action, by, licenseId, details, category)
 }
+
+const withReason = (text: string, reason: string) => (reason.trim() ? `${text}. Reason: ${reason.trim()}` : text)
 
 export async function findLicenseByKey(key: string): Promise<License | null> {
   const k = normaliseLicenseKey(key)
@@ -240,10 +290,16 @@ export interface LicenseInput {
   checkinDays: number
   graceDays: number
   notes: string
+  /** v1.1 (optional for older callers) */
+  clientId?: string
+  planType?: PlanType
+  poweredBy?: boolean
 }
 
+const intIn = (v: number, min: number, max: number) => Math.min(max, Math.max(min, Math.round(Number.isFinite(v) ? v : min)))
+
 function cleanInput(i: LicenseInput) {
-  const int = (v: number, min: number, max: number) => Math.min(max, Math.max(min, Math.round(Number.isFinite(v) ? v : min)))
+  const expiresAt = i.expiresAt ? Timestamp.fromDate(i.expiresAt) : null
   return {
     customerName: i.customerName.trim(),
     businessName: i.businessName.trim(),
@@ -251,20 +307,25 @@ function cleanInput(i: LicenseInput) {
     email: i.email.trim(),
     city: i.city.trim(),
     plan: i.plan,
-    maxDevices: int(i.maxDevices, 1, 1000),
-    maxFirms: int(i.maxFirms, 1, 1000),
-    maxUsers: int(i.maxUsers, 1, 10000),
+    maxDevices: intIn(i.maxDevices, 1, 1000),
+    maxFirms: intIn(i.maxFirms, 1, 1000),
+    maxUsers: intIn(i.maxUsers, 1, 10000),
     features: Array.from(new Set(i.features)),
-    expiresAt: i.expiresAt ? Timestamp.fromDate(i.expiresAt) : null,
-    checkinDays: int(i.checkinDays, 0, 3650),
-    graceDays: int(i.graceDays, 0, 365),
-    notes: i.notes.trim()
+    expiresAt,
+    checkinDays: intIn(i.checkinDays, 0, 3650),
+    graceDays: intIn(i.graceDays, 0, 365),
+    notes: i.notes.trim(),
+    clientId: (i.clientId ?? '').trim(),
+    planType: (i.planType ?? (expiresAt ? 'yearly' : 'lifetime')) as PlanType,
+    poweredBy: i.poweredBy === true
   }
 }
 
 export async function createLicense(input: LicenseInput, by: string): Promise<{ id: string; licenseKey: string }> {
   const data = cleanInput(input)
   if (!data.businessName && !data.customerName) throw new Error('Enter the business name or customer name.')
+  const planErr = planTermsError(data.planType, data.expiresAt ? data.expiresAt.toMillis() : null)
+  if (planErr) throw new Error(planErr)
   const licenseKey = await generateUniqueKey()
   const ref = doc(licensesCol())
   const batch = writeBatch(db)
@@ -272,83 +333,239 @@ export async function createLicense(input: LicenseInput, by: string): Promise<{ 
     licenseKey,
     ...data,
     status: 'active',
+    detached: false,
+    paymentStatus: 'none',
+    activatedAt: null,
     activeDevices: 0,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     createdBy: by
   })
-  batch.set(licenseStatusRef(ref.id), { status: 'active', expiresAt: data.expiresAt, deactivatedDevices: [], updatedAt: serverTimestamp() })
+  batch.set(licenseStatusRef(ref.id), { status: 'active', expiresAt: data.expiresAt, deactivatedDevices: [], poweredBy: data.poweredBy, detached: false, updatedAt: serverTimestamp() })
   writeLog(
     batch,
     ref.id,
     'license_created',
     by,
-    `${data.plan} license for ${data.businessName || data.customerName}; ${data.maxDevices} device(s), ${data.maxFirms} firm(s), ${data.maxUsers} user(s); expires ${data.expiresAt ? fmtDate(data.expiresAt) : 'never (lifetime)'}`
+    `${data.plan} (${data.planType}) license ${licenseKey} for ${data.businessName || data.customerName}; ${data.maxDevices} device(s), ${data.maxFirms} firm(s), ${data.maxUsers} user(s); expires ${data.expiresAt ? fmtDate(data.expiresAt) : 'never (lifetime)'}${data.clientId ? `; client ${data.clientId}` : ''}`
   )
   await batch.commit()
   return { id: ref.id, licenseKey }
 }
 
-export async function updateLicense(current: License, input: LicenseInput, by: string): Promise<void> {
+/**
+ * Edits customer details, features, check-in / grace days, notes and the linked client.
+ * Plan, expiry and limits change through the dedicated actions (changeTerms) so each change has a reason.
+ * Returns true when a field that is part of the certificates changed (re-signing is needed).
+ */
+export async function updateLicense(current: License, input: LicenseInput, by: string): Promise<boolean> {
   const data = cleanInput(input)
   if (!data.businessName && !data.customerName) throw new Error('Enter the business name or customer name.')
   const changes: string[] = []
-  const cmp = (label: string, a: unknown, b: unknown) => {
-    if (JSON.stringify(a) !== JSON.stringify(b)) changes.push(`${label}: ${fmt(a)} → ${fmt(b)}`)
+  let certChange = false
+  const cmp = (label: string, a: unknown, b: unknown, cert = true) => {
+    if (JSON.stringify(a) !== JSON.stringify(b)) {
+      changes.push(`${label}: ${fmt(a)} → ${fmt(b)}`)
+      if (cert) certChange = true
+    }
   }
-  const fmt = (v: unknown) => (v instanceof Timestamp ? fmtDate(v) : v === null ? 'lifetime' : Array.isArray(v) ? v.join(', ') || 'none' : String(v ?? ''))
+  const fmt = (v: unknown) => (Array.isArray(v) ? v.join(', ') || 'none' : String(v ?? '') || '—')
   cmp('Customer', current.customerName, data.customerName)
   cmp('Business', current.businessName, data.businessName)
   cmp('Phone', current.phone, data.phone)
   cmp('Email', current.email, data.email)
-  cmp('City', current.city, data.city)
-  cmp('Plan', current.plan, data.plan)
-  cmp('Max devices', current.maxDevices, data.maxDevices)
-  cmp('Max firms', current.maxFirms, data.maxFirms)
+  cmp('City', current.city, data.city, false)
   cmp('Max users', current.maxUsers, data.maxUsers)
   cmp('Features', [...current.features].sort(), [...data.features].sort())
-  cmp('Expiry', current.expiresAt ? current.expiresAt.toMillis() : null, data.expiresAt ? data.expiresAt.toMillis() : null)
-  cmp('Check-in days', current.checkinDays, data.checkinDays)
-  cmp('Grace days', current.graceDays, data.graceDays)
+  cmp('Client', current.clientId, data.clientId)
+  if (!current.detached) {
+    cmp('Check-in days', current.checkinDays, data.checkinDays)
+    cmp('Grace days', current.graceDays, data.graceDays)
+  }
   if (current.notes !== data.notes) changes.push('Notes updated')
+  const patch: Record<string, unknown> = {
+    customerName: data.customerName,
+    businessName: data.businessName,
+    phone: data.phone,
+    email: data.email,
+    city: data.city,
+    maxUsers: data.maxUsers,
+    features: data.features,
+    notes: data.notes,
+    clientId: data.clientId,
+    updatedAt: serverTimestamp()
+  }
+  if (!current.detached) {
+    patch.checkinDays = data.checkinDays
+    patch.graceDays = data.graceDays
+  }
   const batch = writeBatch(db)
-  batch.update(licenseRef(current.id), { ...data, updatedAt: serverTimestamp() })
-  batch.set(licenseStatusRef(current.id), statusPatch(current.status, data.expiresAt), { merge: true })
-  writeLog(batch, current.id, 'license_updated', by, changes.length ? changes.join('; ').replace(/\d{13}/g, (m) => fmtDate(Number(m))) : 'No changes')
+  batch.update(licenseRef(current.id), patch)
+  writeLog(batch, current.id, 'license_updated', by, changes.length ? changes.join('; ') : 'No changes')
   await batch.commit()
+  return certChange
 }
 
 export async function setLicenseState(l: License, status: LicenseState, by: string, reason: string): Promise<void> {
+  if (l.detached && status !== 'active') throw new Error('This license is detached from central management — it can no longer be suspended or revoked remotely.')
   const action = status === 'active' ? 'license_reactivated' : status === 'suspended' ? 'license_suspended' : 'license_revoked'
   const batch = writeBatch(db)
   batch.update(licenseRef(l.id), { status, updatedAt: serverTimestamp() })
-  batch.set(licenseStatusRef(l.id), statusPatch(status, l.expiresAt), { merge: true })
-  writeLog(batch, l.id, action, by, `Status ${l.status} → ${status}${reason.trim() ? `. Reason: ${reason.trim()}` : ''}`)
+  batch.set(licenseStatusRef(l.id), licenseStatusPatch({ ...l, status }), { merge: true })
+  writeLog(batch, l.id, action, by, withReason(`Status ${l.status} → ${status}`, reason))
   await batch.commit()
 }
 
-export async function renewLicense(l: License, newExpiry: Date | null, by: string): Promise<void> {
-  const expiresAt = newExpiry ? Timestamp.fromDate(newExpiry) : null
-  const batch = writeBatch(db)
-  batch.update(licenseRef(l.id), { expiresAt, updatedAt: serverTimestamp() })
-  batch.set(licenseStatusRef(l.id), statusPatch(l.status, expiresAt), { merge: true })
-  writeLog(batch, l.id, 'license_renewed', by, `Expiry ${expiryLabel(l)} → ${newExpiry ? fmtDate(newExpiry) : 'Lifetime'}`)
-  await batch.commit()
+/* ------------------------------------------ change of terms ------------------------------------------ */
+
+export type TermsKind = 'renew' | 'plan' | 'firms' | 'devices' | 'poweredBy'
+
+export interface TermsChange {
+  kind: TermsKind
+  expiresAt?: Date | null
+  plan?: Plan
+  planType?: PlanType
+  maxFirms?: number
+  maxDevices?: number
+  maxUsers?: number
+  features?: string[]
+  poweredBy?: boolean
+}
+
+const TERMS_ACTION: Record<TermsKind, string> = {
+  renew: 'license_renewed',
+  plan: 'plan_changed',
+  firms: 'firm_limit_changed',
+  devices: 'device_limit_changed',
+  poweredBy: 'powered_by_changed'
+}
+
+/**
+ * Applies a change of terms in a transaction (fresh read, guards, license + licenseStatus + history + audit).
+ * Returns the updated license so the caller can re-sign certificates for its active devices.
+ */
+export async function changeTerms(licenseId: string, c: TermsChange, reason: string, by: string): Promise<License> {
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(licenseRef(licenseId))
+    if (!snap.exists()) throw new Error('License not found.')
+    const l = licenseFromSnap(snap)
+    const patch: Record<string, unknown> = {}
+    const changes: string[] = []
+    if (l.status === 'revoked') throw new Error('This license is revoked. Reactivate it before changing its terms.')
+    if (l.detached && (c.kind === 'renew' || c.kind === 'plan')) {
+      throw new Error('A detached lifetime license cannot be renewed or moved to another plan.')
+    }
+    const next = { ...l }
+    if (c.kind === 'renew' || c.kind === 'plan') {
+      const planType = c.planType ?? l.planType
+      const expiresAt = c.expiresAt === undefined ? l.expiresAt : c.expiresAt ? Timestamp.fromDate(c.expiresAt) : null
+      const err = planTermsError(planType, expiresAt ? expiresAt.toMillis() : null)
+      if (err) throw new Error(err)
+      if (expiresAt && expiresAt.toMillis() <= Date.now()) throw new Error('The new expiry date must be in the future.')
+      if ((expiresAt?.toMillis() ?? null) !== (l.expiresAt?.toMillis() ?? null)) {
+        changes.push(`Expiry ${expiryLabel(l)} → ${expiresAt ? fmtDate(expiresAt) : 'Lifetime'}`)
+        patch.expiresAt = expiresAt
+        next.expiresAt = expiresAt
+      }
+      if (planType !== l.planType) {
+        changes.push(`Billing cycle ${l.planType} → ${planType}`)
+        patch.planType = planType
+        next.planType = planType
+      }
+    }
+    if (c.kind === 'plan') {
+      if (c.plan && c.plan !== l.plan) {
+        changes.push(`Plan ${l.plan} → ${c.plan}`)
+        patch.plan = c.plan
+        next.plan = c.plan
+      }
+      if (c.features) {
+        const f = Array.from(new Set(c.features))
+        if ([...f].sort().join(',') !== [...l.features].sort().join(',')) {
+          changes.push(`Features ${l.features.join(', ') || 'none'} → ${f.join(', ') || 'none'}`)
+          patch.features = f
+          next.features = f
+        }
+      }
+      if (c.maxUsers !== undefined && c.maxUsers !== l.maxUsers) {
+        const u = intIn(c.maxUsers, 1, 10000)
+        changes.push(`Max users ${l.maxUsers} → ${u}`)
+        patch.maxUsers = u
+        next.maxUsers = u
+      }
+    }
+    if ((c.kind === 'firms' || c.kind === 'plan') && c.maxFirms !== undefined && c.maxFirms !== l.maxFirms) {
+      const g = firmLimitGuard(c.maxFirms)
+      if (!g.ok) throw new Error(g.reason)
+      changes.push(`Firm limit ${l.maxFirms} → ${c.maxFirms}`)
+      patch.maxFirms = c.maxFirms
+      next.maxFirms = c.maxFirms
+    }
+    if ((c.kind === 'devices' || c.kind === 'plan') && c.maxDevices !== undefined && c.maxDevices !== l.maxDevices) {
+      const g = deviceLimitGuard(c.maxDevices, l.activeDevices)
+      if (!g.ok) throw new Error(g.reason)
+      changes.push(`Computer limit ${l.maxDevices} → ${c.maxDevices}`)
+      patch.maxDevices = c.maxDevices
+      next.maxDevices = c.maxDevices
+    }
+    if (c.kind === 'poweredBy' && c.poweredBy !== undefined && c.poweredBy !== l.poweredBy) {
+      changes.push(`"Powered by Digital Target" ${l.poweredBy ? 'on' : 'off'} → ${c.poweredBy ? 'on' : 'off'}`)
+      patch.poweredBy = c.poweredBy
+      next.poweredBy = c.poweredBy
+    }
+    if (!changes.length) throw new Error('Nothing changed.')
+    tx.update(licenseRef(l.id), { ...patch, updatedAt: serverTimestamp() })
+    tx.set(licenseStatusRef(l.id), licenseStatusPatch(next), { merge: true })
+    writeLog(tx, l.id, TERMS_ACTION[c.kind], by, withReason(changes.join('; '), reason))
+    return next
+  })
+}
+
+/** Kept for older callers: renew to a new expiry (or lifetime). */
+export async function renewLicense(l: License, newExpiry: Date | null, by: string, reason = ''): Promise<License> {
+  return changeTerms(l.id, { kind: 'renew', expiresAt: newExpiry, planType: newExpiry ? (l.planType === 'lifetime' ? 'yearly' : l.planType) : 'lifetime' }, reason, by)
+}
+
+/**
+ * Lifetime detachment (Module 8): marks the license detached. The caller signs and publishes the detached
+ * certificates (approve.ts publishCertificates) — detachment is only offered while the signing key is loaded.
+ */
+export async function detachLicense(licenseId: string, reason: string, by: string): Promise<License> {
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(licenseRef(licenseId))
+    if (!snap.exists()) throw new Error('License not found.')
+    const l = licenseFromSnap(snap)
+    const el = detachEligibility({ planType: l.planType, expiresAtMs: l.expiresAt ? l.expiresAt.toMillis() : null, status: l.status, detached: l.detached })
+    if (!el.ok) throw new Error(el.reasons.join(' '))
+    const next: License = { ...l, detached: true, checkinDays: 0, detachedBy: by }
+    tx.update(licenseRef(l.id), { detached: true, detachedAt: serverTimestamp(), detachedBy: by, checkinDays: 0, updatedAt: serverTimestamp() })
+    tx.set(licenseStatusRef(l.id), licenseStatusPatch(next), { merge: true })
+    writeLog(tx, l.id, 'license_detached', by, withReason(`Lifetime license detached from central management (${l.activeDevices} computer(s)); no further remote suspension or revocation`, reason))
+    return next
+  })
 }
 
 /** Re-publishes licenseStatus/{id} from the license (repair tool). */
 export async function republishStatus(l: License, by: string): Promise<void> {
   const batch = writeBatch(db)
-  batch.set(licenseStatusRef(l.id), statusPatch(l.status, l.expiresAt), { merge: true })
-  writeLog(batch, l.id, 'status_published', by, `licenseStatus re-published (status ${l.status}, expiry ${expiryLabel(l)})`)
+  batch.set(licenseStatusRef(l.id), licenseStatusPatch(l), { merge: true })
+  writeLog(batch, l.id, 'status_published', by, `licenseStatus re-published (status ${l.status}, expiry ${expiryLabel(l)}, powered by ${l.poweredBy ? 'on' : 'off'}${l.detached ? ', detached' : ''})`)
+  await batch.commit()
+}
+
+/** Links (or unlinks with '') a license to a client record. */
+export async function linkLicenseClient(l: License, clientId: string, clientLabel: string, by: string): Promise<void> {
+  const batch = writeBatch(db)
+  batch.update(licenseRef(l.id), { clientId, updatedAt: serverTimestamp() })
+  writeLog(batch, l.id, clientId ? 'client_linked' : 'client_unlinked', by, clientId ? `License linked to client ${clientLabel}` : 'License unlinked from its client', 'client')
   await batch.commit()
 }
 
 /* -------------------------------------------- devices -------------------------------------------- */
 
 /**
- * Deactivates a device inside a transaction (all reads must already be done by the caller).
- * Returns true when the device was active and is now deactivated.
+ * Releases a device inside a transaction (all reads must already be done by the caller): the device stops
+ * holding a slot and is added to deactivatedDevices. Returns true when the device held a slot.
  */
 export function deactivateDeviceInTx(
   tx: Transaction,
@@ -356,56 +573,87 @@ export function deactivateDeviceInTx(
   devSnap: DocumentSnapshot<DocumentData>,
   deviceId: string,
   by: string,
-  how: string
+  how: string,
+  note = ''
 ): boolean {
-  if (!devSnap.exists() || devSnap.data()?.status !== 'active') return false
+  if (!devSnap.exists() || !holdsSlot(String(devSnap.data()?.status ?? 'active'))) return false
   const dev = deviceFromSnap(devSnap)
-  tx.update(deviceRef(lic.id, deviceId), { status: 'deactivated', deactivatedAt: serverTimestamp() })
+  tx.update(deviceRef(lic.id, deviceId), { status: 'deactivated', deactivatedAt: serverTimestamp(), statusChangedAt: serverTimestamp(), statusBy: by, statusNote: note.trim() })
   tx.update(licenseRef(lic.id), { activeDevices: Math.max(0, lic.activeDevices - 1), updatedAt: serverTimestamp() })
-  tx.set(licenseStatusRef(lic.id), statusPatch(lic.status, lic.expiresAt, { add: [deviceId] }), { merge: true })
-  writeLog(tx, lic.id, 'device_deactivated', by, `${dev.deviceName || 'Device'} (${deviceId}) deactivated ${how}`)
+  tx.set(licenseStatusRef(lic.id), licenseStatusPatch(lic, { add: [deviceId] }, [deviceId]), { merge: true })
+  writeLog(tx, lic.id, 'device_released', by, withReason(`${dev.deviceName || 'Device'} (${deviceId}) released ${how} — slot freed`, note), 'device')
   return true
 }
 
-export async function adminDeactivateDevice(licenseId: string, deviceId: string, by: string): Promise<void> {
-  await runTransaction(db, async (tx) => {
-    const licSnap = await tx.get(licenseRef(licenseId))
-    const devSnap = await tx.get(deviceRef(licenseId, deviceId))
-    if (!licSnap.exists()) throw new Error('License not found.')
-    const ok = deactivateDeviceInTx(tx, licenseFromSnap(licSnap), devSnap, deviceId, by, 'by admin')
-    if (!ok) throw new Error('This device is not active.')
-  })
-}
+export type DeviceAction = 'suspend' | 'revoke' | 'release' | 'reactivate'
 
-export async function adminReactivateDevice(licenseId: string, deviceId: string, by: string): Promise<void> {
-  await runTransaction(db, async (tx) => {
+/**
+ * Device lifecycle (devices.manage):
+ *  - suspend / revoke: the computer keeps its slot, is added to deactivatedDevices (read-only at its next check-in)
+ *  - release: the slot is freed (the computer can be replaced by another one)
+ *  - reactivate: suspended / revoked computers come back; a released one needs a free slot
+ * Returns the license (for re-signing certificates after a reactivation).
+ */
+export async function setDeviceState(licenseId: string, deviceId: string, action: DeviceAction, note: string, by: string): Promise<License> {
+  return runTransaction(db, async (tx) => {
     const licSnap = await tx.get(licenseRef(licenseId))
     const devSnap = await tx.get(deviceRef(licenseId, deviceId))
     if (!licSnap.exists()) throw new Error('License not found.')
     if (!devSnap.exists()) throw new Error('Device not found.')
     const lic = licenseFromSnap(licSnap)
     const dev = deviceFromSnap(devSnap)
-    if (dev.status === 'active') throw new Error('This device is already active.')
-    if (lic.activeDevices >= lic.maxDevices) {
-      throw new Error(`Device limit reached (${lic.activeDevices} of ${lic.maxDevices}). Deactivate another device or raise the limit first.`)
+    const label = `${dev.deviceName || 'Device'} (${deviceId})`
+    const meta = { statusChangedAt: serverTimestamp(), statusBy: by, statusNote: note.trim() }
+    if (action === 'release') {
+      if (!deactivateDeviceInTx(tx, lic, devSnap, deviceId, by, 'by admin', note)) throw new Error('This computer does not hold a slot (already released).')
+      return { ...lic, activeDevices: Math.max(0, lic.activeDevices - 1) }
     }
-    tx.update(deviceRef(licenseId, deviceId), { status: 'active', deactivatedAt: null })
-    tx.update(licenseRef(licenseId), { activeDevices: lic.activeDevices + 1, updatedAt: serverTimestamp() })
-    tx.set(licenseStatusRef(licenseId), statusPatch(lic.status, lic.expiresAt, { remove: [deviceId] }), { merge: true })
-    writeLog(tx, licenseId, 'device_reactivated', by, `${dev.deviceName || 'Device'} (${deviceId}) reactivated by admin`)
+    if (action === 'suspend' || action === 'revoke') {
+      if (action === 'suspend' && dev.status !== 'active') throw new Error('Only an active computer can be suspended.')
+      if (action === 'revoke' && !['active', 'suspended'].includes(dev.status)) throw new Error('Only an active or suspended computer can be revoked.')
+      if (action === 'revoke' && !note.trim()) throw new Error('Enter a note explaining the revocation.')
+      const status = action === 'suspend' ? 'suspended' : 'revoked'
+      tx.update(deviceRef(licenseId, deviceId), { status, ...meta })
+      tx.set(licenseStatusRef(licenseId), licenseStatusPatch(lic, { add: [deviceId] }, [deviceId]), { merge: true })
+      writeLog(tx, licenseId, `device_${status}`, by, withReason(`${label} ${status} by admin (keeps its slot)`, note), 'device')
+      return lic
+    }
+    // reactivate
+    if (dev.status === 'active') throw new Error('This computer is already active.')
+    if (lic.status !== 'active') throw new Error(`The license is ${lic.status}. Reactivate the license first.`)
+    let activeDevices = lic.activeDevices
+    if (dev.status === 'deactivated') {
+      if (lic.activeDevices >= lic.maxDevices) {
+        throw new Error(`Computer limit reached (${lic.activeDevices} of ${lic.maxDevices}). Release another computer or raise the limit first.`)
+      }
+      activeDevices = lic.activeDevices + 1
+      tx.update(licenseRef(licenseId), { activeDevices, updatedAt: serverTimestamp(), ...(lic.activatedAt ? {} : { activatedAt: serverTimestamp() }) })
+    }
+    tx.update(deviceRef(licenseId, deviceId), { status: 'active', deactivatedAt: null, ...meta })
+    tx.set(licenseStatusRef(licenseId), licenseStatusPatch(lic, { remove: [deviceId] }), { merge: true })
+    writeLog(tx, licenseId, 'device_reactivated', by, withReason(`${label} reactivated by admin (was ${dev.status === 'deactivated' ? 'released' : dev.status})`, note), 'device')
+    return { ...lic, activeDevices }
   })
 }
 
-/** Recounts active devices from the devices sub-collection and fixes activeDevices (repair tool). */
+export async function adminDeactivateDevice(licenseId: string, deviceId: string, by: string, note = ''): Promise<void> {
+  await setDeviceState(licenseId, deviceId, 'release', note, by)
+}
+
+export async function adminReactivateDevice(licenseId: string, deviceId: string, by: string, note = ''): Promise<void> {
+  await setDeviceState(licenseId, deviceId, 'reactivate', note, by)
+}
+
+/** Recounts devices holding a slot from the devices sub-collection and fixes activeDevices (repair tool). */
 export async function recountActiveDevices(licenseId: string, by: string): Promise<number> {
   const snap = await getDocs(devicesCol(licenseId))
-  const n = snap.docs.filter((d) => d.data().status === 'active').length
+  const n = snap.docs.filter((d) => holdsSlot(String(d.data().status ?? 'active'))).length
   await runTransaction(db, async (tx) => {
     const licSnap = await tx.get(licenseRef(licenseId))
     if (!licSnap.exists()) throw new Error('License not found.')
     const before = num(licSnap.data()?.activeDevices, 0)
     tx.update(licenseRef(licenseId), { activeDevices: n, updatedAt: serverTimestamp() })
-    writeLog(tx, licenseId, 'devices_recounted', by, `Active devices recounted: ${before} → ${n}`)
+    writeLog(tx, licenseId, 'devices_recounted', by, `Computers holding a slot recounted: ${before} → ${n}`, 'device')
   })
   return n
 }

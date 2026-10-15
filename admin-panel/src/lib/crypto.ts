@@ -183,6 +183,14 @@ export interface LicensePayload {
   leaseUntil: null
   graceDays: number
   checkinDays: number
+  /** v1.1 (src/main/license/types.ts) — optional so older certificates stay valid. */
+  planType?: string
+  clientId?: string
+  maxDevices?: number
+  /** "Powered by Digital Target" on customer documents. */
+  poweredBy?: boolean
+  /** Lifetime license detached from central management (only with expiresAt null and checkinDays 0). */
+  detached?: boolean
 }
 
 export interface SignedCertificate {

@@ -8,7 +8,7 @@ import { type Args, type Route, ownerOnly, licenseLimits, publicCtx, saveDialog,
 import { documentRoutes } from './routes/documents'
 import { catalogRoutes } from './routes/catalog'
 import { dataRoutes } from './routes/data'
-import { accessRoutes } from './routes/access'
+import { accessRoutes, sessionGate } from './routes/access'
 import { cloudRoutes } from './routes/cloud'
 import { assistRoutes } from './routes/assist'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
@@ -467,6 +467,7 @@ export async function dispatch(method: string, args: unknown, sender: WebContent
   const lockMinutes = getSetting(db, 'lock_minutes', 15)
   if (!s.locked && lockMinutes > 0 && Date.now() - s.lastActivity > lockMinutes * 60000) s.locked = true
   if (s.locked && !PUBLIC_WHILE_LOCKED.has(method)) throw new AppError('Session locked. Enter your password to continue.', 'LOCKED')
+  sessionGate(method, s.user) // forced password change: only the change-password route and session basics work
   s.lastActivity = Date.now()
   const ctx: Ctx = { db, user: s.user, firmId: s.firmId }
   if (!canAccessFirm(s.user, s.firmId)) throw new AppError('You no longer have access to the active firm.', 'FORBIDDEN')

@@ -1,7 +1,7 @@
 import { ReactNode, useEffect, useRef, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
-  BarChart3, CalendarCheck, LifeBuoy, Bell, Boxes, Building2, CalendarDays, ChevronDown, DatabaseBackup, FileText, KeyRound, Landmark,
+  BarChart3, CalendarCheck, LifeBuoy, MessageCircle, Bell, Boxes, Building2, CalendarDays, ChevronDown, DatabaseBackup, FileText, KeyRound, Landmark,
   LayoutDashboard, Lock, LogOut, Palette, Receipt, Search, Settings, ShieldCheck, ShoppingBag, ShoppingCart, SunMedium, Truck, Users, Check, AlertTriangle,
   RectangleEllipsis
 } from 'lucide-react'
@@ -28,6 +28,7 @@ const NAV: Array<{ to: string; label: string; icon: ReactNode; perm?: string | s
   { to: '/expenses', label: 'Expenses', icon: <Receipt />, perm: 'expenses.view' },
   { to: '/closing', label: 'Day Closing', icon: <CalendarCheck />, perm: 'closing.manage' },
   { to: '/reports', label: 'Reports', icon: <BarChart3 />, perm: ['reports.view', 'reports.profit'] },
+  { to: '/whatsapp', label: 'WhatsApp', icon: <MessageCircle />, perm: 'whatsapp.send' },
   { to: '/users', label: 'Users & Permissions', icon: <ShieldCheck />, perm: ['users.manage', 'audit.view'], section: 'Administration' },
   { to: '/firms', label: 'Multi-Firm Settings', icon: <Building2 />, perm: 'firms.manage' },
   { to: '/backup', label: 'Backup & Restore', icon: <DatabaseBackup />, perm: ['backup.manage', 'import.manage'] },

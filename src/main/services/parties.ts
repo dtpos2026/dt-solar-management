@@ -10,7 +10,7 @@
  * Even when parties are shared between firms, each firm has its own ledger.
  */
 import { num, round2 } from '../../shared/money'
-import { AppError, Ctx, audit, can, getSetting, like, optText, requirePerm, requireText, visibleTo } from './context'
+import { AppError, Ctx, audit, can, getSetting, like, optId, optText, requireDate, requirePerm, requireText, visibleTo } from './context'
 import { nextNumber } from './firms'
 
 /** One row per ledger event; parameters: none (filter outside). */
@@ -313,6 +313,10 @@ export function createPartyAdjustment(
   const amount = round2(num(input.amount))
   if (amount <= 0) throw new AppError('Amount must be greater than zero.', 'VALIDATION')
   if (input.direction !== 'debit' && input.direction !== 'credit') throw new AppError('Select debit or credit.', 'VALIDATION')
+  const projectId = optId(input.projectId)
+  if (projectId && !ctx.db.prepare('SELECT 1 FROM projects WHERE id = ? AND firm_id = ?').get(projectId, ctx.firmId)) {
+    throw new AppError('Project does not belong to the active firm.', 'VALIDATION')
+  }
   return ctx.db.transaction(() => {
     const number = nextNumber(ctx.db, ctx.firmId, 'party_adjustment')
     const id = Number(
@@ -321,7 +325,7 @@ export function createPartyAdjustment(
           `INSERT INTO party_adjustments (firm_id, number, date, party_id, direction, amount, reason, project_id, created_by)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
-        .run(ctx.firmId, number, input.date, input.partyId, input.direction, amount, optText(input.reason, 300), input.projectId ?? null, ctx.user.id)
+        .run(ctx.firmId, number, requireDate(input.date), input.partyId, input.direction, amount, optText(input.reason, 300), projectId, ctx.user.id)
         .lastInsertRowid
     )
     audit(ctx, 'create', 'party_adjustment', id, `${input.direction === 'debit' ? 'Debit' : 'Credit'} adjustment ${number} of ${amount}`)

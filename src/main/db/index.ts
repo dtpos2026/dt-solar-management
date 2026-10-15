@@ -92,9 +92,8 @@ export const DEFAULT_SETTINGS: Record<string, unknown> = {
   paper_size: 'A4',
   location_sharing: 'off',
   location_manual: '',
-  whatsapp_mode: 'chat_link',
+  whatsapp_mode: 'web',
   whatsapp_country_code: '92',
-  whatsapp_cloud_phone_id: '',
   backup_on_day_close: true,
   default_invoice_terms:
     'Goods once sold will not be taken back without prior approval.\nWarranty is subject to manufacturer terms and conditions.\nPayment is due as per agreed terms.',

@@ -25,6 +25,7 @@ import { MultiFirmPage } from './pages/firms/MultiFirmPage'
 import { SettingsPage } from './pages/settings/SettingsPage'
 import { BackupPage } from './pages/backup/BackupPage'
 import { HelpPage } from './pages/help/HelpPage'
+import { WhatsAppPage } from './pages/whatsapp/WhatsAppPage'
 import { ClosingPage } from './pages/closing/ClosingPage'
 
 interface AppInfo {
@@ -108,6 +109,7 @@ function Boot(): JSX.Element {
         <Route path="/license" element={<Navigate to="/settings?tab=license" replace />} />
         <Route path="/closing" element={<ClosingPage />} />
         <Route path="/help" element={<HelpPage />} />
+        <Route path="/whatsapp" element={<WhatsAppPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Shell>

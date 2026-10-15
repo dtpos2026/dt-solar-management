@@ -35,9 +35,8 @@ const VALIDATORS: Record<string, (v: unknown) => unknown> = {
   paper_size: (v) => (['A4', 'A5', 'Letter', 'Legal', 'thermal80', 'thermal58'].includes(String(v)) ? String(v) : 'A4'),
   location_sharing: (v) => (['off', 'approximate', 'manual'].includes(String(v)) ? String(v) : 'off'),
   location_manual: (v) => String(v ?? '').slice(0, 200),
-  whatsapp_mode: (v) => (['chat_link', 'cloud_api'].includes(String(v)) ? String(v) : 'chat_link'),
+  whatsapp_mode: (v) => (['web', 'chat_link'].includes(String(v)) ? String(v) : 'web'),
   whatsapp_country_code: (v) => String(v ?? '92').replace(/\D/g, '').slice(0, 4) || '92',
-  whatsapp_cloud_phone_id: (v) => String(v ?? '').replace(/\D/g, '').slice(0, 30),
   backup_on_day_close: (v) => !!v
 }
 

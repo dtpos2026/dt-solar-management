@@ -21,3 +21,6 @@ e2e-output/
 
 # Local agent worktrees
 .claude/worktrees/
+# node_modules symlinks inside agent worktrees
+/node_modules
+admin-panel/node_modules

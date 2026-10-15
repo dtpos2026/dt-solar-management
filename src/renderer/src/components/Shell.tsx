@@ -146,7 +146,7 @@ function FirmSwitcher(): JSX.Element {
         {multi && <ChevronDown className="h-4 w-4 text-muted" />}
       </button>
       {open && (
-        <div className="card fade-in absolute right-0 z-40 mt-2 w-72 p-1 shadow-xl">
+        <div data-overlay="dropdown" className="card fade-in absolute right-0 z-40 mt-2 w-72 p-1 shadow-xl">
           {firms
             .filter((f) => f.is_active)
             .map((f) => (
@@ -251,7 +251,7 @@ function Notifications(): JSX.Element {
         {items.length > 0 && <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-bad px-1 text-[10.5px] font-bold text-white">{items.length}</span>}
       </button>
       {open && (
-        <div className="card fade-in absolute right-0 z-40 mt-2 w-80 p-1 shadow-xl">
+        <div data-overlay="dropdown" className="card fade-in absolute right-0 z-40 mt-2 w-80 p-1 shadow-xl">
           {items.length === 0 && <div className="px-3 py-4 text-center text-[13px] text-muted">All clear — no alerts.</div>}
           {items.map((n, i) => (
             <button key={i} type="button" onMouseDown={() => nav(n.to)} className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-surface-2 cursor-pointer">
@@ -290,7 +290,7 @@ function UserMenu({ onLogout }: { onLogout: () => void }): JSX.Element {
         <ChevronDown className="h-4 w-4 text-muted" />
       </button>
       {open && (
-        <div className="card fade-in absolute right-0 z-40 mt-2 w-60 p-1 shadow-xl">
+        <div data-overlay="dropdown" className="card fade-in absolute right-0 z-40 mt-2 w-60 p-1 shadow-xl">
           <MenuItem icon={<Palette />} onClick={() => { setThemeOpen(true); setOpen(false) }}>Theme & appearance</MenuItem>
           <MenuItem icon={<KeyRound />} onClick={() => { setPw(true); setOpen(false) }}>Change password</MenuItem>
           <MenuItem icon={<Lock />} onClick={async () => { await api('auth.lock'); useApp.getState().setLocked(true); setOpen(false) }}>Lock screen</MenuItem>
@@ -411,7 +411,7 @@ function LockScreen({ onLogout }: { onLogout: () => void }): JSX.Element {
     }
   }
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gradient-to-br from-side via-side to-brand-600 p-6">
+    <div data-overlay="lock" className="fixed inset-0 z-[60] flex items-center justify-center bg-gradient-to-br from-side via-side to-brand-600 p-6">
       <div className="card fade-in w-full max-w-sm p-7 text-center shadow-2xl">
         <img src={appIcon} className="mx-auto mb-3 h-14 w-14 rounded-2xl" alt="" />
         <div className="text-[18px] font-bold">Session locked</div>

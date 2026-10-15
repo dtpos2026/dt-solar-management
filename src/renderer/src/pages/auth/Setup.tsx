@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
-import { Building2, Check, ChevronLeft, ChevronRight, Database, ImagePlus, Rocket, ShieldCheck, Sparkles, Users } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { BadgeCheck, Building2, Check, ChevronLeft, ChevronRight, Clock, Database, ImagePlus, KeyRound, Loader2, Rocket, ShieldCheck, Sparkles, Users, XCircle } from 'lucide-react'
 import { api } from '../../api'
-import { Button, Field, Input, Textarea, Toggle, cx, readImageFile, toast } from '../../components/ui'
+import { Badge, Button, Field, Input, Textarea, Toggle, cx, readImageFile, toast } from '../../components/ui'
+import type { ApiError } from '../../api'
 import { AppLogo, VendorLine } from '../../components/Brand'
 import wetcoLogo from '../../assets/wetco-logo.jpg'
 
@@ -32,6 +33,8 @@ export function SetupWizard({ onDone }: { onDone: () => void }): JSX.Element {
   const [opts, setOpts] = useState({ multiFirm: true, shareInventory: true, shareParties: true, currencySymbol: 'Rs.', extraFirms: ['LAZZAZ TRADERS', 'XAVIAR SOLUTIONS'] })
   const [owner, setOwner] = useState({ fullName: '', username: 'admin', password: '', confirm: '', phone: '', email: '' })
   const [demo, setDemo] = useState(false)
+  /** First the License step (activate with a key or start the trial), then the business setup steps. */
+  const [licStage, setLicStage] = useState(true)
 
   useEffect(() => {
     assetToDataUrl(wetcoLogo).then((logo) => setFirm((f) => ({ ...f, logo })))
@@ -92,8 +95,12 @@ export function SetupWizard({ onDone }: { onDone: () => void }): JSX.Element {
           <div className="text-[26px] leading-tight font-bold">Let's set up your solar business</div>
           <div className="text-[14px] text-white/80">Everything is stored securely on this computer and works fully offline.</div>
           <div className="mt-6 space-y-2">
+            <div className={cx('flex items-center gap-3 rounded-xl px-3 py-2.5 transition', licStage ? 'bg-white/15' : 'opacity-70')}>
+              <span className={cx('flex h-8 w-8 items-center justify-center rounded-lg [&>svg]:h-4 [&>svg]:w-4', !licStage ? 'bg-[#8bf00a] text-[#123]' : 'bg-white/15')}>{!licStage ? <Check /> : <KeyRound />}</span>
+              <span className="font-medium">License</span>
+            </div>
             {steps.map((s, i) => (
-              <div key={s.title} className={cx('flex items-center gap-3 rounded-xl px-3 py-2.5 transition', i === step ? 'bg-white/15' : 'opacity-70')}>
+              <div key={s.title} className={cx('flex items-center gap-3 rounded-xl px-3 py-2.5 transition', !licStage && i === step ? 'bg-white/15' : 'opacity-70')}>
                 <span className={cx('flex h-8 w-8 items-center justify-center rounded-lg [&>svg]:h-4 [&>svg]:w-4', i < step ? 'bg-[#8bf00a] text-[#123]' : 'bg-white/15')}>{i < step ? <Check /> : s.icon}</span>
                 <span className="font-medium">{s.title}</span>
               </div>
@@ -103,6 +110,22 @@ export function SetupWizard({ onDone }: { onDone: () => void }): JSX.Element {
         <VendorLine light />
       </div>
 
+      {licStage ? (
+        <div className="flex flex-1 flex-col overflow-y-auto">
+          <div className="mx-auto w-full max-w-2xl flex-1 px-8 py-10">
+            <LicenseStep
+              defaults={{ companyName: firm.name, phone: firm.phone, address: [firm.address, firm.city].filter(Boolean).join(', ') }}
+              onDone={(reg) => {
+                if (reg) {
+                  setFirm((f) => ({ ...f, name: reg.companyName || f.name, phone: reg.phone || f.phone, address: reg.address || f.address }))
+                  setOwner((o) => ({ ...o, fullName: o.fullName || reg.ownerName, phone: o.phone || reg.phone }))
+                }
+                setLicStage(false)
+              }}
+            />
+          </div>
+        </div>
+      ) : (
       <div className="flex flex-1 flex-col overflow-y-auto">
         <div className="mx-auto w-full max-w-2xl flex-1 px-8 py-10">
           {step === 0 && (
@@ -253,7 +276,7 @@ export function SetupWizard({ onDone }: { onDone: () => void }): JSX.Element {
           )}
         </div>
         <div className="sticky bottom-0 flex items-center justify-between border-t border-line bg-surface px-8 py-4">
-          <Button variant="ghost" disabled={step === 0} onClick={() => setStep(step - 1)} icon={<ChevronLeft className="h-4 w-4" />}>
+          <Button variant="ghost" onClick={() => (step === 0 ? setLicStage(true) : setStep(step - 1))} icon={<ChevronLeft className="h-4 w-4" />}>
             Back
           </Button>
           {step < 3 ? (
@@ -266,6 +289,288 @@ export function SetupWizard({ onDone }: { onDone: () => void }): JSX.Element {
             </Button>
           )}
         </div>
+      </div>
+      )}
+    </div>
+  )
+}
+
+/* ------------------------------------------------ License step ------------------------------------------------ */
+interface Reg {
+  companyName: string
+  ownerName: string
+  phone: string
+  address: string
+}
+interface LicLite {
+  mode: string
+  message: string
+  canWrite: boolean
+  trialDaysLeft: number | null
+  onlineConfigured: boolean
+  pendingRequestId: string | null
+  registration: Reg | null
+  payload: { businessName: string } | null
+}
+interface ActResult {
+  pending: boolean
+  state: 'pending' | 'approved' | 'rejected' | 'none'
+  message: string
+  status: LicLite
+}
+
+const KEY_RE = /^DTSP(-[A-Z0-9]{4}){4}$/
+const POLL_MS = 8000
+
+function formatKey(v: string): string {
+  const raw = v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20)
+  return raw.match(/.{1,4}/g)?.join('-') ?? ''
+}
+
+/**
+ * Module 9 registration: activate with a license key (company, owner, phone, address are sent with the request and
+ * Digital Target approves it) or start the 15-day trial. Offline activation (request code / activation code) still works.
+ */
+function LicenseStep({ defaults, onDone }: { defaults: { companyName: string; phone: string; address: string }; onDone: (reg: Reg | null) => void }): JSX.Element {
+  const [lic, setLic] = useState<LicLite | null>(null)
+  const [choice, setChoice] = useState<'key' | 'trial'>('trial')
+  const [reg, setReg] = useState<Reg>({ companyName: defaults.companyName, ownerName: '', phone: defaults.phone, address: defaults.address })
+  const [key, setKey] = useState('')
+  const [busy, setBusy] = useState<string | null>(null)
+  const [phase, setPhase] = useState<'form' | 'pending' | 'approved' | 'rejected'>('form')
+  const [note, setNote] = useState('')
+  const [offline, setOffline] = useState(false)
+  const [reqCode, setReqCode] = useState('')
+  const [pasted, setPasted] = useState('')
+  const polling = useRef(false)
+
+  useEffect(() => {
+    api<LicLite>('license.status')
+      .then((s) => {
+        setLic(s)
+        if (s.registration) setReg(s.registration)
+        if (s.pendingRequestId) {
+          setChoice('key')
+          setPhase('pending')
+          setNote('Waiting for approval from Digital Target…')
+        } else if (s.mode === 'active' || s.mode === 'grace') {
+          setChoice('key')
+          setPhase('approved')
+          setNote(s.payload ? `Licensed to ${s.payload.businessName}.` : s.message)
+        } else if (s.mode !== 'trial') setChoice('key')
+      })
+      .catch((e) => toast.error(e))
+  }, [])
+
+  useEffect(() => {
+    if (phase !== 'pending') return
+    const t = setInterval(async () => {
+      if (polling.current) return
+      polling.current = true
+      try {
+        const r = await api<ActResult>('license.pollActivation')
+        setLic(r.status)
+        if (r.state === 'approved') {
+          setPhase('approved')
+          setNote(r.status.payload ? `Licensed to ${r.status.payload.businessName}.` : r.message)
+        } else if (r.state === 'none') setPhase('form')
+        else setNote(r.message)
+      } catch (e) {
+        if ((e as ApiError).code === 'LICENSE_REJECTED') {
+          setPhase('rejected')
+          setNote((e as Error).message)
+        } else setNote(`Still waiting — ${(e as Error).message}`)
+      } finally {
+        polling.current = false
+      }
+    }, POLL_MS)
+    return () => clearInterval(t)
+  }, [phase])
+
+  const activate = async (): Promise<void> => {
+    if (!reg.companyName.trim() || !reg.ownerName.trim() || !reg.phone.trim()) return toast.error('Enter the company name, owner name and phone.')
+    if (!KEY_RE.test(key)) return toast.error('Enter a valid license key (DTSP-XXXX-XXXX-XXXX-XXXX).')
+    setBusy('activate')
+    try {
+      const r = await api<ActResult>('license.activate', { licenseKey: key, registration: reg })
+      setLic(r.status)
+      setNote(r.status.payload && r.state === 'approved' ? `Licensed to ${r.status.payload.businessName}.` : r.message)
+      setPhase(r.state === 'approved' ? 'approved' : 'pending')
+    } catch (e) {
+      if ((e as ApiError).code === 'LICENSE_REJECTED') {
+        setPhase('rejected')
+        setNote((e as Error).message)
+      } else toast.error(e)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const cancel = async (): Promise<void> => {
+    setBusy('cancel')
+    try {
+      setLic(await api<LicLite>('license.cancelPending'))
+      setPhase('form')
+    } catch (e) {
+      toast.error(e)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const genCode = async (): Promise<void> => {
+    if (!KEY_RE.test(key)) return toast.error('Enter a valid license key (DTSP-XXXX-XXXX-XXXX-XXXX).')
+    try {
+      setReqCode(await api<string>('license.requestCode', { licenseKey: key }))
+    } catch (e) {
+      toast.error(e)
+    }
+  }
+
+  const installCode = async (): Promise<void> => {
+    if (!pasted.trim()) return toast.error('Paste the activation code you received from Digital Target.')
+    setBusy('install')
+    try {
+      const st = await api<LicLite>('license.install', { text: pasted.trim() })
+      setLic(st)
+      setPhase('approved')
+      setNote(st.payload ? `Licensed to ${st.payload.businessName}.` : st.message)
+    } catch (e) {
+      toast.error(e)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const trialAvailable = !!lic && lic.mode === 'trial'
+  const card = (active: boolean): string => cx('card flex w-full cursor-pointer items-start gap-4 p-5 text-left', active && 'ring-2 ring-brand')
+
+  return (
+    <div className="fade-in space-y-4">
+      <div>
+        <div className="text-[22px] font-bold">License</div>
+        <div className="text-muted">Activate DT Solar Pro with the license key you received from Digital Target, or try it free for 15 days.</div>
+      </div>
+
+      {phase === 'form' && (
+        <>
+          <button type="button" className={card(choice === 'key')} onClick={() => setChoice('key')}>
+            <KeyRound className="h-6 w-6 shrink-0 text-brand" />
+            <div>
+              <div className="font-semibold">Activate with a license key</div>
+              <div className="text-[13px] text-muted">Your details are sent to Digital Target with the activation request. The license installs automatically when it is approved.</div>
+            </div>
+          </button>
+          <button type="button" className={card(choice === 'trial')} onClick={() => setChoice('trial')} disabled={!trialAvailable && !!lic}>
+            <Clock className="h-6 w-6 shrink-0 text-brand" />
+            <div>
+              <div className="font-semibold">Start 15-day trial</div>
+              <div className="text-[13px] text-muted">
+                {lic && !trialAvailable ? 'The trial period on this computer has already been used. Please activate with a license key.' : `Full access, up to 5 firms and 5 users.${lic?.trialDaysLeft != null ? ` ${lic.trialDaysLeft} day(s) left.` : ''}`}
+              </div>
+            </div>
+          </button>
+
+          {choice === 'key' && (
+            <div className="card space-y-3 p-5">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Company name" required>
+                  <Input value={reg.companyName} maxLength={200} onChange={(e) => setReg({ ...reg, companyName: e.target.value })} />
+                </Field>
+                <Field label="Owner name" required>
+                  <Input value={reg.ownerName} maxLength={200} onChange={(e) => setReg({ ...reg, ownerName: e.target.value })} />
+                </Field>
+                <Field label="Phone" required>
+                  <Input value={reg.phone} maxLength={60} onChange={(e) => setReg({ ...reg, phone: e.target.value })} />
+                </Field>
+                <Field label="Address">
+                  <Input value={reg.address} maxLength={300} onChange={(e) => setReg({ ...reg, address: e.target.value })} />
+                </Field>
+              </div>
+              <Field label="License key" hint="Format: DTSP-XXXX-XXXX-XXXX-XXXX">
+                <Input value={key} placeholder="DTSP-XXXX-XXXX-XXXX-XXXX" className="max-w-sm tracking-wider" style={{ fontFamily: 'ui-monospace, Consolas, monospace' }} spellCheck={false} onChange={(e) => setKey(formatKey(e.target.value))} />
+              </Field>
+              {!offline ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button variant="primary" icon={<KeyRound className="h-4 w-4" />} loading={busy === 'activate'} disabled={!lic?.onlineConfigured || !!busy} onClick={activate}>
+                    Send activation request
+                  </Button>
+                  <button type="button" className="cursor-pointer text-[13px] text-brand hover:underline" onClick={() => setOffline(true)}>
+                    No internet? Activate offline
+                  </button>
+                  {lic && !lic.onlineConfigured && <span className="text-[12.5px] text-warn">Online activation is not available in this build — use offline activation.</span>}
+                </div>
+              ) : (
+                <div className="space-y-3 rounded-xl border border-line p-3">
+                  <div className="text-[13px] text-muted">1. Generate a request code and send it to Digital Target (WhatsApp / email). 2. Paste the activation code you receive.</div>
+                  <Button size="sm" onClick={genCode} disabled={!KEY_RE.test(key)}>
+                    Generate request code
+                  </Button>
+                  {reqCode && <Textarea readOnly rows={3} value={reqCode} className="font-mono text-[11px]" onFocus={(e) => e.currentTarget.select()} />}
+                  <Textarea rows={3} placeholder="Paste the activation code here" value={pasted} onChange={(e) => setPasted(e.target.value)} className="font-mono text-[11px]" />
+                  <div className="flex gap-3">
+                    <Button size="sm" variant="primary" loading={busy === 'install'} onClick={installCode}>
+                      Install activation code
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setOffline(false)}>
+                      Back to online activation
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {phase === 'pending' && (
+        <div className="card space-y-3 p-5">
+          <div className="flex items-center gap-2 font-semibold">
+            <Loader2 className="h-5 w-5 animate-spin text-brand" /> Waiting for approval <Badge tone="warn">Pending</Badge>
+          </div>
+          <div className="text-[13px] text-muted">{note} Digital Target has received your request. This screen updates automatically; you can also start using the trial now and the license will install when it is approved.</div>
+          <div className="flex gap-3">
+            <Button variant="ghost" loading={busy === 'cancel'} onClick={cancel}>
+              Cancel request
+            </Button>
+            {trialAvailable && <Button onClick={() => onDone(reg)}>Continue with trial meanwhile</Button>}
+          </div>
+        </div>
+      )}
+
+      {phase === 'approved' && (
+        <div className="card flex items-start gap-3 p-5">
+          <BadgeCheck className="h-6 w-6 shrink-0 text-ok" />
+          <div>
+            <div className="font-semibold">License activated <Badge tone="ok">Approved</Badge></div>
+            <div className="text-[13px] text-muted">{note}</div>
+          </div>
+        </div>
+      )}
+
+      {phase === 'rejected' && (
+        <div className="card space-y-3 p-5">
+          <div className="flex items-center gap-2 font-semibold text-bad">
+            <XCircle className="h-5 w-5" /> Request rejected <Badge tone="bad">Rejected</Badge>
+          </div>
+          <div className="text-[13px] text-muted">{note}</div>
+          <Button onClick={() => setPhase('form')}>Try again</Button>
+        </div>
+      )}
+
+      <div className="flex justify-end border-t border-line pt-4">
+        {phase === 'approved' ? (
+          <Button variant="primary" onClick={() => onDone(reg)}>
+            Continue <ChevronRight className="h-4 w-4" />
+          </Button>
+        ) : (
+          phase === 'form' &&
+          choice === 'trial' && (
+            <Button variant="primary" disabled={!trialAvailable} onClick={() => onDone(null)}>
+              Start 15-day trial <ChevronRight className="h-4 w-4" />
+            </Button>
+          )
+        )}
       </div>
     </div>
   )

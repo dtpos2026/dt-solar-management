@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { CSSProperties, ReactNode, useEffect, useMemo, useRef, useState } from 'react'
-import { Building2, Check, Hash, ImageOff, Info, Lock, Palette, Pencil, Plus, Printer, Save, Stamp, Signature, Upload, Trash2, Store } from 'lucide-react'
+import { Building2, Check, Power, PowerOff, Split, Hash, ImageOff, Info, Lock, Palette, Pencil, Plus, Printer, Save, Stamp, Signature, Upload, Trash2, Store } from 'lucide-react'
 import { api } from '../../api'
 import { useApp, useCan } from '../../store'
 import { Badge, Button, Card, Empty, Field, IconButton, Input, Loading, Modal, NumberInput, PageHeader, Select, Tabs, Textarea, Toggle, confirmDialog, cx, readImageFile, toast } from '../../components/ui'
@@ -30,6 +30,32 @@ interface Limits {
   licenseMax: number
   allowed: number
   count: number
+  active: number
+  inactive: number
+  total: number
+}
+
+interface Impact {
+  canDeactivate: boolean
+  blockedReason: string | null
+  defaultFirm: { id: number; name: string } | null
+  lastFirmUsers: Array<{ id: number; username: string; full_name: string }>
+  strandedUsers: Array<{ id: number; username: string; full_name: string }>
+}
+
+interface SharedSide {
+  toFirm: Array<{ firmId: number; firmName: string; count: number }>
+  unused: number
+  staysShared: Array<{ id: number; name: string; firms: string[] }>
+}
+interface SharedPlan {
+  shareInventory: boolean
+  shareParties: boolean
+  defaultFirm: { id: number; name: string }
+  products: SharedSide
+  parties: SharedSide
+  productAssignments: number
+  partyAssignments: number
 }
 
 interface PrintSettings {
@@ -240,6 +266,49 @@ export function MultiFirmPage(): JSX.Element {
     await saveSetting('max', { max_firms: n }, `Maximum firms set to ${n}.`)
   }
 
+  const toggleActive = async (f: FirmRow): Promise<void> => {
+    if (!f.is_active) {
+      const ok = await confirmDialog({ title: `Reactivate ${f.name}?`, message: `Active firms count against your limit (${count} of ${allowedFirms} used).`, confirmLabel: 'Reactivate' })
+      if (!ok) return
+      try {
+        await api('firms.setActive', { id: f.id, active: true })
+        await reloadAll()
+        toast.ok(`${f.name} is active again.`)
+      } catch (e) {
+        toast.error(e)
+      }
+      return
+    }
+    let imp: Impact
+    try {
+      imp = await api<Impact>('firms.deactivationImpact', { id: f.id })
+    } catch (e) {
+      return toast.error(e)
+    }
+    if (!imp.canDeactivate) return toast.error(imp.blockedReason ?? 'This firm cannot be deactivated.')
+    const names = (u: Impact['lastFirmUsers']): string => u.map((x) => x.full_name || x.username).join(', ')
+    const ok = await confirmDialog({
+      title: `Deactivate ${f.name}?`,
+      message: (
+        <div className="space-y-2">
+          <p>Nothing is deleted: its invoices, payments and reports are kept and it can be reactivated later. Users cannot work in an inactive firm.</p>
+          {imp.lastFirmUsers.length > 0 && <p>Users who last worked in it will open <b>{imp.defaultFirm?.name}</b> next time: {names(imp.lastFirmUsers)}.</p>}
+          {imp.strandedUsers.length > 0 && <p>These users have no other active firm and will be given access to <b>{imp.defaultFirm?.name}</b>: {names(imp.strandedUsers)}.</p>}
+        </div>
+      ),
+      confirmLabel: 'Deactivate',
+      danger: true
+    })
+    if (!ok) return
+    try {
+      await api('firms.setActive', { id: f.id, active: false })
+      await reloadAll()
+      toast.ok(`${f.name} deactivated.`)
+    } catch (e) {
+      toast.error(e)
+    }
+  }
+
   const makeDefault = async (f: FirmRow): Promise<void> => {
     if (f.is_default) return
     if (!f.is_active) return toast.error('Activate this firm before making it the default.')
@@ -285,7 +354,7 @@ export function MultiFirmPage(): JSX.Element {
               You can create maximum {allowedFirms} firm{allowedFirms === 1 ? '' : 's'}.
             </div>
             <div className="text-[12.5px] text-muted">
-              {count} created · license allows {licenseMax > 0 ? `up to ${licenseMax}` : 'unlimited'} firm{licenseMax === 1 ? '' : 's'}
+              {count} of {allowedFirms} firms used{L && L.inactive > 0 ? ` (${L.inactive} inactive not counted)` : ''} · license allows {licenseMax > 0 ? `up to ${licenseMax}` : 'unlimited'} firm{licenseMax === 1 ? '' : 's'}
             </div>
           </div>
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
@@ -298,14 +367,14 @@ export function MultiFirmPage(): JSX.Element {
               disabled={!multi || busy === 'inv'}
               onChange={(v) => saveSetting('inv', { share_inventory: v }, v ? 'Inventory will be shared between firms.' : 'New products and warehouses will belong to one firm.')}
               label="Share inventory between firms"
-              description="Products, categories and warehouses created from now on are visible to every firm. Existing items keep their current sharing."
+              description="On: products, categories and warehouses created from now on are visible in every firm. Off: new ones belong only to the firm that creates them, and each firm sees only its own plus items already shared. Stock quantities are always per warehouse."
             />
             <Toggle
               checked={shareParties}
               disabled={!multi || busy === 'parties'}
               onChange={(v) => saveSetting('parties', { share_parties: v }, v ? 'Customers & suppliers will be shared between firms.' : 'New customers & suppliers will belong to one firm.')}
               label="Share customers & suppliers between firms"
-              description="Customers and suppliers created from now on are available in every firm. Balances are always kept per firm."
+              description="On: customers and suppliers created from now on are available in every firm. Off: new ones belong only to the firm that creates them. Balances are always kept per firm."
             />
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
@@ -367,6 +436,11 @@ export function MultiFirmPage(): JSX.Element {
                     </div>
                     <div className="truncate text-[12.5px] text-muted">{[f.city, f.phone, f.email].filter(Boolean).join(' · ') || f.tagline || 'No contact details yet'}</div>
                   </button>
+                  {!f.is_default && !isActiveNow && (
+                    <IconButton title={f.is_active ? 'Deactivate firm' : 'Reactivate firm'} tone={f.is_active ? 'bad' : undefined} onClick={() => toggleActive(f)}>
+                      {f.is_active ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}
+                    </IconButton>
+                  )}
                   <IconButton title="Edit firm" onClick={() => setEditor({ open: true, id: f.id })}>
                     <Pencil className="h-4 w-4" />
                   </IconButton>
@@ -376,6 +450,8 @@ export function MultiFirmPage(): JSX.Element {
           </div>
         )}
       </Card>
+
+      {multi && (!shareInventory || !shareParties) && <SharedAssignCard key={`${shareInventory}-${shareParties}`} onDone={reloadAll} />}
 
       <div className="mt-4 flex items-start gap-3 rounded-xl bg-info-soft px-4 py-3 text-[13px]">
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-info" />
@@ -395,6 +471,51 @@ export function MultiFirmPage(): JSX.Element {
 
       <FirmEditor open={editor.open} firmId={editor.id} onClose={() => setEditor({ open: false })} onSaved={reloadAll} />
     </div>
+  )
+}
+
+function SharedAssignCard({ onDone }: { onDone: () => Promise<void> }): JSX.Element {
+  const plan = useLoad(() => api<SharedPlan>('firms.sharedPlan'), [])
+  const [busy, setBusy] = useState(false)
+  const P = plan.data
+  const pending = P ? P.productAssignments + P.partyAssignments : 0
+  const side = (title: string, s: SharedSide, enabled: boolean): JSX.Element | null =>
+    !enabled ? null : (
+      <div>
+        <div className="font-semibold">{title}</div>
+        <ul className="mt-1 list-disc pl-5 text-muted">
+          {s.toFirm.map((t) => <li key={t.firmId}>{t.count} used only by {t.firmName} → assigned to {t.firmName}</li>)}
+          {s.unused > 0 && <li>{s.unused} never used → assigned to {P!.defaultFirm.name}</li>}
+          {s.staysShared.length > 0 && <li>{s.staysShared.length} used by several firms stay shared: {s.staysShared.slice(0, 8).map((x) => `${x.name} (${x.firms.join(', ')})`).join('; ')}{s.staysShared.length > 8 ? '…' : ''}</li>}
+          {s.toFirm.length === 0 && s.unused === 0 && s.staysShared.length === 0 && <li>No shared records.</li>}
+        </ul>
+      </div>
+    )
+  const run = async (): Promise<void> => {
+    const ok = await confirmDialog({ title: 'Assign shared records to firms?', message: 'Shared records used by one firm move to that firm, unused ones to the default firm. Records used by several firms stay shared. Invoices, payments and stock are never moved between firms.', confirmLabel: 'Assign' })
+    if (!ok) return
+    setBusy(true)
+    try {
+      const r = await api<{ products: number; parties: number }>('firms.assignShared')
+      toast.ok(`Assigned ${r.products} product(s) and ${r.parties} customer/supplier record(s).`)
+      await plan.reload()
+      await onDone()
+    } catch (e) {
+      toast.error(e)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Card className="mt-4" title={<span className="flex items-center gap-2"><Split className="h-4 w-4" />Assign shared records to firms</span>} actions={<Button size="sm" variant="primary" loading={busy} disabled={!pending} onClick={run}>Assign {pending || ''}</Button>}>
+      {!P ? <Loading /> : (
+        <div className="space-y-3 text-[13px]">
+          <p className="text-muted">Sharing is off, but records created while it was on are still visible in every firm. Assign them so each firm sees only its own.</p>
+          {side('Products', P.products, !P.shareInventory)}
+          {side('Customers & suppliers', P.parties, !P.shareParties)}
+        </div>
+      )}
+    </Card>
   )
 }
 

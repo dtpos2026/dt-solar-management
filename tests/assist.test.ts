@@ -149,3 +149,45 @@ describe('whatsapp helpers', () => {
     expect(safeFileName('')).toBe('document.pdf')
   })
 })
+
+describe('whatsapp send log (database)', () => {
+  it('builds drafts, guards duplicates and only marks sent by the user', async () => {
+    const { setupCtx, userCtx, warehouse } = await import('./helpers')
+    const { saveParty } = await import('../src/main/services/parties')
+    const { saveProduct } = await import('../src/main/services/inventory')
+    const { createDocument } = await import('../src/main/services/documents')
+    const svc = await import('../src/main/whatsapp/service')
+    const ctx = setupCtx()
+    const cust = saveParty(ctx, { type: 'customer', name: 'Ali Khan', phone: '0300-1234567' } as never)
+    const prod = saveProduct(ctx, { name: 'Panel', salePrice: 1000 } as never)
+    const inv = createDocument(ctx, { docType: 'sale_invoice', date: '2026-01-03', partyId: cust, warehouseId: warehouse(ctx), deductStock: false, lines: [{ productId: prod, description: 'Panel', qty: 2, rate: 1000 }] } as never)
+
+    const d = svc.buildDraft(ctx, svc.parseTarget({ entity: 'document', id: inv }))
+    expect(d.phone).toBe('923001234567')
+    expect(d.partyName).toBe('Ali Khan')
+    expect(d.message).toContain('Dear Ali Khan')
+    expect(d.message).toContain('Sales Invoice')
+    expect(d.fileName).toMatch(/^Sales_Invoice-.+\.pdf$/)
+    expect(d.printKind).toBe('doc')
+    expect(d.mode).toBe('web')
+    expect(() => svc.parseTarget({ entity: 'evil', id: 1 })).toThrow()
+    expect(() => svc.parseTarget({ entity: 'statement', id: 1, params: { from: "1' OR 1" } })).toThrow()
+
+    const st = svc.buildDraft(ctx, svc.parseTarget({ entity: 'statement', id: cust, params: { from: '2026-01-01', to: '2026-01-31' } }))
+    expect(st.message).toContain('from 2026-01-01 to 2026-01-31')
+
+    expect(svc.recentDuplicate(ctx, 'document', inv, d.phone)).toBeNull()
+    const id = svc.insertLog(ctx, { entity: 'document', id: inv, partyId: cust, phone: d.phone, fileName: d.fileName, method: 'whatsapp_web', status: 'prepared' })
+    expect(svc.recentDuplicate(ctx, 'document', inv, d.phone)).toBeNull() // prepared only
+    svc.setLogStatus(ctx, id, 'opened')
+    expect(svc.recentDuplicate(ctx, 'document', inv, d.phone)?.id).toBe(id)
+    expect(svc.recentDuplicate(ctx, 'document', inv, '923331112222')).toBeNull()
+    expect(svc.setLogStatus(ctx, id, 'sent').status).toBe('sent')
+    expect(() => svc.setLogStatus(ctx, id, 'failed', 'x')).toThrow()
+    expect(svc.listLog(ctx, { status: 'sent' }).map((r) => r.id)).toEqual([id])
+    expect(svc.listLog(ctx, { q: 'Ali' })[0].party_name).toBe('Ali Khan')
+
+    const inv2 = userCtx(ctx, 'Inventory Manager', 'stock1')
+    expect(() => svc.buildDraft(inv2, svc.parseTarget({ entity: 'document', id: inv }))).toThrow()
+  })
+})

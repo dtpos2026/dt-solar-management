@@ -11,7 +11,7 @@ Status keys: [x] done & tested · [~] partial · [ ] not started · [!] blocked 
 - [x] Super Admin shell: 11-item sidebar, RBAC hooks (`useCan`), activity logger, public `/v/<token>` entry
 
 ## Desktop areas
-- [ ] documents — item name + description in editor/preview/print/PDF, invoice delete rules, template designer, thermal layout, Powered-by toggle
+- [x] documents — item name + description in editor/preview/print/PDF, invoice delete rules, template designer, thermal layout, Powered-by from license (unit-tested; UI e2e left to the integrator run)
 - [ ] catalog — product delete/archive + category change, project delete/archive, firm activate/deactivate, firm isolation + limit tests
 - [ ] data — day/month closing + closing backup, backup history/export/import/validation, CSV import + reconciliation
 - [ ] access — user selection + PIN login, PIN lock screen, forced password change, printers page + per-document printer, test print

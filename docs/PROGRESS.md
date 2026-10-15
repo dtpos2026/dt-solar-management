@@ -20,7 +20,7 @@ Status keys: [x] done & tested · [~] partial · [ ] not started · [!] blocked 
 
 ## Super Admin portal areas
 - [ ] portal-admin — Admins (RBAC users), Settings (branding/invoice/bank/QR/signing key), Activity Log (filters/export/archive/retention), Verify Key, rules tests
-- [ ] portal-licensing — Dashboard metrics/charts, Clients, Licenses lifecycle (renew/plan/limits/detach/history), Devices (+requests), Device Map
+- [x] portal-licensing — Dashboard metrics/charts, Clients, Licenses lifecycle (renew/plan/limits/detach/history), Devices (+requests), Device Map (unit-tested; browser e2e left to integrator)
 - [ ] portal-billing — Billing invoices/payments/receipts/reports/PDF, public QR verification page, Support conversations
 
 ## Blocked / needs input

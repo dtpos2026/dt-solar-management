@@ -9,6 +9,7 @@ import { broadcast, createMainWindow, createSplash, getMainWindow, isTrustedSend
 import { autoBackupIfDue } from './backup'
 import { initLog, log } from './log'
 import { AppError } from './services/context'
+import { startCloudJobs, stopCloudJobs } from './cloud/worker'
 
 const SPLASH_MIN_MS = 3200
 /**
@@ -43,7 +44,10 @@ if (!app.requestSingleInstanceLock()) {
     app.quit()
   })
 
-  app.on('before-quit', () => closeDatabase())
+  app.on('before-quit', () => {
+    stopCloudJobs()
+    closeDatabase()
+  })
 }
 
 function setupPaths(): void {
@@ -146,6 +150,7 @@ async function boot(): Promise<void> {
       main.maximize()
       main.show()
       main.focus()
+      startCloudJobs() // heartbeat + support sync (after the window is ready)
     }, wait)
   })
   startBackgroundJobs()

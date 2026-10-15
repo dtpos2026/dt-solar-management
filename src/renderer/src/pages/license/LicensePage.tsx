@@ -26,8 +26,19 @@ interface LicPayload {
   checkinDays?: number
 }
 
+interface Reg {
+  companyName: string
+  ownerName: string
+  phone: string
+  address: string
+}
+
 interface Lic extends Omit<LicenseStatus, 'payload'> {
   payload: LicPayload | null
+  detached?: boolean
+  registration?: Reg | null
+  installId?: string
+  certUpdate?: { at: string; summary: string } | null
   lastCheckError?: string | null
   pendingRequestId?: string | null
 }
@@ -113,7 +124,7 @@ function nextCheckIn(l: Lic): string {
 }
 
 /* ------------------------------------------------ page ------------------------------------------------ */
-export function LicensePage(): JSX.Element {
+export function LicensePage({ embedded = false }: { embedded?: boolean } = {}): JSX.Element {
   const can = useCan()
   const user = useApp((s) => s.user)
   const version = useApp((s) => s.version)
@@ -132,6 +143,7 @@ export function LicensePage(): JSX.Element {
   const [key, setKey] = useState('')
   const [reqCode, setReqCode] = useState('')
   const [pasted, setPasted] = useState('')
+  const [reg, setReg] = useState<Reg>({ companyName: '', ownerName: '', phone: '', address: '' })
 
   const setLic = useCallback((s: Lic): void => useApp.getState().setLicense(s as unknown as LicenseStatus), [])
 
@@ -148,6 +160,8 @@ export function LicensePage(): JSX.Element {
       .then((s) => {
         if (!alive) return
         setLic(s)
+        if (s.registration) setReg(s.registration)
+        else if (s.payload) setReg({ companyName: s.payload.businessName ?? '', ownerName: s.payload.customerName ?? '', phone: s.payload.phone ?? '', address: '' })
         if (s.pendingRequestId) startPending(s.pendingRequestId)
         if (!s.onlineConfigured) setMethod('offline')
       })
@@ -237,8 +251,9 @@ export function LicensePage(): JSX.Element {
 
   const activateOnline = async (): Promise<void> => {
     if (!KEY_RE.test(key)) return toast.error('Enter a valid license key (DTSP-XXXX-XXXX-XXXX-XXXX).')
+    if (!reg.companyName.trim() || !reg.ownerName.trim() || !reg.phone.trim()) return toast.error('Enter the company name, owner name and phone for the registration.')
     if (!(await confirmReplace())) return
-    const r = await run('activate', () => api<ActivationResult>('license.activate', { licenseKey: key }))
+    const r = await run('activate', () => api<ActivationResult>('license.activate', { licenseKey: key, registration: reg }))
     if (!r) {
       // The request may have been cleared (rejected / not found) — keep the store in sync.
       api<Lic>('license.status').then(setLic).catch(() => undefined)
@@ -331,20 +346,57 @@ export function LicensePage(): JSX.Element {
     toast.ok('This computer has been deactivated.')
   }
 
+  const reconnect = async (): Promise<void> => {
+    const r = await run('reconnect', () => api<{ installed: boolean; message: string; status?: Lic }>('license.reconnect'))
+    if (!r) return
+    if (r.status) setLic(r.status)
+    else api<Lic>('license.status').then(setLic).catch(() => undefined)
+    if (r.installed) toast.ok(r.message)
+    else toast.info(r.message)
+  }
+
   if (!lic && !loaded) return <Loading label="Loading license…" />
+
+  const checkBtn = (
+    <Button icon={<RefreshCw className="h-4 w-4" />} loading={busy === 'check'} disabled={!!busy && busy !== 'check'} onClick={checkNow}>
+      Check license now
+    </Button>
+  )
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="License & About"
-        subtitle="License status, activation and product information"
-        icon={<BadgeCheck className="h-5 w-5" />}
-        actions={
-          <Button icon={<RefreshCw className="h-4 w-4" />} loading={busy === 'check'} disabled={!!busy && busy !== 'check'} onClick={checkNow}>
-            Check license now
-          </Button>
-        }
-      />
+      {embedded ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-[13px] text-muted">License status, activation and product information</div>
+          {checkBtn}
+        </div>
+      ) : (
+        <PageHeader title="License & About" subtitle="License status, activation and product information" icon={<BadgeCheck className="h-5 w-5" />} actions={checkBtn} />
+      )}
+
+      {lic?.detached && (
+        <Card title={<span className="inline-flex items-center gap-2"><Unplug className="h-4 w-4 text-brand" /> Detached lifetime license</span>}>
+          <div className="space-y-2 text-[13px]">
+            <p>
+              This lifetime license works fully offline and no longer checks in with Digital Target. Your data and every feature stay available; the app still sends its anonymous status
+              heartbeat when online.
+            </p>
+            <p className="text-muted">
+              <b>Reconnect to Digital Target:</b> if Digital Target re-issues a connected certificate for this computer (for example after an upgrade or for support), click below while online to install it.
+            </p>
+            {canManage && (
+              <Button size="sm" icon={<RefreshCw className="h-4 w-4" />} loading={busy === 'reconnect'} disabled={!!busy && busy !== 'reconnect'} onClick={reconnect}>
+                Reconnect to Digital Target
+              </Button>
+            )}
+          </div>
+        </Card>
+      )}
+      {lic?.certUpdate && (
+        <div className="flex items-start gap-2 rounded-xl bg-info-soft px-3 py-2 text-[12.5px] text-info">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" /> Updated license received {localDateTime(lic.certUpdate.at)}: {lic.certUpdate.summary}
+        </div>
+      )}
 
       {activated && (
         <div className="fade-in flex items-start gap-3 rounded-[14px] border border-ok bg-ok-soft p-4 text-ok">
@@ -445,6 +497,20 @@ export function LicensePage(): JSX.Element {
                   <li>Your request is sent to Digital Target for approval together with this computer’s Device ID.</li>
                   <li>When it is approved, the license installs automatically on this computer.</li>
                 </ol>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Company name" required>
+                    <Input value={reg.companyName} maxLength={200} onChange={(e) => setReg({ ...reg, companyName: e.target.value })} />
+                  </Field>
+                  <Field label="Owner name" required>
+                    <Input value={reg.ownerName} maxLength={200} onChange={(e) => setReg({ ...reg, ownerName: e.target.value })} />
+                  </Field>
+                  <Field label="Phone" required>
+                    <Input value={reg.phone} maxLength={60} onChange={(e) => setReg({ ...reg, phone: e.target.value })} />
+                  </Field>
+                  <Field label="Address">
+                    <Input value={reg.address} maxLength={300} onChange={(e) => setReg({ ...reg, address: e.target.value })} />
+                  </Field>
+                </div>
                 {!lic?.onlineConfigured && (
                   <div className="flex items-start gap-2 rounded-xl bg-warn-soft px-3 py-2 text-[12.5px] text-warn">
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> Online activation is not available in this build. Please use Offline activation.

@@ -153,3 +153,61 @@ export function certTermsChanged(a: CertTerms, b: CertTerms): string[] {
   if ([...a.features].sort().join(',') !== [...b.features].sort().join(',')) out.push('features')
   return out
 }
+
+/* ------------------------------------------- published certificates ------------------------------------------- */
+
+/** Decodes the payload of a compact activation code (`payload.signature`) without verifying it. */
+export function decodeCertPayload(code: string | null | undefined): Record<string, unknown> | null {
+  if (typeof code !== 'string' || !code.includes('.')) return null
+  try {
+    let b64 = code.split('.')[0].replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/')
+    while (b64.length % 4 !== 0) b64 += '='
+    const bin = atob(b64)
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    const obj = JSON.parse(new TextDecoder().decode(bytes))
+    return obj && typeof obj === 'object' ? (obj as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+export type CertFreshness = 'current' | 'outdated' | 'missing'
+export interface CertCheck {
+  deviceId: string
+  state: CertFreshness
+  /** Payload fields that differ from the current license terms. */
+  diff: string[]
+  issuedAt: string | null
+}
+
+const COMPARED_FIELDS = ['licenseId', 'deviceId', 'customerName', 'businessName', 'phone', 'email', 'plan', 'planType', 'clientId', 'maxFirms', 'maxUsers', 'maxDevices', 'expiresAt', 'graceDays', 'checkinDays', 'poweredBy', 'detached'] as const
+
+/**
+ * Compares the certificates published in licenseStatus.certs with the current license terms, for every device
+ * that holds an ACTIVE slot. "missing" = no certificate published yet (e.g. activated before v1.1, or a publish is
+ * pending), "outdated" = a certificate exists but carries older terms → "Publish certificates" fixes both.
+ */
+export function certificateFreshness(terms: CertTerms, activeDeviceIds: string[], published: Record<string, unknown> | null | undefined): CertCheck[] {
+  return activeDeviceIds.map((deviceId) => {
+    const code = published?.[deviceId]
+    const p = decodeCertPayload(typeof code === 'string' ? code : null)
+    if (!p) return { deviceId, state: 'missing' as const, diff: [], issuedAt: null }
+    const want = buildCertPayload(terms, deviceId) as unknown as Record<string, unknown>
+    const diff: string[] = []
+    for (const k of COMPARED_FIELDS) {
+      const a = p[k] ?? (k === 'clientId' ? '' : k === 'poweredBy' || k === 'detached' ? false : null)
+      const b = want[k] ?? (k === 'clientId' ? '' : k === 'poweredBy' || k === 'detached' ? false : null)
+      if (k === 'expiresAt') {
+        const am = typeof a === 'string' ? Date.parse(a) : null
+        const bm = typeof b === 'string' ? Date.parse(b) : null
+        if (am !== bm) diff.push(k)
+        continue
+      }
+      if (a !== b) diff.push(k)
+    }
+    const fa = Array.isArray(p.features) ? [...(p.features as string[])].sort().join(',') : ''
+    if (fa !== [...terms.features].sort().join(',')) diff.push('features')
+    return { deviceId, state: diff.length ? ('outdated' as const) : ('current' as const), diff, issuedAt: typeof p.issuedAt === 'string' ? p.issuedAt : null }
+  })
+}

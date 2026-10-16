@@ -16,7 +16,7 @@ Status keys: [x] done & tested · [~] partial · [ ] not started · [!] blocked 
 - [ ] data — day/month closing + closing backup, backup history/export/import/validation, CSV import + reconciliation
 - [ ] access — user selection + PIN login, PIN lock screen, forced password change, printers page + per-document printer, test print
 - [ ] cloud — registration in setup wizard, heartbeat + consented location, support messages with offline queue, certificate refresh, License & About in Settings
-- [ ] assist — offline Urdu/English help assistant, built-in WhatsApp Web module (QR link device) + send document flow with log
+- [~] assist — [x] offline Urdu/English help assistant (58 bilingual articles, EN/Urdu/Roman-Urdu search with synonyms, BM25, typo tolerance, low-confidence fallback; unit tested) · [x] WhatsApp send log service (draft/phone normalisation/templates/dedupe/status flow; unit tested) · [~] built-in WhatsApp Web module (WebContentsView, persist:whatsapp partition, QR link, open chat, unlink, notifications), Send on WhatsApp dialog + outbox PDF + drag tile, Settings → WhatsApp — typecheck/build pass, Electron e2e not run yet (integrator); migration 8 widens whatsapp_log.method
 
 ## Super Admin portal areas
 - [ ] portal-admin — Admins (RBAC users), Settings (branding/invoice/bank/QR/signing key), Activity Log (filters/export/archive/retention), Verify Key, rules tests

@@ -1,0 +1,62 @@
+{
+ "label": "after",
+ "at": "2026-10-16T08:12:11.585Z",
+ "cold": {
+  "/": {
+   "reads": 1096,
+   "queries": 24,
+   "firstDataMs": 394,
+   "settledMs": 2177
+  },
+  "/clients": {
+   "reads": 452,
+   "queries": 4,
+   "firstDataMs": 340,
+   "settledMs": 798
+  },
+  "/clients/c1": {
+   "reads": 18,
+   "queries": 11,
+   "firstDataMs": 318,
+   "settledMs": 661
+  },
+  "/billing": {
+   "reads": 653,
+   "queries": 5,
+   "firstDataMs": 268,
+   "settledMs": 888
+  },
+  "/activity": {
+   "reads": 202,
+   "queries": 4,
+   "firstDataMs": 295,
+   "settledMs": 492
+  },
+  "/support": {
+   "reads": 42,
+   "queries": 3,
+   "firstDataMs": 206,
+   "settledMs": 371
+  },
+  "/verify": {
+   "reads": 2,
+   "queries": 2,
+   "firstDataMs": 209,
+   "settledMs": 244
+  },
+  "/settings": {
+   "reads": 3,
+   "queries": 3,
+   "firstDataMs": 202,
+   "settledMs": 292
+  },
+  "/admins": {
+   "reads": 2,
+   "queries": 2,
+   "firstDataMs": 232,
+   "settledMs": 268
+  }
+ },
+ "warmNavReads": 0,
+ "errors": []
+}

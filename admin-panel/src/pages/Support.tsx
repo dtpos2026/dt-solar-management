@@ -1,10 +1,10 @@
 /** Support — live customer conversations from the desktop app (supportThreads/{installToken} + messages). */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { getDoc, onSnapshot, orderBy, query } from 'firebase/firestore'
+import { getDoc, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore'
 import { Building2, KeyRound, LifeBuoy, MessageSquare, Monitor, Phone, Send } from 'lucide-react'
 import { PageTitle } from '../components/ui'
-import { EmptyState, Loading, NoAccess, Notice, SearchBox } from '../components/kit'
+import { EmptyState, ErrorState, Loading, NoAccess, Notice, SearchBox, SkeletonRows, useToast } from '../components/kit'
 import { markThreadRead, messageFromSnap, messagesCol, replyToThread, setThreadStatus, threadFromSnap, threadsCol } from '../lib/support'
 import { licenseRef } from '../lib/licenses'
 import { errorMessage, fmtDateTime, timeAgo, toDate } from '../lib/format'
@@ -18,6 +18,7 @@ const STATUS_TONE: Record<SupportThread['status'], string> = {
   resolved: 'bg-green-100 text-green-700'
 }
 const STATUSES: SupportThread['status'][] = ['open', 'pending', 'resolved']
+const PAGE = 100
 
 function StatusTag({ s }: { s: SupportThread['status'] }) {
   return <span className={cx('rounded-md px-1.5 py-0.5 text-[11px] font-bold capitalize', STATUS_TONE[s])}>{s}</span>
@@ -34,10 +35,26 @@ export function Support() {
   const [status, setStatus] = useState('')
   const allowed = can('support.manage')
 
+  const [max, setMax] = useState(PAGE)
+  const [tick, setTick] = useState(0)
+  const [recent, setRecent] = useState<{ list: SupportThread[]; full: boolean } | null>(null)
+  const [unreadList, setUnreadList] = useState<SupportThread[] | null>(null)
+  // Bounded: the newest `max` conversations + every unread one (two listeners, single-field indexes only).
   useEffect(() => {
     if (!allowed) return
-    return onSnapshot(threadsCol(), (r) => { setThreads(r.docs.map(threadFromSnap)); setLoading(false) }, (e) => { setErr(errorMessage(e)); setLoading(false) })
-  }, [allowed])
+    setErr(null)
+    const fail = (e: unknown) => { setErr(errorMessage(e)); setLoading(false) }
+    const a = onSnapshot(query(threadsCol(), orderBy('lastMessageAt', 'desc'), limit(max)), (r) => setRecent({ list: r.docs.map(threadFromSnap), full: r.size >= max }), fail)
+    const b = onSnapshot(query(threadsCol(), where('unreadByAdmin', '==', true), limit(200)), (r) => setUnreadList(r.docs.map(threadFromSnap)), fail)
+    return () => { a(); b() }
+  }, [allowed, max, tick])
+  useEffect(() => {
+    if (!recent || !unreadList) return
+    const m = new Map<string, SupportThread>()
+    for (const t of [...recent.list, ...unreadList]) m.set(t.id, t)
+    setThreads([...m.values()])
+    setLoading(false)
+  }, [recent, unreadList])
 
   const list = useMemo(() => {
     const s = q.trim().toLowerCase()
@@ -52,8 +69,7 @@ export function Support() {
 
   return (
     <div>
-      <PageTitle title="Support" sub={loading ? 'Loading…' : `${threads.length} conversation(s) · ${unread} unread · ${threads.filter((t) => t.status === 'open').length} open`} />
-      {err && <Notice tone="error" className="mb-3">{err}</Notice>}
+      <PageTitle icon={<LifeBuoy />} title="Support" sub={loading ? 'Loading…' : `${threads.length}${recent?.full ? '+' : ''} conversation(s) · ${unread} unread · ${threads.filter((t) => t.status === 'open').length} open`} />
       <div className="grid h-[calc(100vh-170px)] min-h-[520px] grid-cols-[360px_minmax(0,1fr)] gap-4">
         <div className="card flex min-h-0 flex-col">
           <div className="space-y-2 border-b border-[#ece6f4] p-3">
@@ -65,7 +81,7 @@ export function Support() {
             </div>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {loading ? <Loading /> : list.length === 0 ? (
+            {err ? <ErrorState error={err} onRetry={() => setTick((x) => x + 1)} /> : loading ? <SkeletonRows rows={8} cols={2} /> : list.length === 0 ? (
               <EmptyState icon={<LifeBuoy />} title={threads.length ? 'No conversation matches' : 'No support conversations yet'} hint={threads.length ? undefined : 'Messages sent from the desktop app’s Support page appear here live.'} />
             ) : list.map((t) => (
               <button key={t.id} onClick={() => nav(`/support/${t.id}`)} className={cx('block w-full border-b border-[#f1ecf7] px-3.5 py-3 text-left hover:bg-[#faf7fd]', t.id === id && 'bg-[#f3ebfc]')}>
@@ -80,6 +96,9 @@ export function Support() {
                 <div className="mt-1 flex items-center gap-2 text-[11px] text-[#7a6d92]"><StatusTag s={t.status} />{t.phone && <span>{t.phone}</span>}</div>
               </button>
             ))}
+            {recent?.full && !err && (
+              <div className="p-3 text-center"><button className="btn btn-secondary btn-sm" onClick={() => setMax((m) => m + PAGE)}>Load older conversations</button></div>
+            )}
           </div>
         </div>
         {current ? <Conversation key={current.id} t={current} /> : (
@@ -101,6 +120,7 @@ function Conversation({ t }: { t: SupportThread }) {
   const [err, setErr] = useState<string | null>(null)
   const [clientId, setClientId] = useState('')
   const endRef = useRef<HTMLDivElement>(null)
+  const toast = useToast()
 
   useEffect(() => onSnapshot(query(messagesCol(t.id), orderBy('at', 'asc')), (r) => setMessages(r.docs.map(messageFromSnap)), (e) => { setErr(errorMessage(e)); setMessages([]) }), [t.id])
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }) }, [messages])
@@ -113,12 +133,12 @@ function Conversation({ t }: { t: SupportThread }) {
 
   const send = async () => {
     setErr(null); setBusy(true)
-    try { await replyToThread(t, body, admin?.name || 'Digital Target Support', after, by); setBody('') } catch (e) { setErr(errorMessage(e)) } finally { setBusy(false) }
+    try { await replyToThread(t, body, admin?.name || 'Digital Target Support', after, by); setBody(''); toast('Reply sent.') } catch (e) { setErr(errorMessage(e)) } finally { setBusy(false) }
   }
   const changeStatus = async (s: SupportThread['status']) => {
     if (s === t.status) return
     setErr(null)
-    try { await setThreadStatus(t, s, by) } catch (e) { setErr(errorMessage(e)) }
+    try { await setThreadStatus(t, s, by); toast(`Conversation marked ${s}.`) } catch (e) { setErr(errorMessage(e)) }
   }
 
   return (

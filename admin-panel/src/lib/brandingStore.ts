@@ -11,6 +11,7 @@ import { writeActivity } from './audit'
 import { changedBrandingFields, clampSessionTimeout, cleanBranding, normaliseBranding, publicBranding, DEFAULT_SESSION_TIMEOUT_MIN } from './branding'
 import { errorMessage } from './format'
 import { DEFAULT_BRANDING, type Branding } from './types'
+import { invalidate } from './queryCache'
 
 export const brandingRef = () => doc(db, 'settings', 'branding')
 export const publicBrandingRef = () => doc(db, 'publicSettings', 'branding')
@@ -125,6 +126,7 @@ export async function saveSettings(prev: Branding, next: Branding, prevTimeout: 
     meta: { fields }
   })
   await batch.commit()
+  invalidate('branding')
   return fields
 }
 

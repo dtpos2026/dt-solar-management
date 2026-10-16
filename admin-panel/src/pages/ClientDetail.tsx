@@ -1,11 +1,12 @@
 /** Client detail: profile, licenses, devices, billing history, support history, activity. */
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { getDocs, onSnapshot, query, where } from 'firebase/firestore'
+import { getDocs, limit, onSnapshot, query, where } from 'firebase/firestore'
 import { Archive, ArrowLeft, Pause, Pencil, Play, Plus, Trash2 } from 'lucide-react'
 import { PageTitle, Stat } from '../components/ui'
 import { clientFromSnap, clientRef, clientLinks, deleteClient, setClientStatus } from '../lib/clientsDb'
-import { auditCol, auditFromSnap, expiryLabel } from '../lib/licenses'
+import { auditCol, auditFromSnap, expiryLabel, licenseFromSnap, licensesCol } from '../lib/licenses'
+import { useSharedDocs } from '../lib/liveData'
 import { deviceInfo, heartbeatLike, licenseInfo, loadDevicesFor, loadHeartbeatsForLicenses, loadThreads, type ThreadRow } from '../lib/fleet'
 import { mergeDeviceRows, type DeviceRow } from '../lib/devices'
 import { hardDeleteGuard, PLAN_TYPE_LABEL } from '../lib/clients'
@@ -14,7 +15,7 @@ import { useAdmin, useAdminEmail, useCan } from '../lib/auth'
 import { errorMessage, fmtDate, fmtDateTime, timeAgo } from '../lib/format'
 import type { AuditEntry, Client } from '../lib/types'
 import { ConfirmDialog, Empty, fmtMoney, Loading, Notice, Panel, Pill, type ConfirmOptions, type NoticeMsg } from './licensing/kit'
-import { BILLING_READ_PERMS, HEARTBEAT_READ_PERMS, useInvoices, useLicenses } from './licensing/hooks'
+import { BILLING_READ_PERMS, HEARTBEAT_READ_PERMS, useInvoices } from './licensing/hooks'
 import { ClientForm } from './licensing/ClientForm'
 import { LicenseForm } from './LicenseForm'
 import { licenseDisplayStatus } from './Licenses'
@@ -35,8 +36,9 @@ export function ClientDetail({ id }: { id: string }) {
   const [devices, setDevices] = useState<DeviceRow[] | null>(null)
   const [threads, setThreads] = useState<ThreadRow[] | null>(null)
   const [activity, setActivity] = useState<AuditEntry[] | null>(null)
-  const allLicenses = useLicenses()
-  const licenses = useMemo(() => allLicenses.data.filter((l) => l.clientId === id), [allLicenses.data, id])
+  // Only this client's licenses (live, shared per client) instead of the whole licenses collection.
+  const allLicenses = useSharedDocs(`licenses:client:${id}`, () => query(licensesCol(), where('clientId', '==', id)))
+  const licenses = useMemo(() => allLicenses.docs.map(licenseFromSnap).sort((a, b) => (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0)), [allLicenses.docs])
   const licKey = licenses.map((l) => l.id).join(',')
   const billing = BILLING_READ_PERMS.some(can)
   const invoices = useInvoices(billing, { field: 'clientId', value: id })
@@ -48,8 +50,10 @@ export function ClientDetail({ id }: { id: string }) {
     if (allLicenses.loading) return
     let alive = true
     ;(async () => {
-      const devs = await loadDevicesFor(licenses)
-      const hbs = HEARTBEAT_READ_PERMS.some(can) && licenses.length ? await loadHeartbeatsForLicenses(licenses.map((l) => l.id)) : []
+      const [devs, hbs] = await Promise.all([
+        loadDevicesFor(licenses),
+        HEARTBEAT_READ_PERMS.some(can) && licenses.length ? loadHeartbeatsForLicenses(licenses.map((l) => l.id)) : Promise.resolve([])
+      ])
       const byLic: Record<string, ReturnType<typeof deviceInfo>[]> = {}
       for (const [k, v] of Object.entries(devs)) byLic[k] = v.map(deviceInfo)
       if (alive) setDevices(mergeDeviceRows(licenses.map(licenseInfo), byLic, hbs.map(heartbeatLike)))
@@ -63,7 +67,7 @@ export function ClientDetail({ id }: { id: string }) {
 
   useEffect(() => {
     if (!can('audit.view')) return
-    getDocs(query(auditCol(), where('target', '==', id)))
+    getDocs(query(auditCol(), where('target', '==', id), limit(500)))
       .then((s) => setActivity(s.docs.map(auditFromSnap).sort((a, b) => (b.at?.toMillis() ?? 0) - (a.at?.toMillis() ?? 0)).slice(0, 50)))
       .catch(() => setActivity([]))
     // eslint-disable-next-line react-hooks/exhaustive-deps

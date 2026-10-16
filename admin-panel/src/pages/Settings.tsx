@@ -196,6 +196,7 @@ export function Settings() {
   return (
     <div className="max-w-6xl pb-20">
       <PageTitle
+        icon={<MonitorCog />}
         title="Settings"
         sub={
           st.loading
@@ -372,7 +373,7 @@ export function Settings() {
 
           {tab === 'portal' && (
             <div className="grid gap-4 xl:grid-cols-2">
-              <Section title="Session" sub="Applies to every admin of this portal.">
+              <Section title="Session" sub="Used by every admin’s portal session (automatic sign-out after inactivity).">
                 <Field label="Sign out after inactivity (minutes)" hint={`Between ${MIN_SESSION_TIMEOUT_MIN} and ${MAX_SESSION_TIMEOUT_MIN} minutes. Admins get a one-minute warning first.`}>
                   <div className="flex items-center gap-2">
                     <Clock className="h-4 w-4 text-[#7a6d92]" />
@@ -395,7 +396,7 @@ export function Settings() {
                   <p>Two-factor authentication needs the paid Firebase Identity Platform upgrade and is not enabled.</p>
                 </div>
               </Section>
-              <Section title="Device map tiles" sub="Map background used on the Device Map page.">
+              <Section title="Device map tiles" sub="Used only by the Device Map page (map background). Leave the default unless you have your own tile service.">
                 <div className="space-y-3">
                   {text('mapTileUrl', 'Tile URL', { mono: true, hint: 'https URL with {z}, {x} and {y} ({s} for sub-domains is optional).' })}
                   {text('mapAttribution', 'Attribution', { max: 300, hint: 'Required by the tile provider’s terms.' })}

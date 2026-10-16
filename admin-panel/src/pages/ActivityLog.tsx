@@ -15,19 +15,21 @@ import {
   type QueryConstraint,
   type QueryDocumentSnapshot
 } from 'firebase/firestore'
-import { Activity, Archive, Download, Eraser, Filter, Loader2, RefreshCw, RotateCcw } from 'lucide-react'
+import { Activity, Archive, Download, Eraser, Filter, History, Loader2, RefreshCw, RotateCcw } from 'lucide-react'
 import { db } from '../firebase'
 import { Badge, Field, PageTitle, cx } from '../components/ui'
-import { ConfirmDialog, Drawer, EmptyState, Loading, NoAccess, Notice, Pager, SearchBox, downloadText, usePaged } from '../components/kit'
-import { auditCol } from '../lib/licenses'
-import { logActivity, writeActivity } from '../lib/audit'
+import { ConfirmDialog, Drawer, EmptyState, ErrorState, NoAccess, Notice, Pager, SearchBox, SkeletonRows, downloadText, usePaged, useToast } from '../components/kit'
+import { auditCol, findLicenseByKey, licenseFromSnap, licenseRef } from '../lib/licenses'
+import type { License } from '../lib/types'
+import { logActivity } from '../lib/audit'
 import { useAdmin, useCan } from '../lib/auth'
 import { errorMessage, fmtDateTime, toInputDate } from '../lib/format'
+import { getDoc } from 'firebase/firestore'
 import {
   AUDIT_CATEGORIES,
   EMPTY_FILTERS,
+  ALL_NON_SECURITY,
   PROTECTED_CATEGORIES,
-  RETENTION_DAYS,
   actionLabel,
   auditCsv,
   auditRowFromData,
@@ -35,14 +37,18 @@ import {
   dayEndMs,
   dayStartMs,
   distinctValues,
+  describeClearScope,
   filterAuditRows,
-  isRetentionDeletable,
-  retentionCutoff,
+  validateClearScope,
+  withoutIds,
   type AuditFilters,
-  type AuditRow
+  type AuditRow,
+  type ClearScope
 } from '../lib/auditLog'
+import { planAuditClear, planLicenseHistoryClear, planReleasedDevicesClear, runAuditClear, runLicenseHistoryClear, runReleasedDevicesClear, type ClearPlan } from '../lib/clearing'
+import { invalidate } from '../lib/queryCache'
 
-const FETCH_SIZE = 200
+const FETCH_SIZE = 100
 const PAGE_SIZE = 25
 const SCAN_SIZE = 400
 
@@ -85,7 +91,9 @@ export function ActivityLog() {
   const me = useAdmin()
   const canView = can('audit.view')
   const canManage = can('audit.manage')
-  const isOwner = !!me?.isOwner
+  const canDeviceRecords = can('licenses.manage') || can('devices.manage')
+  const [recordsOpen, setRecordsOpen] = useState(false)
+  const toast = useToast()
   const [rows, setRows] = useState<AuditRow[]>([])
   const [cursor, setCursor] = useState<Snap | null>(null)
   const [hasMore, setHasMore] = useState(false)
@@ -102,7 +110,13 @@ export function ActivityLog() {
   const [busy, setBusy] = useState(false)
   const [dialogError, setDialogError] = useState<string | null>(null)
   const [progress, setProgress] = useState<string | null>(null)
-  const [eligible, setEligible] = useState<{ count: number; kept: number } | null>(null)
+  const [clearMode, setClearMode] = useState<'all' | 'category' | 'range'>('all')
+  const [clearCat, setClearCat] = useState<ClearScope['category']>('general')
+  const [clearFrom, setClearFrom] = useState('')
+  const [clearTo, setClearTo] = useState('')
+  const [clearCatInRange, setClearCatInRange] = useState<ClearScope['category']>('')
+  const [plan, setPlan] = useState<{ key: string; plan: ClearPlan } | null>(null)
+  const [counting, setCounting] = useState<number | null>(null)
   const [flash, setFlash] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
 
   const fromMs = fromDay ? dayStartMs(fromDay) : null
@@ -185,7 +199,7 @@ export function ActivityLog() {
     } catch {
       /* the export itself worked */
     }
-    setFlash({ tone: 'success', text: `${list.length} entries exported.` })
+    toast(`${list.length} entries exported.`)
   }
 
   const archiveIds = async (ids: string[], reason: string) => {
@@ -197,6 +211,7 @@ export function ActivityLog() {
       done += part.length
       setProgress(`Archived ${done} of ${ids.length}…`)
     }
+    invalidate('audit')
     await logActivity({ action: 'audit_archived', category: 'security', targetType: 'audit_log', details: `${ids.length} entr${ids.length === 1 ? 'y' : 'ies'} archived (${reason})`, meta: { count: ids.length } })
   }
 
@@ -220,27 +235,15 @@ export function ActivityLog() {
         await archiveIds(ids, `older than ${days} days`)
         setFlash({ tone: 'success', text: `${ids.length} entries older than ${days} days archived.` })
       } else if (dialog === 'clear') {
-        const nowMs = Date.now()
-        let deleted = 0
-        await scanOlderThan(retentionCutoff(nowMs), async (docs) => {
-          const del = docs.filter((d) => isRetentionDeletable(auditRowFromData(d.id, d.data()), nowMs))
-          if (!del.length) return
-          const b = writeBatch(db)
-          del.forEach((d) => b.delete(d.ref))
-          await b.commit()
-          deleted += del.length
-          setProgress(`Deleted ${deleted}…`)
-        })
-        const b = writeBatch(db)
-        writeActivity(b, {
-          action: 'audit_retention_cleanup',
-          category: 'security',
-          targetType: 'audit_log',
-          details: `${deleted} entr${deleted === 1 ? 'y' : 'ies'} older than ${RETENTION_DAYS} days deleted (security, financial and license entries are always kept)`,
-          meta: { deleted, retentionDays: RETENTION_DAYS }
-        })
-        await b.commit()
-        setFlash({ tone: 'success', text: `${deleted} old entries deleted. A record of this clean-up was added to the log.` })
+        if (!plan || plan.key !== scopeKey) throw new Error('Count the entries first.')
+        const deleted = new Set(plan.plan.refs.map((r) => r.id))
+        const n = await runAuditClear(clearScope, plan.plan, (done, total) => setProgress(`Deleted ${done} of ${total}…`))
+        // Drop deleted rows at once, then reload from the first page (resets the cursor) so none can reappear.
+        setRows((r) => withoutIds(r, deleted))
+        setSelected(new Set())
+        setDetail(null)
+        setPlan(null)
+        setFlash({ tone: 'success', text: `${n} entr${n === 1 ? 'y' : 'ies'} deleted (${describeClearScope(clearScope, (ms) => new Date(ms).toLocaleDateString())}). A security record of this clean-up was added to the log.` })
       }
       setDialog(null)
       await reload()
@@ -252,29 +255,41 @@ export function ActivityLog() {
     }
   }
 
-  const openClear = async () => {
-    setDialog('clear')
+  const clearScope: ClearScope =
+    clearMode === 'all'
+      ? ALL_NON_SECURITY
+      : clearMode === 'category'
+        ? { category: clearCat, fromMs: null, toMs: null }
+        : { category: clearCatInRange, fromMs: clearFrom ? dayStartMs(clearFrom) : null, toMs: clearTo ? dayEndMs(clearTo) : null }
+  const scopeKey = JSON.stringify(clearScope)
+  const scopeError = validateClearScope(clearScope) ?? (clearMode === 'range' && !clearFrom && !clearTo ? 'Choose a start date, an end date or both.' : null)
+
+  const countClear = async () => {
+    if (scopeError) return setDialogError(scopeError)
     setDialogError(null)
-    setEligible(null)
+    setPlan(null)
+    setCounting(0)
+    const key = scopeKey
     try {
-      const nowMs = Date.now()
-      let count = 0
-      let kept = 0
-      await scanOlderThan(retentionCutoff(nowMs), async (docs) => {
-        for (const d of docs) {
-          if (isRetentionDeletable(auditRowFromData(d.id, d.data()), nowMs)) count++
-          else kept++
-        }
-      })
-      setEligible({ count, kept })
+      const p = await planAuditClear(clearScope, (n) => setCounting(n))
+      setPlan({ key, plan: p })
     } catch (e) {
       setDialogError(errorMessage(e))
+    } finally {
+      setCounting(null)
     }
+  }
+
+  const openClear = () => {
+    setDialogError(null)
+    setPlan(null)
+    setDialog('clear')
   }
 
   return (
     <div>
       <PageTitle
+        icon={<Activity />}
         title="Activity Log"
         sub={loading ? 'Loading…' : `${rows.length} entr${rows.length === 1 ? 'y' : 'ies'} loaded${hasMore ? ' (more available)' : ''} · newest first`}
         actions={
@@ -284,7 +299,8 @@ export function ActivityLog() {
             {canManage && (
               <button className="btn btn-secondary" onClick={() => { setDialogError(null); setDialog('archiveOlder') }}><Archive className="h-4 w-4" />Archive older…</button>
             )}
-            {isOwner && <button className="btn btn-secondary text-red-700" onClick={openClear}><Eraser className="h-4 w-4" />Clear old logs</button>}
+            {(canManage || canDeviceRecords) && <button className="btn btn-secondary" onClick={() => setRecordsOpen(true)}><History className="h-4 w-4" />Clear license records…</button>}
+            {canManage && <button className="btn btn-secondary text-red-700" onClick={openClear}><Eraser className="h-4 w-4" />Clear logs…</button>}
           </>
         }
       />
@@ -338,15 +354,16 @@ export function ActivityLog() {
 
       <div className="card overflow-hidden">
         {loading ? (
-          <Loading label="Loading activity…" />
+          <SkeletonRows rows={10} cols={7} label="Loading activity…" />
         ) : loadError ? (
-          <div className="p-4"><Notice tone="error">{loadError}</Notice></div>
+          <ErrorState error={loadError} onRetry={() => void reload()} />
         ) : list.length === 0 ? (
           <EmptyState icon={<Activity />} title={rows.length ? 'No entries match the filters' : 'No activity recorded yet'} hint={rows.length ? 'Change or reset the filters, or load older entries.' : 'Admin actions appear here as they happen.'}>
             {hasMore && <button className="btn btn-secondary" onClick={loadMore} disabled={loadingMore}>{loadingMore && <Loader2 className="h-4 w-4 animate-spin" />}Load more</button>}
           </EmptyState>
         ) : (
           <>
+            <div className="tbl-wrap">
             <table className="tbl">
               <thead>
                 <tr>
@@ -375,6 +392,7 @@ export function ActivityLog() {
                 ))}
               </tbody>
             </table>
+            </div>
             <Pager {...paged} noun="entries" />
             {hasMore && (
               <div className="border-t border-[#ece6f4] px-4 py-2.5 text-center">
@@ -384,6 +402,15 @@ export function ActivityLog() {
           </>
         )}
       </div>
+
+      {recordsOpen && (
+        <LicenseRecordsDialog
+          canHistory={canManage}
+          canDevices={canDeviceRecords}
+          onClose={() => setRecordsOpen(false)}
+          onDone={(text) => { setRecordsOpen(false); toast(text); void reload() }}
+        />
+      )}
 
       <Drawer open={!!detail} onClose={() => setDetail(null)} title="Activity details">
         {detail && <DetailView r={detail} />}
@@ -404,23 +431,57 @@ export function ActivityLog() {
 
       <ConfirmDialog
         open={dialog === 'clear'}
-        title="Clear old logs"
-        confirmLabel={eligible ? `Delete ${eligible.count} entries` : 'Counting…'}
+        title="Clear activity log"
+        confirmLabel={plan && plan.key === scopeKey ? `Delete ${plan.plan.refs.length} entr${plan.plan.refs.length === 1 ? 'y' : 'ies'}` : 'Count first'}
         danger
         busy={busy}
-        disabled={!eligible || eligible.count === 0}
+        disabled={!plan || plan.key !== scopeKey || plan.plan.refs.length === 0 || counting !== null}
         error={dialogError}
         onConfirm={runDialog}
         onClose={() => setDialog(null)}
       >
-        <p>Permanently delete activity entries older than <b>{RETENTION_DAYS} days</b>. Entries in the <b>{PROTECTED_CATEGORIES.join(', ')}</b> categories are always kept (the security rules refuse to delete them).</p>
-        {eligible ? (
-          <Notice tone={eligible.count ? 'warn' : 'info'}>{eligible.count} entr{eligible.count === 1 ? 'y' : 'ies'} can be deleted; {eligible.kept} older protected entr{eligible.kept === 1 ? 'y is' : 'ies are'} kept.</Notice>
-        ) : (
-          !dialogError && <p className="flex items-center gap-2 text-[12.5px] text-[#6b5d85]"><Loader2 className="h-4 w-4 animate-spin" />Counting eligible entries…</p>
+        <fieldset className="space-y-2" disabled={busy}>
+          <legend className="label">What to delete</legend>
+          {([
+            ['all', 'All non-security entries (any date)'],
+            ['category', 'One category (any date)'],
+            ['range', 'A date range']
+          ] as const).map(([id, label]) => (
+            <label key={id} className="flex items-center gap-2"><input type="radio" name="clear-mode" checked={clearMode === id} onChange={() => { setClearMode(id); setPlan(null) }} />{label}</label>
+          ))}
+          {clearMode === 'category' && (
+            <select className="input mt-1 w-56" value={clearCat} onChange={(e) => { setClearCat(e.target.value as ClearScope['category']); setPlan(null) }} aria-label="Category to clear">
+              {AUDIT_CATEGORIES.filter((c) => !PROTECTED_CATEGORIES.includes(c.id)).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+            </select>
+          )}
+          {clearMode === 'range' && (
+            <div className="mt-1 flex flex-wrap items-end gap-2">
+              <label className="text-[12px] text-[#6b5d85]">From<input type="date" className="input mt-0.5 w-40" value={clearFrom} max={clearTo || undefined} onChange={(e) => { setClearFrom(e.target.value); setPlan(null) }} aria-label="Clear from date" /></label>
+              <label className="text-[12px] text-[#6b5d85]">To<input type="date" className="input mt-0.5 w-40" value={clearTo} min={clearFrom || undefined} onChange={(e) => { setClearTo(e.target.value); setPlan(null) }} aria-label="Clear to date" /></label>
+              <select className="input w-48" value={clearCatInRange} onChange={(e) => { setClearCatInRange(e.target.value as ClearScope['category']); setPlan(null) }} aria-label="Category in range">
+                <option value="">All non-security</option>
+                {AUDIT_CATEGORIES.filter((c) => !PROTECTED_CATEGORIES.includes(c.id)).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+              </select>
+            </div>
+          )}
+        </fieldset>
+        <p className="text-[12.5px] text-[#6b5d85]"><b>Security</b> entries (sign-ins, permission changes, exports and every clearing) are the protected audit trail and are always kept.</p>
+        {scopeError && clearMode === 'range' ? <Notice tone="info">{scopeError}</Notice> : (
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" className="btn btn-secondary btn-sm" onClick={countClear} disabled={busy || counting !== null || !!scopeError}>
+              {counting !== null && <Loader2 className="h-4 w-4 animate-spin" />}{plan && plan.key === scopeKey ? 'Count again' : 'Count entries'}
+            </button>
+            {counting !== null && <span className="text-[12.5px] text-[#6b5d85]">Checked {counting} entries…</span>}
+          </div>
         )}
-        <p className="text-[12.5px] text-[#6b5d85]">This cannot be undone. A record of the clean-up is added to the log.</p>
-        {progress && <p className="text-[12.5px] text-[#6b5d85]">{progress}</p>}
+        {plan && plan.key === scopeKey && (
+          <Notice tone={plan.plan.refs.length ? 'warn' : 'info'}>
+            <b>{plan.plan.refs.length}</b> entr{plan.plan.refs.length === 1 ? 'y' : 'ies'} will be deleted — {describeClearScope(clearScope, (ms) => new Date(ms).toLocaleDateString())}.
+            {plan.plan.kept > 0 && <> {plan.plan.kept} security entr{plan.plan.kept === 1 ? 'y is' : 'ies are'} kept.</>}
+          </Notice>
+        )}
+        <p className="text-[12.5px] text-[#6b5d85]">This cannot be undone — export a CSV first if you need a copy. Deleted in batches of 450; a security record of who cleared what and how many is added.</p>
+        {progress && <p className="text-[12.5px] font-semibold text-[#3d096d]" role="status">{progress}</p>}
       </ConfirmDialog>
     </div>
   )
@@ -457,5 +518,99 @@ function DetailView({ r }: { r: AuditRow }) {
         <pre className="max-h-80 overflow-auto rounded-xl border border-[#ece6f4] bg-[#1d1530] p-3 font-mono text-[11.5px] text-[#e9defa]">{Object.keys(r.meta).length ? JSON.stringify(r.meta, null, 2) : '{}'}</pre>
       </div>
     </div>
+  )
+}
+
+type RecordKind = 'history' | 'devices'
+
+/**
+ * Clears one license's history entries or its released (non-active) device records: find the license, count exactly,
+ * confirm, delete in batches of <= 450 with progress, then one 'security' entry records who cleared what and how many.
+ */
+function LicenseRecordsDialog({ canHistory, canDevices, onClose, onDone }: { canHistory: boolean; canDevices: boolean; onClose: () => void; onDone: (text: string) => void }) {
+  const [kind, setKind] = useState<RecordKind>(canHistory ? 'history' : 'devices')
+  const [input, setInput] = useState('')
+  const [lic, setLic] = useState<License | null>(null)
+  const [plan, setPlan] = useState<{ key: string; plan: ClearPlan } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [progress, setProgress] = useState<string | null>(null)
+  const key = `${kind}|${input.trim()}`
+  const ready = !!plan && plan.key === key && !!lic
+
+  const count = async () => {
+    setBusy(true)
+    setError(null)
+    setPlan(null)
+    try {
+      const raw = input.trim()
+      if (!raw) throw new Error('Enter a license key (DTSP-…) or a license id.')
+      let l: License | null = null
+      if (/^dtsp/i.test(raw)) l = await findLicenseByKey(raw)
+      else if (/^[A-Za-z0-9_-]{1,128}$/.test(raw)) {
+        const snap = await getDoc(licenseRef(raw))
+        l = snap.exists() ? licenseFromSnap(snap as Parameters<typeof licenseFromSnap>[0]) : null
+      }
+      if (!l) throw new Error('No license found for that key or id.')
+      setLic(l)
+      const p = kind === 'history' ? await planLicenseHistoryClear(l.id) : await planReleasedDevicesClear(l.id)
+      setPlan({ key, plan: p })
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const run = async () => {
+    if (!ready || !lic || !plan) return
+    setBusy(true)
+    setError(null)
+    try {
+      const onP = (done: number, total: number) => setProgress(`Deleted ${done} of ${total}…`)
+      const n = kind === 'history' ? await runLicenseHistoryClear(lic.id, plan.plan, onP) : await runReleasedDevicesClear(lic.id, plan.plan, onP)
+      invalidate('audit')
+      onDone(`${n} ${kind === 'history' ? 'history entr' + (n === 1 ? 'y' : 'ies') : 'released device record' + (n === 1 ? '' : 's')} of ${lic.licenseKey} deleted. A security record was added.`)
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setBusy(false)
+      setProgress(null)
+    }
+  }
+
+  const n = plan?.plan.refs.length ?? 0
+  return (
+    <ConfirmDialog
+      open
+      title="Clear license records"
+      danger
+      busy={busy}
+      error={error}
+      confirmLabel={ready ? `Delete ${n}` : 'Count first'}
+      disabled={!ready || n === 0}
+      onConfirm={run}
+      onClose={onClose}
+    >
+      <fieldset className="space-y-2" disabled={busy}>
+        <legend className="label">What to delete</legend>
+        <label className={cx('flex items-center gap-2', !canHistory && 'opacity-50')}><input type="radio" name="rec-kind" disabled={!canHistory} checked={kind === 'history'} onChange={() => { setKind('history'); setPlan(null) }} />License history entries (needs “Manage activity log”)</label>
+        <label className={cx('flex items-center gap-2', !canDevices && 'opacity-50')}><input type="radio" name="rec-kind" disabled={!canDevices} checked={kind === 'devices'} onChange={() => { setKind('devices'); setPlan(null) }} />Released device records (active computers are always kept)</label>
+        <Field label="License key or id">
+          <input className="input font-mono" value={input} onChange={(e) => { setInput(e.target.value); setPlan(null) }} placeholder="DTSP-XXXX-XXXX-XXXX-XXXX" aria-label="License key or id" />
+        </Field>
+      </fieldset>
+      <div className="flex items-center gap-2">
+        <button type="button" className="btn btn-secondary btn-sm" onClick={count} disabled={busy || !input.trim()}>{busy && !progress && <Loader2 className="h-4 w-4 animate-spin" />}{ready ? 'Count again' : 'Find & count'}</button>
+      </div>
+      {ready && lic && (
+        <Notice tone={n ? 'warn' : 'info'}>
+          <b>{n}</b> {kind === 'history' ? `history entr${n === 1 ? 'y' : 'ies'}` : `released device record${n === 1 ? '' : 's'}`} of <b>{lic.businessName || lic.customerName}</b> (<span className="font-mono">{lic.licenseKey}</span>) will be deleted.
+          {kind === 'devices' && plan!.plan.kept > 0 && <> {plan!.plan.kept} active device record(s) are kept.</>}
+        </Notice>
+      )}
+      <p className="text-[12.5px] text-[#6b5d85]">This cannot be undone. Deleted in batches of 450; a security record of who cleared what and how many is added to the Activity Log.</p>
+      {progress && <p className="text-[12.5px] font-semibold text-[#3d096d]" role="status">{progress}</p>}
+    </ConfirmDialog>
   )
 }

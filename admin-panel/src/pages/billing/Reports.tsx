@@ -1,14 +1,12 @@
 /** Billing reports: sales by month, revenue (payments received) by month, outstanding by client, totals by plan type. */
 import { useEffect, useMemo, useState } from 'react'
-import { getDocs } from 'firebase/firestore'
 import { Download } from 'lucide-react'
 import { Field } from '../../components/ui'
 import { Loading, Notice } from '../../components/kit'
 import { money, monthKey, round2, sumBy, toCsv } from '../../lib/billing'
-import { paymentFromSnap, paymentsCol } from '../../lib/invoices'
 import { errorMessage, fromInputDate, toDate, toInputDate } from '../../lib/format'
 import type { Invoice, InvoicePayment } from '../../lib/types'
-import { downloadCsv } from './common'
+import { downloadCsv, loadInvoicePayments } from './common'
 
 interface Pay extends InvoicePayment { invoiceNumber: string; clientName: string }
 
@@ -26,14 +24,13 @@ export function BillingReports({ invoices, currency }: { invoices: Invoice[]; cu
   const [payments, setPayments] = useState<Pay[] | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
-  // Payments live under each invoice (no collection-group rule): load them for invoices that ever received one.
-  const paidIds = invoices.filter((i) => i.lastPaymentAt).map((i) => i.id).join(',')
+  // Payments live under each invoice (no collection-group rule): shared cached loader (also used by the Payments tab).
+  const paidIds = invoices.filter((i) => i.lastPaymentAt || i.paid > 0).map((i) => `${i.id}:${i.paid}:${i.lastPaymentAt?.toMillis() ?? 0}`).join(',')
   useEffect(() => {
     let alive = true
     setPayments(null); setErr(null)
-    const list = invoices.filter((i) => i.lastPaymentAt)
-    Promise.all(list.map(async (i) => (await getDocs(paymentsCol(i.id))).docs.map((d) => ({ ...paymentFromSnap(d), invoiceNumber: i.number, clientName: i.clientName }))))
-      .then((r) => alive && setPayments(r.flat()))
+    loadInvoicePayments(invoices)
+      .then((r) => alive && setPayments(r))
       .catch((e) => alive && (setErr(errorMessage(e)), setPayments([])))
     return () => { alive = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps

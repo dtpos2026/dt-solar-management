@@ -16,8 +16,11 @@ export const AUDIT_CATEGORIES: { id: AuditCategory; label: string }[] = [
 ]
 const CATEGORY_IDS = AUDIT_CATEGORIES.map((c) => c.id) as string[]
 
-/** Retention: entries in these categories are kept for ever (the rules refuse to delete them). */
-export const PROTECTED_CATEGORIES: AuditCategory[] = ['security', 'financial', 'license']
+/**
+ * Protected audit trail: entries in these categories can never be deleted from the portal (the rules refuse it).
+ * Every other category may be cleared by an admin holding audit.manage, at any age.
+ */
+export const PROTECTED_CATEGORIES: AuditCategory[] = ['security']
 export const RETENTION_DAYS = 90
 const DAY_MS = 86_400_000
 
@@ -186,4 +189,106 @@ export function dayStartMs(isoDay: string, offsetDays = 0): number | null {
 export function dayEndMs(isoDay: string): number | null {
   const next = dayStartMs(isoDay, 1)
   return next === null ? null : next - 1
+}
+
+/* ------------------------------------------- clearing (delete) ------------------------------------------- */
+
+/** Firestore batches hold at most 500 writes; stay well below so one clean-up entry can ride along. */
+export const CLEAR_BATCH_SIZE = 450
+
+/**
+ * What an admin chose to clear. `category: ''` = every category except the protected ones.
+ * `fromMs` / `toMs` are inclusive bounds on the entry time (null = open).
+ */
+export interface ClearScope {
+  category: AuditCategory | ''
+  fromMs: number | null
+  toMs: number | null
+}
+
+export const ALL_NON_SECURITY: ClearScope = { category: '', fromMs: null, toMs: null }
+
+/** Returns an error message for a scope that cannot be cleared, or null. */
+export function validateClearScope(s: ClearScope): string | null {
+  if (s.category && PROTECTED_CATEGORIES.includes(s.category)) return 'Security entries are the protected audit trail and can never be deleted.'
+  if (s.category && !CATEGORY_IDS.includes(s.category)) return 'Choose a valid category.'
+  if (s.fromMs !== null && !Number.isFinite(s.fromMs)) return 'The start date is not valid.'
+  if (s.toMs !== null && !Number.isFinite(s.toMs)) return 'The end date is not valid.'
+  if (s.fromMs !== null && s.toMs !== null && s.fromMs > s.toMs) return 'The start date must be on or before the end date.'
+  return null
+}
+
+/** True when the entry falls inside the scope and is allowed to be deleted (never a protected category). */
+export function clearScopeMatches(r: Pick<AuditRow, 'category' | 'atMs'>, s: ClearScope): boolean {
+  if (PROTECTED_CATEGORIES.includes(r.category)) return false
+  if (s.category && r.category !== s.category) return false
+  if (s.fromMs !== null || s.toMs !== null) {
+    if (r.atMs === null) return false
+    if (s.fromMs !== null && r.atMs < s.fromMs) return false
+    if (s.toMs !== null && r.atMs > s.toMs) return false
+  }
+  return true
+}
+
+/**
+ * How the scope is fetched from Firestore without composite indexes: either an equality query on `category`
+ * (ordered by document id) or a range scan on `at`. Legacy entries have no `category` field (they show as
+ * 'license'), so the license category and every date-bounded scope use the `at` scan + client-side filter.
+ */
+export function clearScopeStrategy(s: ClearScope): { kind: 'category'; category: AuditCategory } | { kind: 'time'; fromMs: number | null; toMs: number | null } {
+  if (s.category && s.category !== 'license' && s.fromMs === null && s.toMs === null) return { kind: 'category', category: s.category }
+  return { kind: 'time', fromMs: s.fromMs, toMs: s.toMs }
+}
+
+/** Human description used in the confirmation and in the security log entry. */
+export function describeClearScope(s: ClearScope, fmtDay: (ms: number) => string = (ms) => new Date(ms).toISOString().slice(0, 10)): string {
+  const cat = s.category ? `${AUDIT_CATEGORIES.find((c) => c.id === s.category)?.label ?? s.category} entries` : 'all non-security entries'
+  if (s.fromMs !== null && s.toMs !== null) return `${cat} from ${fmtDay(s.fromMs)} to ${fmtDay(s.toMs)}`
+  if (s.fromMs !== null) return `${cat} from ${fmtDay(s.fromMs)} onwards`
+  if (s.toMs !== null) return `${cat} up to ${fmtDay(s.toMs)}`
+  return `${cat} of any date`
+}
+
+/** Splits ids into delete batches of at most CLEAR_BATCH_SIZE; the caller commits them in order. */
+export function planClearBatches<T>(ids: readonly T[], size = CLEAR_BATCH_SIZE): T[][] {
+  if (!Number.isInteger(size) || size < 1 || size > 500) throw new Error('Batch size must be 1–500.')
+  return chunk(ids, size)
+}
+
+/** Removes deleted ids from already-loaded rows so they can never reappear from a stale page / cache. */
+export function withoutIds<T extends { id: string }>(rows: readonly T[], deleted: ReadonlySet<string>): T[] {
+  return deleted.size ? rows.filter((r) => !deleted.has(r.id)) : rows.slice()
+}
+
+/* ------------------------------------------- dashboard summary ------------------------------------------- */
+
+/** Device activation events (online / offline activation, re-activation, rejected or failed requests). */
+export function isActivationEvent(r: Pick<AuditRow, 'action'>): boolean {
+  return /^(device_activated|device_reactivated|activation_[a-z_]+|offline_activation[a-z_]*)$/.test(r.action)
+}
+
+export interface RecentEventSummary {
+  activations: number
+  security: number
+  failures: number
+  /** True when the loaded window may not reach back to `sinceMs` (the counts are a lower bound). */
+  truncated: boolean
+}
+
+/**
+ * Counts activation / security / failed events since `sinceMs` in the newest-first `rows` (the latest `pageSize`
+ * entries). When every loaded row is newer than `sinceMs` and the page was full, older matches may exist → truncated.
+ */
+export function summarizeRecentEvents(rows: readonly Pick<AuditRow, 'action' | 'category' | 'status' | 'atMs'>[], sinceMs: number, pageSize: number): RecentEventSummary {
+  const out: RecentEventSummary = { activations: 0, security: 0, failures: 0, truncated: false }
+  let oldest = Infinity
+  for (const r of rows) {
+    if (r.atMs !== null) oldest = Math.min(oldest, r.atMs)
+    if (r.atMs === null || r.atMs < sinceMs) continue
+    if (isActivationEvent(r)) out.activations++
+    if (r.category === 'security') out.security++
+    if (r.status === 'failure') out.failures++
+  }
+  out.truncated = rows.length >= pageSize && oldest >= sinceMs
+  return out
 }

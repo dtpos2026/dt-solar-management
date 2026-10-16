@@ -162,7 +162,7 @@ export function VerifyKey() {
 
   return (
     <div className="max-w-5xl">
-      <PageTitle title="Verify Key" sub="Check whether a DT Solar Pro license key is genuine and what it allows." />
+      <PageTitle icon={<SearchCheck />} title="Verify Key" sub="Check whether a DT Solar Pro license key is genuine and what it allows." />
 
       <form className="card p-5" onSubmit={verify} noValidate>
         <label className="label" htmlFor="verify-key">License key</label>

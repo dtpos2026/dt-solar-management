@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { Copy, KeyRound, ShieldAlert, Trash2, Upload } from 'lucide-react'
+import { Copy, KeyRound, ShieldAlert, Trash2, Upload, UserRound, Globe, FileKey2, ShieldCheck } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { copy } from '../components/ui'
 import { useSigningKey } from '../lib/signingKey'
 import { errorMessage } from '../lib/format'
@@ -33,6 +34,7 @@ export function SigningKeyPanel() {
   }
   return (
     <div className="space-y-4">
+      <KeysExplained />
       <div className="card flex gap-3 border-amber-200 bg-amber-50 p-4 text-[13px] text-amber-900">
         <ShieldAlert className="h-5 w-5 shrink-0" />
         <div>
@@ -91,5 +93,50 @@ export function SigningKeyPanel() {
         </div>
       )}
     </div>
+  )
+}
+
+function KeyCard({ icon, title, where, children, tone }: { icon: ReactNode; title: string; where: string; children: ReactNode; tone: 'secret' | 'public' }) {
+  return (
+    <div className="rounded-xl border border-[#ece6f4] bg-white p-3.5">
+      <div className="flex items-center gap-2 text-[13.5px] font-bold">
+        <span className="text-[#7c3aed] [&>svg]:h-4 [&>svg]:w-4">{icon}</span>
+        {title}
+        <span className={tone === 'secret' ? 'ml-auto rounded-md bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-700' : 'ml-auto rounded-md bg-green-50 px-2 py-0.5 text-[11px] font-bold text-green-700'}>
+          {tone === 'secret' ? 'Secret' : 'Public by design'}
+        </span>
+      </div>
+      <div className="mt-1 text-[11.5px] font-semibold text-[#7a6d92]">{where}</div>
+      <div className="mt-1.5 text-[12.5px] leading-relaxed text-[#4a3d63]">{children}</div>
+    </div>
+  )
+}
+
+/** Explains the four kinds of keys / credentials so nobody mixes them up. */
+export function KeysExplained() {
+  return (
+    <section className="card p-5" aria-labelledby="keys-explained">
+      <h2 id="keys-explained" className="text-[15px] font-bold">Keys and credentials — what is what</h2>
+      <p className="mt-0.5 text-[12.5px] text-[#7a6d92]">Four different things. Only two are secret, and none of the secrets is ever stored in Firebase.</p>
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <KeyCard icon={<UserRound />} title="Admin sign-in (e-mail + password)" where="Firebase Authentication · each admin" tone="secret">
+          Lets a person open this portal. What they may do is decided by their role in Admins and enforced by the Firestore security rules. Change it with
+          “Forgot password” on the sign-in page. It cannot sign licenses.
+        </KeyCard>
+        <KeyCard icon={<Globe />} title="Firebase web config / API key" where="Built into this portal and the desktop app" tone="public">
+          Only identifies the Firebase project (it starts with “AIza…”). It is visible in every browser by design and is not a password: all access is checked
+          by the security rules. Nothing to rotate or hide.
+        </KeyCard>
+        <KeyCard icon={<FileKey2 />} title="License signing key (private, Ed25519)" where="keys\license-private.pem on the owner’s PC" tone="secret">
+          Created once by <code className="rounded bg-[#f6f0fd] px-1">npm run build</code> in the desktop (DT Solar Pro) folder. It signs every license and
+          activation. It is loaded below into this browser only — never uploaded, never stored in Firestore, never committed to git (the keys folder is ignored).
+          Keep a USB backup. If it leaks, anyone could forge licenses: build a new key pair, ship a new installer and re-issue licenses.
+        </KeyCard>
+        <KeyCard icon={<ShieldCheck />} title="Public verification key" where="resources/license-public.pem inside the desktop app" tone="public">
+          The matching half of the signing key. The desktop app uses it to check that a license really came from you; it cannot create licenses. After loading the
+          signing key below, its public key must equal the one in the app build.
+        </KeyCard>
+      </div>
+    </section>
   )
 }

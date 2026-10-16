@@ -1,15 +1,17 @@
 /**
  * Firestore access for invoices, payments, public verification copies and billing settings.
- * Totals always come from lib/billing.ts. Invoices are never deleted (cancelled instead); payments are append-only.
+ * Totals always come from lib/billing.ts. Invoices are cancelled; a cancelled (or unpaid) invoice may be deleted with its
+ * payments and public copy (deleteInvoice). Payments are append-only (voided, never edited).
  */
 import {
-  Timestamp, collection, doc, getDocs, orderBy, query, runTransaction, serverTimestamp, updateDoc,
+  Timestamp, collection, doc, getDocs, orderBy, query, runTransaction, serverTimestamp, updateDoc, writeBatch,
   type DocumentData, type DocumentSnapshot, type QueryDocumentSnapshot, type Transaction
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { licenseRef } from './licenses'
 import { writeActivity } from './audit'
 import { loadBranding as loadBrandingDoc } from './brandingStore'
+import { invalidate } from './queryCache'
 import { applyPayment, computeTotals, formatNumber, makeToken, publicCustomerName, rebalance, round2, voidPayment, type LineInput } from './billing'
 import type { Branding, Client, Invoice, InvoicePayment, PlanType } from './types'
 
@@ -121,7 +123,8 @@ export async function createInvoice(f: InvoiceInput, b: Branding, by: string): P
     txAudit(tx, 'Invoice created', by, num, `${num} for ${f.clientName}: ${currency} ${t.total}`, f.licenseId, { invoiceId: ref.id, total: t.total })
     return num
   })
-  await syncLicensePayment(f.licenseId, 'unpaid')
+  // Best effort and not awaited: the invoice is saved; the UI opens it at once.
+  void syncLicensePayment(f.licenseId, 'unpaid')
   return { id: ref.id, number }
 }
 
@@ -153,6 +156,34 @@ export async function cancelInvoice(inv: Invoice, reason: string, b: Branding, b
     tx.set(publicInvoiceRef(cur.verifyToken), publicCopy(cur, b, true))
     txAudit(tx, 'Invoice cancelled', by, cur.number, `${cur.number}: ${reason.trim()}`, cur.licenseId, { invoiceId: inv.id })
   })
+  invalidate('payments')
+}
+
+/** Deletable: cancelled, or no money recorded (every payment voided). Mirrors firestore.rules. */
+export function canDeleteInvoice(inv: Pick<Invoice, 'status' | 'paid'>): boolean {
+  return inv.status === 'cancelled' || inv.paid <= 0
+}
+
+/**
+ * Permanently deletes an invoice that is cancelled or has no (non-void) payment: its payments, its public
+ * verification copy and the invoice itself go in ONE batch with a 'financial' activity entry (the rules only allow
+ * deleting payments together with their invoice).
+ */
+export async function deleteInvoice(inv: Invoice, by: string): Promise<void> {
+  if (!canDeleteInvoice(inv)) throw new Error('Only cancelled invoices or invoices without payments can be deleted. Cancel it first.')
+  const pays = await getDocs(paymentsCol(inv.id))
+  if (pays.size > 400) throw new Error('This invoice has too many payment records to delete at once.')
+  const b = writeBatch(db)
+  pays.docs.forEach((p) => b.delete(p.ref))
+  if (inv.verifyToken) b.delete(publicInvoiceRef(inv.verifyToken))
+  b.delete(invoiceRef(inv.id))
+  writeActivity(b, {
+    action: 'Invoice deleted', category: 'financial', target: inv.number, targetType: 'invoice', licenseId: inv.licenseId || null,
+    details: `${inv.number} for ${inv.clientName} (${inv.status}, ${inv.currency} ${inv.total}) deleted with ${pays.size} payment record(s) by ${by}`,
+    meta: { invoiceId: inv.id, total: inv.total, paid: inv.paid, payments: pays.size }
+  })
+  await b.commit()
+  invalidate('payments')
 }
 
 export interface PaymentInput { amount: number; method: string; reference: string; date: Date }
@@ -174,7 +205,8 @@ export async function recordPayment(inv: Invoice, p: PaymentInput, b: Branding, 
     txAudit(tx, 'Payment recorded', by, cur.number, `${receiptNo}: ${cur.currency} ${round2(p.amount)} (${p.method}) on ${cur.number}`, cur.licenseId, { invoiceId: inv.id, paymentId: pRef.id, amount: round2(p.amount) })
     return { receiptNo, status: r.status, licenseId: cur.licenseId }
   })
-  await syncLicensePayment(res.licenseId, res.status)
+  invalidate('payments')
+  void syncLicensePayment(res.licenseId, res.status)
   return { receiptNo: res.receiptNo, paymentId: pRef.id }
 }
 
@@ -193,7 +225,8 @@ export async function voidInvoicePayment(inv: Invoice, pay: InvoicePayment, reas
     txAudit(tx, 'Payment voided', by, cur.number, `${ps.receiptNo} (${cur.currency} ${ps.amount}) on ${cur.number}: ${reason.trim()}`, cur.licenseId, { invoiceId: inv.id, paymentId: pay.id })
     return { status: r.status, licenseId: cur.licenseId }
   })
-  await syncLicensePayment(res.licenseId, res.status)
+  invalidate('payments')
+  void syncLicensePayment(res.licenseId, res.status)
 }
 
 /** Best effort: licenses.update needs licenses.manage — silently skipped when the admin lacks it. */

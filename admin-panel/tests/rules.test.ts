@@ -17,6 +17,7 @@ import {
   Timestamp,
   collection,
   deleteDoc,
+  writeBatch,
   doc,
   getDoc,
   getDocs,
@@ -306,7 +307,44 @@ describe('invoices / payments / publicInvoices / counters', () => {
     await assertSucceeds(updateDoc(doc(db('billing'), 'invoices/i1'), { paid: 50, balance: 50, status: 'partial' }))
     await assertFails(updateDoc(doc(db('billing'), 'invoices/i1'), { paid: 500 }))
     await assertFails(updateDoc(doc(db('owner'), 'invoices/i1'), { number: 'INV-9' }))
-    await assertFails(deleteDoc(doc(db('owner'), 'invoices/i1')))
+    // i1 is unpaid (paid 0) → deletable by billing.create holders; paid invoices only once cancelled.
+    await assertFails(deleteDoc(doc(db('billing'), 'invoices/i1/payments/p1')))
+  })
+  it('delete: cancelled or unpaid invoice with its payments + public copy in one batch (billing.create)', async () => {
+    const tok = 'V'.repeat(32)
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const d = ctx.firestore()
+      await setDoc(doc(d, 'invoices/paid1'), invoice({ paid: 50, balance: 50, status: 'partial', verifyToken: 'P'.repeat(32) }))
+      await setDoc(doc(d, 'invoices/paid1/payments/q1'), { amount: 50 })
+      await setDoc(doc(d, 'invoices/canc1'), invoice({ paid: 50, balance: 50, status: 'cancelled', verifyToken: 'C'.repeat(32) }))
+      await setDoc(doc(d, 'invoices/canc1/payments/q1'), { amount: 50 })
+      await setDoc(doc(d, `publicInvoices/${'C'.repeat(32)}`), { number: 'INV-C', status: 'cancelled' })
+    })
+    const del = (d: Firestore, id: string, pays: string[], token: string) => {
+      const b = writeBatch(d)
+      pays.forEach((p) => b.delete(doc(d, `invoices/${id}/payments/${p}`)))
+      b.delete(doc(d, `publicInvoices/${token}`))
+      b.delete(doc(d, `invoices/${id}`))
+      return b.commit()
+    }
+    // Paid, not cancelled: denied for everyone.
+    await assertFails(del(db('owner'), 'paid1', ['q1'], 'P'.repeat(32)))
+    await assertFails(deleteDoc(doc(db('owner'), 'invoices/paid1')))
+    // Payments alone can never be deleted (the invoice still exists after the write).
+    await assertFails(deleteDoc(doc(db('owner'), 'invoices/canc1/payments/q1')))
+    // Without billing.create (payments-only / view-only / support / anon): denied.
+    for (const a of ['support', 'technical', 'disabled', 'stranger', 'anon'] as const) await assertFails(del(db(a), 'canc1', ['q1'], 'C'.repeat(32)))
+    // Cancelled invoice: billing.create deletes invoice + payments + public copy together.
+    await assertSucceeds(del(db('billing'), 'canc1', ['q1'], 'C'.repeat(32)))
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const d = ctx.firestore()
+      expect((await getDoc(doc(d, 'invoices/canc1'))).exists()).toBe(false)
+      expect((await getDoc(doc(d, 'invoices/canc1/payments/q1'))).exists()).toBe(false)
+      expect((await getDoc(doc(d, `publicInvoices/${'C'.repeat(32)}`))).exists()).toBe(false)
+    })
+    // Unpaid invoice (paid 0): owner / sales (billing.create) may delete; anon may not.
+    await assertFails(del(db('anon'), 'i1', ['p1'], tok))
+    await assertSucceeds(del(db('sales'), 'i1', ['p1'], tok))
   })
   it('payments append-only', async () => {
     await matrix(['owner', 'manager', 'billing'], (d) => setDoc(doc(d, `invoices/i1/payments/${uid()}`), { amount: 5 }))
@@ -320,7 +358,9 @@ describe('invoices / payments / publicInvoices / counters', () => {
     await assertFails(getDocs(collection(db('owner'), 'publicInvoices')))
     await matrix(['owner', 'manager', 'sales', 'billing'], (d) => setDoc(doc(d, `publicInvoices/${'W'.repeat(32)}`), { status: 'valid' }))
     await assertFails(setDoc(doc(db('owner'), 'publicInvoices/short'), { status: 'valid' }))
-    await assertFails(deleteDoc(doc(db('owner'), `publicInvoices/${'V'.repeat(32)}`)))
+    await assertFails(deleteDoc(doc(db('anon'), `publicInvoices/${'V'.repeat(32)}`)))
+    await assertFails(deleteDoc(doc(db('support'), `publicInvoices/${'V'.repeat(32)}`)))
+    await assertSucceeds(deleteDoc(doc(db('billing'), `publicInvoices/${'V'.repeat(32)}`)))
   })
   it('counters', async () => {
     await matrix(['owner', 'manager', 'sales', 'billing', 'technical'], (d) => setDoc(doc(d, 'counters/invoices'), { next: 3 }))

@@ -8,10 +8,13 @@ import { useEffect, useState } from 'react'
 import { Timestamp, doc, getDoc, onSnapshot, serverTimestamp, writeBatch } from 'firebase/firestore'
 import { auth, db } from '../firebase'
 import { writeActivity } from './audit'
-import { changedBrandingFields, clampSessionTimeout, cleanBranding, normaliseBranding, publicBranding, DEFAULT_SESSION_TIMEOUT_MIN } from './branding'
+import { changedBrandingFields, clampSessionTimeout, cleanBranding, normaliseBranding, publicBranding, DEFAULT_SESSION_TIMEOUT_MIN, PUBLIC_BRANDING_FIELDS } from './branding'
 import { errorMessage } from './format'
 import { DEFAULT_BRANDING, type Branding } from './types'
-import { invalidate } from './queryCache'
+import { peekCached, primeCache } from './queryCache'
+
+/** Cache key of settings/branding (lib/liveData BRANDING_KEY). */
+const BRANDING_CACHE_KEY = 'branding'
 
 export const brandingRef = () => doc(db, 'settings', 'branding')
 export const publicBrandingRef = () => doc(db, 'publicSettings', 'branding')
@@ -37,7 +40,10 @@ export async function loadSessionTimeoutMin(): Promise<number> {
 }
 
 export interface SettingsState {
+  /** True until both live documents arrived (the form stays read-only meanwhile). */
   loading: boolean
+  /** The branding shown while loading comes from this browser's recent cache (no spinner needed). */
+  cached: boolean
   error: string | null
   /** False until settings/branding has been saved once (defaults are shown). */
   saved: boolean
@@ -49,14 +55,19 @@ export interface SettingsState {
 
 /** Live settings for the Settings page. */
 export function useSettingsDocs(): SettingsState {
-  const [st, setSt] = useState<SettingsState>({
-    loading: true,
-    error: null,
-    saved: false,
-    branding: { ...DEFAULT_BRANDING },
-    sessionTimeoutMin: DEFAULT_SESSION_TIMEOUT_MIN,
-    updatedAt: null,
-    updatedBy: ''
+  const [st, setSt] = useState<SettingsState>(() => {
+    // Show the branding every other page already loaded at once; the live documents confirm it a moment later.
+    const cached = peekCached<Branding>(BRANDING_CACHE_KEY, 10 * 60_000)
+    return {
+      loading: true,
+      cached: !!cached,
+      error: null,
+      saved: false,
+      branding: cached ? { ...cached } : { ...DEFAULT_BRANDING },
+      sessionTimeoutMin: DEFAULT_SESSION_TIMEOUT_MIN,
+      updatedAt: null,
+      updatedBy: ''
+    }
   })
   useEffect(() => {
     let gotBranding = false
@@ -67,11 +78,13 @@ export function useSettingsDocs(): SettingsState {
       (s) => {
         gotBranding = true
         const d = s.exists() ? s.data() : null
+        const branding = normaliseBranding(d)
+        primeCache(BRANDING_CACHE_KEY, branding)
         setSt((x) => ({
           ...x,
           loading: !done(),
           saved: s.exists(),
-          branding: normaliseBranding(d),
+          branding,
           updatedAt: d?.updatedAt instanceof Timestamp ? d.updatedAt : null,
           updatedBy: typeof d?.updatedBy === 'string' ? d.updatedBy : ''
         }))
@@ -96,18 +109,24 @@ export function useSettingsDocs(): SettingsState {
 
 /**
  * Saves branding (private + public copy) and the session timeout in one batch with an activity entry.
- * Merge writes keep fields other areas may add to settings/branding.
+ * Only what changed is written (merge): a text edit no longer re-uploads every image; the public copy
+ * (publicSettings/branding) is rewritten when a public field changed. `full` writes everything (first save / re-sync).
+ * The saved values prime the shared branding cache, so other pages show them without reading them back.
  */
-export async function saveSettings(prev: Branding, next: Branding, prevTimeout: number, nextTimeout: number): Promise<string[]> {
+export async function saveSettings(prev: Branding, next: Branding, prevTimeout: number, nextTimeout: number, opts: { full?: boolean } = {}): Promise<string[]> {
   const clean = cleanBranding(next)
   const changed = changedBrandingFields(prev, clean)
   const timeout = clampSessionTimeout(nextTimeout)
   const timeoutChanged = timeout !== prevTimeout
+  const full = opts.full === true
   const by = auth.currentUser?.email ?? ''
   const batch = writeBatch(db)
-  batch.set(brandingRef(), { ...clean, updatedAt: serverTimestamp(), updatedBy: by }, { merge: true })
-  batch.set(publicBrandingRef(), { ...publicBranding(clean), updatedAt: serverTimestamp() }, { merge: true })
-  batch.set(portalSettingsRef(), { sessionTimeoutMin: timeout, updatedAt: serverTimestamp(), updatedBy: by }, { merge: true })
+  const patch: Partial<Branding> = full ? clean : Object.fromEntries(changed.map((k) => [k, clean[k]]))
+  batch.set(brandingRef(), { ...patch, updatedAt: serverTimestamp(), updatedBy: by }, { merge: true })
+  if (full || changed.some((k) => (PUBLIC_BRANDING_FIELDS as readonly string[]).includes(k))) {
+    batch.set(publicBrandingRef(), { ...publicBranding(clean), updatedAt: serverTimestamp() }, { merge: true })
+  }
+  if (full || timeoutChanged) batch.set(portalSettingsRef(), { sessionTimeoutMin: timeout, updatedAt: serverTimestamp(), updatedBy: by }, { merge: true })
   const fields = [...changed, ...(timeoutChanged ? ['sessionTimeoutMin'] : [])]
   const imageNote = (k: 'logo' | 'signature' | 'paymentQr') => (changed.includes(k) ? `${k} ${clean[k] ? 'updated' : 'removed'}` : null)
   const textChanges = changed
@@ -126,7 +145,7 @@ export async function saveSettings(prev: Branding, next: Branding, prevTimeout: 
     meta: { fields }
   })
   await batch.commit()
-  invalidate('branding')
+  primeCache(BRANDING_CACHE_KEY, normaliseBranding({ ...prev, ...clean }))
   return fields
 }
 

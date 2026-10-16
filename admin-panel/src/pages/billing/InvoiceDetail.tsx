@@ -1,19 +1,22 @@
 /** One invoice: A4 preview, payments, receipts, edit / cancel / record payment / void, print & save as PDF. */
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { doc, getDoc, onSnapshot, orderBy, query } from 'firebase/firestore'
-import { ArrowLeft, Ban, FileText, Pencil, Printer, Receipt, Undo2, Wallet } from 'lucide-react'
+import { ArrowLeft, Ban, Copy, FileText, MessageCircle, Pencil, Printer, Receipt, Trash2, Undo2, Wallet } from 'lucide-react'
 import { db } from '../../firebase'
 import { Field, Modal, PageTitle } from '../../components/ui'
-import { ConfirmDialog, EmptyState, IconButton, Loading, Notice } from '../../components/kit'
+import { ConfirmDialog, EmptyState, IconButton, Loading, Notice, useToast } from '../../components/kit'
 import { applyPayment, money, round2 } from '../../lib/billing'
-import { cancelInvoice, clientFromSnap, invoiceFromSnap, invoiceRef, paymentFromSnap, paymentsCol, recordPayment, voidInvoicePayment } from '../../lib/invoices'
+import { canDeleteInvoice, cancelInvoice, clientFromSnap, deleteInvoice, invoiceFromSnap, invoiceRef, paymentFromSnap, paymentsCol, recordPayment, voidInvoicePayment } from '../../lib/invoices'
+import { peekShared } from '../../lib/queryCache'
+import { verifyUrl } from '../../lib/qr'
+import type { DocumentData, QueryDocumentSnapshot } from 'firebase/firestore'
 import { errorMessage, fmtDate, fmtDateTime, fromInputDate, toInputDate } from '../../lib/format'
 import { useAdminEmail, useCan } from '../../lib/auth'
 import type { Branding, Client, Invoice, InvoicePayment } from '../../lib/types'
 import { InvoiceForm } from './InvoiceForm'
-import { InvoiceDoc, ReceiptDoc } from './PrintDocs'
-import { PrintPortal, StatusPill, invStatus } from './common'
+import { InvoiceDoc, ReceiptDoc, ThermalInvoice, ThermalReceipt } from './PrintDocs'
+import { PrintPortal, StatusPill, copyText, invStatus, printNow, waNumber, type Paper } from './common'
 
 export const PAYMENT_METHODS = ['Cash', 'Bank transfer', 'Cheque', 'JazzCash', 'EasyPaisa', 'Card', 'Online', 'Other']
 
@@ -22,7 +25,13 @@ type Msg = { tone: 'success' | 'error'; text: string } | null
 export function InvoiceDetail({ id, clients, branding }: { id: string; clients: Client[]; branding: Branding }) {
   const can = useCan()
   const by = useAdminEmail()
-  const [inv, setInv] = useState<Invoice | null>(null)
+  const nav = useNavigate()
+  const toast = useToast()
+  // Opened from the list (or just created): show the invoice from the shared live list at once.
+  const [inv, setInv] = useState<Invoice | null>(() => {
+    const d = peekShared<QueryDocumentSnapshot<DocumentData>[]>('invoices')?.find((x) => x.id === id)
+    return d ? invoiceFromSnap(d) : null
+  })
   const [missing, setMissing] = useState(false)
   const [loadErr, setLoadErr] = useState<string | null>(null)
   const [payments, setPayments] = useState<InvoicePayment[]>([])
@@ -36,10 +45,14 @@ export function InvoiceDetail({ id, clients, branding }: { id: string; clients: 
   const [busy, setBusy] = useState(false)
   const [dlgErr, setDlgErr] = useState<string | null>(null)
   const [printPay, setPrintPay] = useState<InvoicePayment | null>(null)
+  const [paper, setPaper] = useState<Paper>('a4')
+  const [delOpen, setDelOpen] = useState(false)
+  const deleting = useRef(false)
 
   useEffect(() => {
-    setInv(null); setMissing(false); setLoadErr(null)
-    const u1 = onSnapshot(invoiceRef(id), (s) => { if (s.exists()) setInv(invoiceFromSnap(s)); else setMissing(true) }, (e) => setLoadErr(errorMessage(e)))
+    setMissing(false); setLoadErr(null)
+    setInv((cur) => (cur?.id === id ? cur : null))
+    const u1 = onSnapshot(invoiceRef(id), (s) => { if (s.exists()) setInv(invoiceFromSnap(s)); else if (!deleting.current) setMissing(true) }, (e) => setLoadErr(errorMessage(e)))
     const u2 = onSnapshot(query(paymentsCol(id), orderBy('createdAt', 'asc')), (r) => setPayments(r.docs.map(paymentFromSnap)), () => setPayments([]))
     return () => { u1(); u2() }
   }, [id])
@@ -59,14 +72,36 @@ export function InvoiceDetail({ id, clients, branding }: { id: string; clients: 
     return () => window.removeEventListener('afterprint', after)
   }, [])
 
-  if (loadErr) return <Notice tone="error">{loadErr}</Notice>
+  if (loadErr && !inv) return <Notice tone="error">{loadErr}</Notice>
   if (missing) return <div className="card"><EmptyState icon={<FileText />} title="Invoice not found" hint="It may have been removed or the link is wrong."><Link className="btn btn-secondary" to="/billing">Back to billing</Link></EmptyState></div>
   if (!inv) return <Loading label="Loading invoice…" />
 
   const cancelled = inv.status === 'cancelled'
   const st = invStatus(inv)
-  const printReceipt = (p: InvoicePayment) => { setPrintPay(p); setTimeout(() => window.print(), 150) }
-  const printInvoice = () => { setPrintPay(null); setTimeout(() => window.print(), 150) }
+  const printReceipt = (p: InvoicePayment, size: Paper) => { setPrintPay(p); setPaper(size); printNow(`Receipt ${p.receiptNo}`) }
+  const printInvoice = (size: Paper) => { setPrintPay(null); setPaper(size); printNow(`Invoice ${inv.number}`) }
+  const link = verifyUrl(inv.verifyToken, branding.verifyBaseUrl)
+  const shareText = [
+    `Invoice ${inv.number} from ${branding.companyName}`,
+    `Customer: ${inv.clientName}`,
+    `Total: ${money(inv.total, inv.currency)}`,
+    cancelled ? 'Status: CANCELLED' : `Balance due: ${money(inv.balance, inv.currency)}${inv.dueDate ? ` (due ${fmtDate(inv.dueDate)})` : ''}`,
+    `Verify / view: ${link}`
+  ].join('\n')
+  const waHref = `https://wa.me/${waNumber(client?.phone ?? '')}?text=${encodeURIComponent(shareText)}`
+  const copyLink = async () => {
+    try { await copyText(link); toast('Verification link copied.') } catch (e) { toast(errorMessage(e), 'error') }
+  }
+  const doDelete = async () => {
+    setBusy(true); setDlgErr(null)
+    deleting.current = true
+    try {
+      await deleteInvoice(inv, by)
+      setDelOpen(false)
+      toast(`Invoice ${inv.number} deleted.`)
+      nav('/billing', { replace: true })
+    } catch (e) { deleting.current = false; setDlgErr(errorMessage(e)) } finally { setBusy(false) }
+  }
 
   const doCancel = async () => {
     setBusy(true); setDlgErr(null)
@@ -87,8 +122,12 @@ export function InvoiceDetail({ id, clients, branding }: { id: string; clients: 
           <Link className="btn btn-secondary" to="/billing"><ArrowLeft className="h-4 w-4" /> All invoices</Link>
           {can('billing.create') && !cancelled && inv.paid === 0 && <button className="btn btn-secondary" onClick={() => setEdit(true)}><Pencil className="h-4 w-4" /> Edit</button>}
           {can('billing.create') && !cancelled && <button className="btn btn-secondary text-red-600" onClick={() => { setReason(''); setDlgErr(null); setCancelOpen(true) }}><Ban className="h-4 w-4" /> Cancel invoice</button>}
+          {can('billing.create') && canDeleteInvoice(inv) && <button className="btn btn-secondary text-red-600" onClick={() => { setDlgErr(null); setDelOpen(true) }}><Trash2 className="h-4 w-4" /> Delete</button>}
           {can('billing.payments') && !cancelled && inv.balance > 0 && <button className="btn btn-success" onClick={() => setPayOpen(true)}><Wallet className="h-4 w-4" /> Record payment</button>}
-          <button className="btn btn-primary" onClick={printInvoice} title="Print, or choose “Save as PDF” as the printer"><Printer className="h-4 w-4" /> Print / Save as PDF</button>
+          <a className="btn btn-secondary" href={waHref} target="_blank" rel="noreferrer" title={client?.phone ? `Send to ${client.phone} on WhatsApp` : 'Share on WhatsApp'}><MessageCircle className="h-4 w-4" /> WhatsApp</a>
+          <button className="btn btn-secondary" onClick={copyLink} title={link}><Copy className="h-4 w-4" /> Copy link</button>
+          <button className="btn btn-secondary" onClick={() => printInvoice('80mm')} title="Compact invoice for an 80 mm thermal printer"><Receipt className="h-4 w-4" /> 80 mm</button>
+          <button className="btn btn-primary" onClick={() => printInvoice('a4')} title="Print A4, or choose “Save as PDF” as the printer to download a PDF"><Printer className="h-4 w-4" /> Print / PDF (A4)</button>
         </>}
       />
       {msg && <Notice tone={msg.tone} className="mb-3" onClose={() => setMsg(null)}>{msg.text}</Notice>}
@@ -123,7 +162,8 @@ export function InvoiceDetail({ id, clients, branding }: { id: string; clients: 
                         {p.cancelled && p.cancelReason && <div className="text-[12px] text-red-700">Void: {p.cancelReason}</div>}
                       </div>
                       <div className="flex shrink-0">
-                        <IconButton title="Print receipt" onClick={() => printReceipt(p)}><Printer /></IconButton>
+                        <IconButton title="Print receipt (A4 / PDF)" onClick={() => printReceipt(p, 'a4')}><Printer /></IconButton>
+                        <IconButton title="Thermal receipt (80 mm)" onClick={() => printReceipt(p, '80mm')}><Receipt /></IconButton>
                         {can('billing.payments') && !p.cancelled && !cancelled && <IconButton danger title="Void payment" onClick={() => { setReason(''); setDlgErr(null); setVoidPay(p) }}><Undo2 /></IconButton>}
                       </div>
                     </div>
@@ -135,13 +175,21 @@ export function InvoiceDetail({ id, clients, branding }: { id: string; clients: 
         </div>
       </div>
 
-      <PrintPortal>{printPay ? <ReceiptDoc inv={inv} pay={printPay} b={branding} /> : <InvoiceDoc inv={inv} b={branding} client={client} payments={payments} />}</PrintPortal>
+      <PrintPortal paper={paper}>
+        {printPay
+          ? paper === '80mm' ? <ThermalReceipt inv={inv} pay={printPay} b={branding} /> : <ReceiptDoc inv={inv} pay={printPay} b={branding} />
+          : paper === '80mm' ? <ThermalInvoice inv={inv} b={branding} /> : <InvoiceDoc inv={inv} b={branding} client={client} payments={payments} />}
+      </PrintPortal>
 
       {edit && <InvoiceForm open invoice={inv} clients={clients} branding={branding} onClose={() => setEdit(false)} onSaved={() => setMsg({ tone: 'success', text: 'Invoice updated; public verification copy re-synced.' })} />}
       {payOpen && <PaymentModal inv={inv} branding={branding} by={by} onClose={() => setPayOpen(false)} onDone={(r) => setMsg({ tone: 'success', text: `Payment recorded — receipt ${r}.` })} />}
       <ConfirmDialog open={cancelOpen} title={`Cancel invoice ${inv.number}?`} confirmLabel="Cancel invoice" danger busy={busy} disabled={!reason.trim()} error={dlgErr} onConfirm={doCancel} onClose={() => setCancelOpen(false)}>
         <p>The invoice is kept (never deleted) and marked cancelled. Anyone scanning its QR code will see “Cancelled”.</p>
         <Field label="Reason *"><textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} autoFocus /></Field>
+      </ConfirmDialog>
+      <ConfirmDialog open={delOpen} title={`Delete invoice ${inv.number}?`} confirmLabel="Delete permanently" danger busy={busy} error={dlgErr} onConfirm={doDelete} onClose={() => setDelOpen(false)}>
+        <p>This permanently removes the invoice{payments.length ? `, its ${payments.length} payment record(s)` : ''} and its public verification copy (the QR code will show “Invalid invoice”). It cannot be undone. The deletion is recorded in the activity log.</p>
+        {!cancelled && <p className="text-[12.5px] text-[#7a6d92]">Allowed because no payment is recorded on it. To keep a record instead, cancel the invoice.</p>}
       </ConfirmDialog>
       <ConfirmDialog open={!!voidPay} title={`Void payment ${voidPay?.receiptNo ?? ''}?`} confirmLabel="Void payment" danger busy={busy} disabled={!reason.trim()} error={dlgErr} onConfirm={doVoid} onClose={() => setVoidPay(null)}>
         <p>{voidPay && money(voidPay.amount, inv.currency)} will be removed from the paid amount. The payment record stays (marked void) for the audit trail.</p>

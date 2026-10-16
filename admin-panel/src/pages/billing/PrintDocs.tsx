@@ -127,3 +127,76 @@ export function ReceiptDoc({ inv, pay, b }: { inv: Invoice; pay: InvoicePayment;
     </div>
   )
 }
+
+/* ------------------------------------------- 80 mm thermal receipts ------------------------------------------- */
+
+const T = { fontFamily: "'Segoe UI', Arial, sans-serif", color: '#000' }
+function ThermalHead({ b, title, no }: { b: Branding; title: string; no: string }) {
+  return (
+    <div style={{ textAlign: 'center', borderBottom: '1px dashed #000', paddingBottom: '2mm', marginBottom: '2mm' }}>
+      {b.logo && <img src={b.logo} alt="" style={{ maxHeight: '14mm', maxWidth: '40mm', objectFit: 'contain', margin: '0 auto 1mm', display: 'block' }} />}
+      <div style={{ fontSize: '14px', fontWeight: 800 }}>{b.companyName}</div>
+      {b.address && <div style={{ fontSize: '10px' }}>{b.address}</div>}
+      <div style={{ fontSize: '10px' }}>{[b.phone, b.email].filter(Boolean).join(' · ')}</div>
+      <div style={{ fontSize: '13px', fontWeight: 800, marginTop: '2mm', letterSpacing: '0.08em' }}>{title}</div>
+      <div style={{ fontSize: '11px', fontWeight: 700 }}>{no}</div>
+    </div>
+  )
+}
+function TRow({ k, v, bold }: { k: string; v: string; bold?: boolean }) {
+  return <div style={{ display: 'flex', justifyContent: 'space-between', gap: '2mm', fontSize: bold ? '12px' : '11px', fontWeight: bold ? 800 : 400 }}><span>{k}</span><span style={{ textAlign: 'right' }}>{v}</span></div>
+}
+
+/** Compact invoice for an 80 mm thermal printer (72 mm printable). */
+export function ThermalInvoice({ inv, b }: { inv: Invoice; b: Branding }) {
+  const [qr, setQr] = useState('')
+  const url = verifyUrl(inv.verifyToken, b.verifyBaseUrl)
+  useEffect(() => { qrDataUrl(url, 180).then(setQr).catch(() => setQr('')) }, [url])
+  const cur = inv.currency
+  return (
+    <div className="dt-thermal" style={{ ...T, width: '72mm', fontSize: '11px' }}>
+      <ThermalHead b={b} title={inv.status === 'cancelled' ? 'INVOICE — CANCELLED' : 'INVOICE'} no={inv.number} />
+      <TRow k="Date" v={fmtDate(inv.issueDate)} />
+      <TRow k="Due" v={fmtDate(inv.dueDate)} />
+      <TRow k="Customer" v={inv.clientName} />
+      <div style={{ borderTop: '1px dashed #000', margin: '2mm 0' }} />
+      {inv.lines.map((l, i) => (
+        <div key={i} style={{ marginBottom: '1mm' }}>
+          <div>{l.description}</div>
+          <TRow k={`${l.qty} × ${money(l.rate, '')}`} v={money(l.amount, '')} />
+        </div>
+      ))}
+      <div style={{ borderTop: '1px dashed #000', margin: '2mm 0' }} />
+      <TRow k="Subtotal" v={money(inv.subtotal, cur)} />
+      {inv.discount > 0 && <TRow k="Discount" v={`− ${money(inv.discount, cur)}`} />}
+      {inv.taxAmount > 0 && <TRow k={`${b.taxName || 'Tax'} (${inv.taxRate}%)`} v={money(inv.taxAmount, cur)} />}
+      <TRow k="TOTAL" v={money(inv.total, cur)} bold />
+      <TRow k="Paid" v={money(inv.paid, cur)} />
+      <TRow k="Balance due" v={money(inv.status === 'cancelled' ? 0 : inv.balance, cur)} bold />
+      {qr && <div style={{ textAlign: 'center', marginTop: '2mm' }}><img src={qr} alt="Verification QR code" style={{ width: '28mm', height: '28mm', display: 'block', margin: '0 auto' }} /><div style={{ fontSize: '9px' }}>Scan to verify</div></div>}
+      <div style={{ fontSize: '9px', textAlign: 'center', marginTop: '1mm', wordBreak: 'break-all' }}>{url}</div>
+      {b.invoiceFooter && <div style={{ fontSize: '9.5px', textAlign: 'center', marginTop: '2mm' }}>{b.invoiceFooter}</div>}
+    </div>
+  )
+}
+
+/** Payment receipt for an 80 mm thermal printer. */
+export function ThermalReceipt({ inv, pay, b }: { inv: Invoice; pay: InvoicePayment; b: Branding }) {
+  const cur = inv.currency
+  return (
+    <div className="dt-thermal" style={{ ...T, width: '72mm', fontSize: '11px' }}>
+      <ThermalHead b={b} title={pay.cancelled ? 'RECEIPT — VOID' : 'PAYMENT RECEIPT'} no={pay.receiptNo} />
+      <TRow k="Date" v={fmtDate(pay.date)} />
+      <TRow k="Received from" v={inv.clientName} />
+      <TRow k="Invoice" v={inv.number} />
+      <TRow k="Method" v={pay.method || '—'} />
+      {pay.reference && <TRow k="Reference" v={pay.reference} />}
+      <div style={{ borderTop: '1px dashed #000', margin: '2mm 0' }} />
+      <TRow k="AMOUNT" v={money(pay.amount, cur)} bold />
+      <TRow k="Invoice total" v={money(inv.total, cur)} />
+      <TRow k="Balance now" v={money(inv.status === 'cancelled' ? 0 : inv.balance, cur)} />
+      <div style={{ borderTop: '1px dashed #000', margin: '2mm 0' }} />
+      <div style={{ fontSize: '9.5px', textAlign: 'center' }}>{b.invoiceFooter || 'Thank you for your payment.'}</div>
+    </div>
+  )
+}

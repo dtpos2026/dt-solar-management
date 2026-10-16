@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   Building2,
+  Check,
   Clock,
   CreditCard,
   ExternalLink,
@@ -37,6 +38,7 @@ import {
 } from '../lib/branding'
 import { compressImageFile, type CompressOptions } from '../lib/imageFile'
 import { errorMessage, fmtDateTime } from '../lib/format'
+import { SAVE_DEADLINE_MS, withDeadline } from '../lib/deadline'
 import { DEFAULT_BRANDING, type Branding } from '../lib/types'
 import { SigningKeyPanel } from './SigningKey'
 
@@ -100,24 +102,36 @@ export function Settings() {
   const tab: TabId = TABS.some((t) => t.id === tabParam) ? (tabParam as TabId) : 'branding'
   const setTab = (t: TabId) => setParams(t === 'branding' ? {} : { tab: t }, { replace: true })
 
-  const [draft, setDraft] = useState<Branding>({ ...DEFAULT_BRANDING })
-  const [timeout, setTimeoutMin] = useState(30)
+  // `base` = the stored values the form was last synced from. Unsaved edits are measured against it (not against the
+  // live documents), so loading the stored settings never counts as an edit and always fills the form.
+  const [base, setBase] = useState<{ b: Branding; t: number }>(() => ({ b: st.branding, t: st.sessionTimeoutMin }))
+  const [draft, setDraft] = useState<Branding>(() => st.branding)
+  const [timeout, setTimeoutMin] = useState(st.sessionTimeoutMin)
   const [tried, setTried] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [flash, setFlash] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
+  const [savedTick, setSavedTick] = useState(false)
+  const [flash, setFlash] = useState<{ tone: 'success' | 'error' | 'warn'; text: string } | null>(null)
 
   const clean = useMemo(() => cleanBranding(draft), [draft])
-  const changed = useMemo(() => changedBrandingFields(st.branding, clean), [st.branding, clean])
-  const dirty = changed.length > 0 || timeout !== st.sessionTimeoutMin
+  const baseClean = useMemo(() => cleanBranding(base.b), [base.b])
+  const changed = useMemo(() => changedBrandingFields(baseClean, clean), [baseClean, clean])
+  const dirty = changed.length > 0 || timeout !== base.t
   const dirtyRef = useRef(false)
   dirtyRef.current = dirty
 
   // Follow the stored settings while the form has no unsaved edits (initial load, saves from another tab / admin).
   useEffect(() => {
-    if (st.loading || dirtyRef.current) return
+    if (dirtyRef.current) return
+    setBase({ b: st.branding, t: st.sessionTimeoutMin })
     setDraft(st.branding)
     setTimeoutMin(st.sessionTimeoutMin)
   }, [st.loading, st.branding, st.sessionTimeoutMin])
+
+  useEffect(() => {
+    if (!savedTick) return
+    const t = setTimeout(() => setSavedTick(false), 2500)
+    return () => clearTimeout(t)
+  }, [savedTick])
 
   // Warn before leaving the page with unsaved edits.
   useEffect(() => {
@@ -144,11 +158,24 @@ export function Settings() {
       return
     }
     setBusy(true)
+    setSavedTick(false)
+    const savedText = (fields: string[]) =>
+      fields.length ? `Settings saved (${fields.length} change${fields.length === 1 ? '' : 's'}). The public copy for the invoice verification page was updated too.` : 'Settings saved.'
     try {
-      const fields = await saveSettings(st.branding, draft, st.sessionTimeoutMin, timeout)
+      const r = await withDeadline(saveSettings(st.branding, draft, st.sessionTimeoutMin, timeout, { full: !st.saved }), SAVE_DEADLINE_MS)
+      setBase({ b: clean, t: timeout })
       setDraft(clean)
       setTried(false)
-      setFlash({ tone: 'success', text: fields.length ? `Settings saved (${fields.length} change${fields.length === 1 ? '' : 's'}). The public copy for the invoice verification page was updated too.` : 'Settings saved.' })
+      if (r.done) {
+        setSavedTick(true)
+        setFlash({ tone: 'success', text: savedText(r.value) })
+      } else {
+        setFlash({ tone: 'warn', text: 'Saving is taking longer than usual (slow or no connection). The changes are kept in this tab and upload automatically when the connection is back — keep the tab open.' })
+        r.pending.then(
+          (fields) => { setSavedTick(true); setFlash({ tone: 'success', text: savedText(fields) }) },
+          (e) => setFlash({ tone: 'error', text: `Settings could not be saved: ${errorMessage(e)}` })
+        )
+      }
     } catch (e) {
       setFlash({ tone: 'error', text: errorMessage(e) })
     } finally {
@@ -157,6 +184,7 @@ export function Settings() {
   }
 
   const discard = () => {
+    setBase({ b: st.branding, t: st.sessionTimeoutMin })
     setDraft(st.branding)
     setTimeoutMin(st.sessionTimeoutMin)
     setTried(false)
@@ -200,7 +228,7 @@ export function Settings() {
         title="Settings"
         sub={
           st.loading
-            ? 'Loading…'
+            ? st.cached ? 'Refreshing…' : 'Loading…'
             : st.updatedAt
               ? `Digital Target branding, invoices, payments, support and portal options · last saved ${fmtDateTime(st.updatedAt)}${st.updatedBy ? ` by ${st.updatedBy}` : ''}`
               : 'Digital Target branding, invoices, payments, support and portal options'
@@ -209,8 +237,9 @@ export function Settings() {
           canEdit && tab !== 'key' ? (
             <>
               <button className="btn btn-secondary" onClick={discard} disabled={!dirty || busy}><RotateCcw className="h-4 w-4" />Discard</button>
-              <button className="btn btn-primary" onClick={save} disabled={!dirty || busy}>
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Save changes
+              <button className="btn btn-primary" onClick={save} disabled={!dirty || busy || st.loading} aria-live="polite">
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : savedTick && !dirty ? <Check className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+                {busy ? 'Saving…' : savedTick && !dirty ? 'Saved' : 'Save changes'}
               </button>
             </>
           ) : null
@@ -232,10 +261,10 @@ export function Settings() {
 
       {tab === 'key' ? (
         <SigningKeyPanel />
-      ) : st.loading ? (
+      ) : st.loading && !st.cached ? (
         <div className="card"><Loading label="Loading settings…" /></div>
       ) : (
-        <fieldset disabled={!canEdit || busy} className="min-w-0">
+        <fieldset disabled={!canEdit || busy || st.loading} className="min-w-0" aria-busy={st.loading}>
           {tab === 'branding' && (
             <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
               <Section title="Company" sub="Digital Target’s details on invoices, receipts and the public invoice verification page.">
@@ -417,9 +446,9 @@ export function Settings() {
 
       {canEdit && dirty && tab !== 'key' && (
         <div className="fixed right-6 bottom-5 z-40 flex items-center gap-3 rounded-xl border border-[#e2d6f3] bg-white px-4 py-2.5 shadow-xl" role="status">
-          <span className="text-[13px] font-semibold text-[#3d096d]">Unsaved changes{changed.length ? ` (${changed.length + (timeout !== st.sessionTimeoutMin ? 1 : 0)})` : ''}</span>
+          <span className="text-[13px] font-semibold text-[#3d096d]">Unsaved changes{changed.length ? ` (${changed.length + (timeout !== base.t ? 1 : 0)})` : ''}</span>
           <button className="btn btn-secondary btn-sm" onClick={discard} disabled={busy}>Discard</button>
-          <button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Save</button>
+          <button className="btn btn-primary btn-sm" onClick={save} disabled={busy || st.loading}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{busy ? 'Saving…' : 'Save'}</button>
         </div>
       )}
     </div>

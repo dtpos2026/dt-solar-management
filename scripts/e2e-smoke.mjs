@@ -137,6 +137,18 @@ for (const [name, hash] of screens) {
   await page.screenshot({ path: join(out, `${name}.png`) })
 }
 
+// CSV import / export tab + an IPC dry run of a CSV import (nothing is written)
+await page.evaluate(() => (window.location.hash = '#/backup'))
+await page.waitForTimeout(800)
+await page.getByRole('button', { name: 'CSV import / export' }).first().click()
+await page.waitForTimeout(800)
+await page.screenshot({ path: join(out, '25a-backup-csv.png'), fullPage: true })
+const csvDry = await page.evaluate(() =>
+  window.dt.call('import.analyze', { kind: 'customers', text: '\uFEFFName,Phone,Opening balance,Opening date\n"Ali, ""A""",0300,1500.5,31/01/2026\n', dateFormat: 'dmy', dryRun: true })
+)
+if (csvDry.errors.length || !csvDry.dryRun?.reconciliation.matched) throw new Error('CSV dry run failed: ' + JSON.stringify(csvDry.errors))
+console.log('CSV dry run OK:', JSON.stringify(csvDry.counts))
+
 // Project detail & a document view
 const projects = await page.evaluate(() => window.dt.call('projects.list', {}))
 const school = projects.find((p) => p.status === 'in_progress') ?? projects[0]

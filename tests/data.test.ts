@@ -171,7 +171,7 @@ describe('CSV import', () => {
     expect(map.openingQty).toBe(7)
     const a = analyzeImport(ctx, { kind: 'products', text: PRODUCTS })
     expect(a.errors).toEqual([])
-    expect(a.reconciliation).toEqual({ rows: 2, valid: 2, openingQty: 12, openingValue: 2950, openingBalance: 0 })
+    expect(a.reconciliation).toEqual({ rows: 2, valid: 2, openingQty: 12, openingValue: 2950, openingBalance: 0, amount: 0 })
     const before = (ctx.db.prepare('SELECT COUNT(*) c FROM products').get() as { c: number }).c
     const r = runImport(ctx, { kind: 'products', text: PRODUCTS, fileName: 'p.csv' })
     expect(r.imported).toBe(2)
@@ -183,8 +183,10 @@ describe('CSV import', () => {
     const run = ctx.db.prepare('SELECT * FROM import_runs WHERE id = ?').get(r.runId) as { imported: number; mapping: string }
     expect(run.imported).toBe(2)
     expect(JSON.parse(run.mapping).name).toBe('Product Name')
-    // importing the same file again is rejected (duplicates)
-    expect(() => runImport(ctx, { kind: 'products', text: PRODUCTS })).toThrow(/Nothing was imported/)
+    // importing the same file again: duplicates are skipped (default policy), nothing changes
+    const again = runImport(ctx, { kind: 'products', text: PRODUCTS })
+    expect([again.imported, again.updated, again.skipped]).toEqual([0, 0, 2])
+    expect(qtyOf(ctx, inv.id)).toBe(2)
   })
 
   it('validation errors write nothing', () => {
@@ -211,10 +213,11 @@ describe('CSV import', () => {
     expect(sup.reconciliation.matched).toBe(true)
     const st = ctx.db.prepare("SELECT type, opening_balance FROM parties WHERE name = 'Solar Traders'").get() as { type: string; opening_balance: number }
     expect(st).toEqual({ type: 'supplier', opening_balance: -2500 })
-    // second row passes validation but fails inside the service (name > 150) -> whole file rolled back
+    // one bad row (name > 150) -> nothing from the file is written
     const n = (ctx.db.prepare('SELECT COUNT(*) c FROM parties').get() as { c: number }).c
     const failing = `Name,Phone\nGood One,1\n${'X'.repeat(160)},2\n`
-    expect(() => runImport(ctx, { kind: 'customers', text: failing })).toThrow(/Row 3/)
+    expect(analyzeImport(ctx, { kind: 'customers', text: failing }).errors[0]).toMatchObject({ row: 3 })
+    expect(() => runImport(ctx, { kind: 'customers', text: failing })).toThrow(/Nothing was imported/)
     expect((ctx.db.prepare('SELECT COUNT(*) c FROM parties').get() as { c: number }).c).toBe(n)
     expect(ctx.db.prepare("SELECT 1 FROM parties WHERE name = 'Good One'").get()).toBeUndefined()
   })

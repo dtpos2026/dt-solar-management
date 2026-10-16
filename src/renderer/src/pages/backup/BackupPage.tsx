@@ -4,7 +4,7 @@ import { AlertTriangle, CalendarClock, Download, FileJson, CheckCircle2, Databas
 import { api } from '../../api'
 import { useApp, useCan } from '../../store'
 import { Badge, Button, Card, Empty, Field, Kv, Loading, Modal, NumberInput, PageHeader, Select, Tabs, cx, promptDialog, toast } from '../../components/ui'
-import { ImportPanel } from './ImportPanel'
+import { CsvPanel } from './ImportPanel'
 import { DataTable } from '../../components/DataTable'
 import { useLoad } from '../../lib/hooks'
 import { date } from '../../lib/format'
@@ -124,13 +124,14 @@ export function BackupPage(): JSX.Element {
         <Tabs<PageTab>
           tabs={[
             { key: 'backup', label: 'Backups' },
-            { key: 'import', label: 'Import data' }
+            { key: 'import', label: 'CSV import / export' }
           ]}
           value={tab}
           onChange={setTab}
         />
       )}
-      {tab === 'import' && canImport ? <ImportPanel /> : <BackupPanel />}
+      {tab === 'import' && canImport ? <CsvPanel /> : <BackupPanel />}
+      {tab !== 'import' && !canImport && canBackup && <CsvPanel />}
       {tab !== 'import' && canBackup && <JsonBackupCard />}
     </div>
   )

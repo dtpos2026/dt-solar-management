@@ -333,19 +333,20 @@ describe('activity log', () => {
     expect(lines[1].endsWith(',no,"{""uid"":""u1""}",z')).toBe(true)
   })
 
-  it('retention: only unprotected entries older than 90 days', () => {
+  it('retention: only non-security entries older than 90 days', () => {
     const now = Date.UTC(2026, 9, 15)
     const old = now - (RETENTION_DAYS + 1) * DAY
     expect(isRetentionDeletable({ category: 'general', atMs: old }, now)).toBe(true)
     expect(isRetentionDeletable({ category: 'settings', atMs: old }, now)).toBe(true)
     expect(isRetentionDeletable({ category: 'support', atMs: old }, now)).toBe(true)
-    for (const c of ['security', 'financial', 'license'] as const) expect(isRetentionDeletable({ category: c, atMs: old }, now)).toBe(false)
+    expect(isRetentionDeletable({ category: 'security', atMs: old }, now)).toBe(false)
+    for (const c of ['financial', 'license'] as const) expect(isRetentionDeletable({ category: c, atMs: old }, now)).toBe(true)
     expect(isRetentionDeletable({ category: 'general', atMs: now - 89 * DAY }, now)).toBe(false)
     // just over 90 days is still inside the 1 h safety margin used against clock skew
     expect(isRetentionDeletable({ category: 'general', atMs: now - RETENTION_DAYS * DAY - 60_000 }, now)).toBe(false)
     expect(isRetentionDeletable({ category: 'general', atMs: null }, now)).toBe(false)
-    // legacy entries count as license entries → kept
-    expect(isRetentionDeletable(auditRowFromData('l', { action: 'x', at: { toMillis: () => old } }), now)).toBe(false)
+    // legacy entries count as license entries → deletable like the rules (category defaults to 'license')
+    expect(isRetentionDeletable(auditRowFromData('l', { action: 'x', at: { toMillis: () => old } }), now)).toBe(true)
     expect(retentionCutoff(now)).toBe(now - 90 * DAY - 3_600_000)
   })
 

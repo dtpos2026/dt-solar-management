@@ -72,7 +72,7 @@ export function Dashboard(): JSX.Element {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_300px]">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
         <div className="space-y-5">
           {/* Hero */}
           <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#0f2557] via-[#174a8f] to-[#1f7a4d] p-6 text-white shadow-md">
@@ -110,7 +110,7 @@ export function Dashboard(): JSX.Element {
                 {k.inventoryValue !== null && <StatCard label="Inventory Value" value={money(k.inventoryValue)} icon={<Boxes className="h-5 w-5" />} tone="info" sub="at average cost" onClick={() => nav('/inventory')} />}
               </div>
 
-              <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.6fr_1fr]">
+              <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
                 <Card title="Sales & Purchases Overview" actions={<span className="text-[12px] text-muted">Last 12 months</span>}>
                   <BarChart
                     data={d.months}
@@ -173,7 +173,7 @@ export function Dashboard(): JSX.Element {
                 )}
               </div>
 
-              <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.4fr_1fr]">
+              <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
                 {can('projects.view') && (
                   <Card title="Recent Solar Projects" actions={<Button size="sm" variant="ghost" onClick={() => nav('/projects')}>View all</Button>} pad={false}>
                     {d.recentProjects.length === 0 ? (

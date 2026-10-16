@@ -809,7 +809,7 @@ function RolesTab(): JSX.Element {
   if (roles.loading && !roles.data) return <Loading />
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[300px_1fr]">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
       <Card
         title="Roles"
         pad={false}

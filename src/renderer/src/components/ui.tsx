@@ -182,7 +182,7 @@ export function Card({ children, className, title, actions, pad = true }: { chil
           <div className="flex items-center gap-2">{actions}</div>
         </div>
       )}
-      <div className={pad ? 'p-4' : ''}>{children}</div>
+      <div className={pad ? 'p-4' : 'min-w-0 overflow-x-auto'}>{children}</div>
     </div>
   )
 }

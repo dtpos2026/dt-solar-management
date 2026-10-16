@@ -38,6 +38,7 @@ interface Props<T> {
 /** Date / timestamp columns are right-aligned like amounts so they line up (tabular figures). */
 const DATE_KEY = /^(date|due_date|last_date|created_at|updated_at|last_login_at|modified|closed_at|valid_until|expiry_date|start_date|end_date)$/
 /** Short identifiers (document numbers, SKUs, codes) must not break across lines. */
+/** The row-actions column (key "actions") stays pinned to the right edge when a wide table scrolls sideways. */
 const ID_KEY = /^(number|code|sku|doc_number|ref|reference)$/
 function alignOf<T>(c: Column<T>): 'left' | 'right' | 'center' {
   return c.align ?? (DATE_KEY.test(c.key) ? 'right' : 'left')
@@ -128,7 +129,7 @@ export function DataTable<T>({ rows, columns, loading, onRowClick, searchable = 
                   <th
                     key={c.key}
                     style={{ width: c.width, textAlign: alignOf(c) }}
-                    className={cx(c.sortable !== false && 'cursor-pointer select-none hover:text-ink')}
+                    className={cx(c.sortable !== false && 'cursor-pointer select-none hover:text-ink', c.key === 'actions' && 'sticky-act')}
                     onClick={() => c.sortable !== false && setSort((s) => (s?.key === c.key ? (s.dir === 1 ? { key: c.key, dir: -1 } : null) : { key: c.key, dir: 1 }))}
                   >
                     <span className={cx('inline-flex items-center gap-1', alignOf(c) === 'right' && 'flex-row-reverse')}>
@@ -143,7 +144,7 @@ export function DataTable<T>({ rows, columns, loading, onRowClick, searchable = 
               {visible.map((row, i) => (
                 <tr key={rowKey ? rowKey(row, i) : ((row as { id?: number }).id ?? i)} className={cx(onRowClick && 'clickable', rowClassName?.(row))} onClick={() => onRowClick?.(row)}>
                   {cols.map((c) => (
-                    <td key={c.key} className={cx(dense && '!py-1.5', alignOf(c) === 'right' && 'num text-right', alignOf(c) === 'center' && 'text-center', ID_KEY.test(c.key) && 'nowrap', c.className)}>
+                    <td key={c.key} className={cx(dense && '!py-1.5', alignOf(c) === 'right' && 'num text-right', alignOf(c) === 'center' && 'text-center', ID_KEY.test(c.key) && 'nowrap', c.key === 'actions' && 'sticky-act', c.className)}>
                       {c.render ? c.render(row) : ((rawValue(c, row) as ReactNode) ?? '—')}
                     </td>
                   ))}

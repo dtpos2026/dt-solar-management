@@ -265,7 +265,7 @@ function DayClosing(): JSX.Element {
           </Card>
           {!isClosed && (
             <Card title="Close the day">
-              <div className="grid gap-4 md:grid-cols-[220px_220px_1fr]">
+              <div className="grid gap-4 md:grid-cols-[220px_220px_minmax(0,1fr)]">
                 <Field label="Counted cash" hint="Count the cash in hand (cash accounts)">
                   <NumberInput value={counted ?? ''} min={0} placeholder={String(f.cash.expected)} onChange={(v) => setCounted(Number.isFinite(v) ? v : null)} />
                 </Field>

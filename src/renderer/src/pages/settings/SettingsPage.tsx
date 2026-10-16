@@ -209,7 +209,7 @@ function GeneralTab({ draft, set, editable }: TabProps): JSX.Element {
   const word = String(draft.currency_word ?? '').trim() || 'Rupees'
   const sample = 1250750.5
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
       <Card title={<SectionTitle icon={<Coins />} title="Currency & money format" subtitle="Used on screens, reports and printed documents" />}>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Currency symbol" hint="Shown before amounts, e.g. Rs. or ₨">

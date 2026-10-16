@@ -245,6 +245,19 @@ textarea.input {
 .tbl tfoot td.text-right {
   white-space: nowrap;
 }
+/* Row actions stay reachable when a wide table scrolls horizontally (high Windows scaling). */
+.tbl th.sticky-act,
+.tbl td.sticky-act {
+  position: sticky;
+  right: 0;
+  white-space: nowrap;
+}
+.tbl td.sticky-act {
+  background: var(--surface);
+}
+.tbl th.sticky-act {
+  z-index: 2;
+}
 .tbl tbody tr:hover td {
   background: var(--surface-2);
 }

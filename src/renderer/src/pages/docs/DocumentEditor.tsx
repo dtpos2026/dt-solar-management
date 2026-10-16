@@ -490,7 +490,7 @@ export function DocumentEditor(): JSX.Element {
         </div>
       </Card>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_380px]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="space-y-4">
           <Card title="Notes & terms">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">

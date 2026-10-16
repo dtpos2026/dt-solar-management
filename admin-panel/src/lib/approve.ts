@@ -89,6 +89,17 @@ export class NeedsReassignmentError extends Error {
   }
 }
 
+/**
+ * A business refusal (invalid key, license not usable, computer suspended / revoked, cannot replace): an online
+ * request is rejected with this message. Any other error (network, permission, signing) leaves it pending.
+ */
+export class ActivationRefusedError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ActivationRefusedError'
+  }
+}
+
 export interface IssueResult {
   license: License
   cert: SignedCertificate
@@ -110,21 +121,21 @@ export async function issueForDevice(
   opts: IssueOptions = {}
 ): Promise<IssueResult> {
   const found = await findLicenseByKey(licenseKey)
-  if (!found) throw new Error('Invalid license key')
+  if (!found) throw new ActivationRefusedError('Invalid license key')
   const replaceId = opts.replaceDeviceId?.trim() || ''
   const { license, kind } = await runTransaction(db, async (tx) => {
     const licSnap = await tx.get(licenseRef(found.id))
     const devSnap = await tx.get(deviceRef(found.id, dev.deviceId))
     const oldSnap = replaceId ? await tx.get(deviceRef(found.id, replaceId)) : null
     const statusSnap = replaceId ? await tx.get(licenseStatusRef(found.id)) : null
-    if (!licSnap.exists()) throw new Error('Invalid license key')
+    if (!licSnap.exists()) throw new ActivationRefusedError('Invalid license key')
     const lic = licenseFromSnap(licSnap)
     const existing = devSnap.exists() ? deviceFromSnap(devSnap) : null
     const plan = classifyActivation(
       { status: lic.status, expiresAtMs: lic.expiresAt ? lic.expiresAt.toMillis() : null, activeDevices: lic.activeDevices, maxDevices: lic.maxDevices },
       existing ? existing.status : null
     )
-    if (plan.kind === 'invalid') throw new Error(plan.reason)
+    if (plan.kind === 'invalid') throw new ActivationRefusedError(plan.reason)
     const label = deviceLabel(dev.deviceName, dev.deviceId)
     const base = { deviceId: dev.deviceId, deviceName: dev.deviceName, os: dev.os, appVersion: dev.appVersion, lastIssuedAt: serverTimestamp(), activationType }
     if (plan.kind === 'reissue') {
@@ -143,7 +154,7 @@ export async function issueForDevice(
       if (!replaceId) throw new NeedsReassignmentError(plan.slotsUsed, plan.maxDevices)
       const old = oldSnap && oldSnap.exists() ? deviceFromSnap(oldSnap) : null
       const err = replaceableError(old ? { deviceId: old.deviceId, status: old.status } : null, dev.deviceId)
-      if (err) throw new Error(err)
+      if (err) throw new ActivationRefusedError(err)
       // Release the replaced computer (slot freed) — same transaction as the activation below.
       tx.update(deviceRef(lic.id, replaceId), { status: 'deactivated', deactivatedAt: serverTimestamp(), statusChangedAt: serverTimestamp(), statusBy: by, statusNote: (opts.note ?? '').trim() || `Replaced by ${dev.deviceName || 'another computer'}` })
       changes[replaceId] = summaryEntry({ ...old!, activatedAt: oldSnap!.data()?.activatedAt ?? null, status: 'deactivated', statusNote: `Replaced by ${dev.deviceName || 'another computer'}` })
@@ -266,7 +277,8 @@ export async function approveRequest(
     return kind === 'reissue' ? 'reissued' : kind === 'reassign' ? 'reassigned' : 'approved'
   } catch (e) {
     if (e instanceof NeedsReassignmentError) return 'needs_reassignment'
-    await rejectRequest(req, (e as Error).message, by)
+    if (!(e instanceof ActivationRefusedError)) throw e
+    await rejectRequest(req, e.message, by)
     return 'rejected'
   }
 }

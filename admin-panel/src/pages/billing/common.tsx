@@ -73,6 +73,8 @@ export function PrintPortal({ children }: { children: ReactNode }) {
           body { background: #fff !important; }
           .dt-print-root { display: block; color: #1a1030; font-size: 12px; }
           .dt-print-root * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .dt-print-root .dt-a4 { width: auto !important; min-height: 270mm !important; padding: 0 !important; box-shadow: none !important; }
+          .dt-print-root .dt-a4 > .absolute.bottom-6 { left: 0; right: 0; bottom: 0; }
         }
       `}</style>
       {children}

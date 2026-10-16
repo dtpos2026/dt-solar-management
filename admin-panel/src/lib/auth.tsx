@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut as fbSignOut, sendPasswordResetEmail, type User } from 'firebase/auth'
-import { doc, onSnapshot, serverTimestamp, setDoc, type DocumentSnapshot } from 'firebase/firestore'
+import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
 import { Clock } from 'lucide-react'
 import { auth, db, BOOTSTRAP_OWNER_EMAIL } from '../firebase'
 import type { AdminDoc } from './types'
@@ -82,12 +82,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   /** Set by signIn(): the next admin evaluation is a fresh sign-in (logged, no stale-session check). */
   const explicitSignIn = useRef(false)
   const lastActivity = useRef(Date.now())
+  /** Re-runs the admin check of the current session (after the owner record is created). */
+  const recheck = useRef<(() => Promise<void>) | null>(null)
 
   /**
-   * One session per Firebase user. The admins/{uid} document is read ONCE, by a live listener that serves both the
-   * sign-in check and later permission changes (disabling / deleting the record signs the admin out at once).
-   * settings/portal (inactivity limit) is listened to in parallel; the shell never waits for it, except when a
-   * remembered session was idle longer than the shortest possible limit and the real limit decides whether it ended.
+   * One session per Firebase user. The shell opens after ONE read (admins/{uid}); the live record listener and the
+   * settings/portal (inactivity limit) listener start afterwards. The limit is only awaited when a remembered session
+   * was idle longer than the shortest possible limit and the real limit decides whether it ended.
    */
   const startSession = useCallback((user: User): (() => void) => {
     let stopped = false
@@ -164,7 +165,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return
         }
         if (isBootstrapOwner(user) && !first.error) {
-          // The listener stays open: creating the owner record (initialiseSuperAdmin) re-evaluates automatically.
+          // initialiseSuperAdmin creates the owner record and re-runs the check.
           setState({ phase: 'bootstrap', user })
           return
         }
@@ -179,39 +180,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    const onAdmin = (s: DocumentSnapshot) => {
-      if (stopped) return
-      if (!s.exists() && s.metadata.fromCache) {
-        // Offline: "missing" only means "not in the local cache".
-        if (!resolved) {
-          latest = { data: null, error: new Error('the portal is offline — check the connection and sign in again.') }
-          if (!evaluating) void evaluate()
-        }
-        return
-      }
-      const data = s.exists() ? (s.data() as AdminDoc) : null
-      latest = { data, error: null }
-      if (!resolved) {
-        if (!evaluating) void evaluate()
-        return
-      }
-      if (!data || data.active === false) {
-        setNotice(data ? 'Your admin account has been disabled. Contact the owner.' : 'Your admin record was removed. Contact the owner.')
-        void fbSignOut(auth)
-        return
-      }
-      setState((st) => (st.phase === 'admin' && JSON.stringify(st.admin) !== JSON.stringify(data) ? { ...st, admin: data } : st))
+    // Live record once the admin is confirmed: permission changes apply at once; disabling / deleting signs out.
+    let liveStop: (() => void) | null = null
+    const startLive = () => {
+      if (liveStop || stopped) return
+      liveStop = onSnapshot(
+        doc(db, 'admins', user.uid),
+        (s) => {
+          if (stopped || !resolved || (!s.exists() && s.metadata.fromCache)) return
+          const data = s.exists() ? (s.data() as AdminDoc) : null
+          latest = { data, error: null }
+          if (!data || data.active === false) {
+            setNotice(data ? 'Your admin account has been disabled. Contact the owner.' : 'Your admin record was removed. Contact the owner.')
+            void fbSignOut(auth)
+            return
+          }
+          setState((st) => (st.phase === 'admin' && JSON.stringify(st.admin) !== JSON.stringify(data) ? { ...st, admin: data } : st))
+        },
+        () => undefined
+      )
     }
-    const adminStop = onSnapshot(doc(db, 'admins', user.uid), onAdmin, (e) => {
-      if (stopped || resolved) return
-      latest = { data: null, error: e }
-      if (!evaluating) void evaluate()
-    })
-    startPortal()
-
+    // First check: one read of admins/{uid}; nothing else is awaited before the shell opens.
+    const check = () =>
+      getDoc(doc(db, 'admins', user.uid)).then(
+        (s) => { latest = { data: s.exists() ? (s.data() as AdminDoc) : null, error: null } },
+        (e) => { latest = { data: null, error: e } }
+      ).then(async () => {
+        if (stopped || evaluating) return
+        await evaluate()
+        if (resolved) startLive()
+      })
+    recheck.current = check
+    void check()
     return () => {
       stopped = true
-      adminStop()
+      if (recheck.current === check) recheck.current = null
+      liveStop?.()
       portalStop?.()
       portalStop = null
     }
@@ -301,7 +305,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (name: string) => {
       const user = auth.currentUser
       if (!user || !isBootstrapOwner(user)) throw new Error('Only the owner account can initialise the Super Admin.')
-      // The live admins/{uid} listener of this session picks the new record up and opens the portal.
       explicitSignIn.current = true
       try {
         await setDoc(doc(db, 'admins', user.uid), {
@@ -317,6 +320,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         explicitSignIn.current = false
         throw e
       }
+      await recheck.current?.()
       void logActivity({ action: 'owner_initialised', category: 'security', target: user.email ?? '', targetType: 'admin', details: 'Owner (Super Admin) record created' }).catch(() => undefined)
     },
     []

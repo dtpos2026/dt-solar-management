@@ -277,7 +277,7 @@ export function StatCard({ icon, label, value, sub, tone = 'brand', loading, to,
         {icon && <span className={cx('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg [&>svg]:h-4 [&>svg]:w-4', STAT_TONES[tone])}>{icon}</span>}
         <span className="min-w-0 text-[12.5px] leading-tight font-semibold text-[#6b5d85]">{label}</span>
       </div>
-      <div className="mt-2 text-[22px] leading-tight font-extrabold text-[#1d1530] tabular-nums">{loading ? <Skeleton className="h-6 w-20" /> : value}</div>
+      <div className="mt-2 text-[20px] leading-tight font-extrabold text-[#1d1530] tabular-nums">{loading ? <Skeleton className="h-6 w-20" /> : value}</div>
       {sub !== undefined && <div className="mt-0.5 min-h-[18px] text-[12px] text-[#7a6d92]">{loading ? <Skeleton className="mt-1 h-3 w-28" /> : sub}</div>}
     </div>
   )

@@ -1,37 +1,30 @@
 # DT Solar Pro v1.1 — implementation checklist
 
-Status keys: [x] done & tested · [~] partial · [ ] not started · [!] blocked (needs credentials / input)
+Status keys: [x] done & tested · [~] partial · [!] blocked (needs credentials / input / hardware)
 
-## Foundation (shared)
-- [x] Desktop schema v2 migration (item details, PIN, archive flags, day/month closing, templates, support queue, WhatsApp log, import runs)
-- [x] New desktop permissions + automatic upgrade of built-in roles (`PERMISSION_UPGRADES`)
-- [x] IPC route areas (`src/main/ipc/routes/*.ts`), Settings sections registry (`pages/settings/sections.tsx`)
-- [x] License payload v1.1 fields (planType, clientId, maxDevices, poweredBy, detached) + detached evaluation
-- [x] Cloud data model (`admin-panel/DATA_MODEL.md`) and Firestore rules with role-based admin permissions
-- [x] Super Admin shell: 11-item sidebar, RBAC hooks (`useCan`), activity logger, public `/v/<token>` entry
+## Desktop app
+- [x] Schema v2 + v8 migrations (item details, PIN, archive, day/month closing, templates, support queue, WhatsApp log, imports); built-in roles get new permissions automatically
+- [x] Documents: item name + item description in editor, preview, every print layout and PDF; invoice delete rules (unpaid, unreferenced, open period, permission, audit snapshot); template designer (classic / modern / compact / 80 mm thermal) with live preview and per-print customisation; "Powered by Digital Target" only when the Super Admin enables it
+- [x] Catalog: product delete vs archive/restore, bulk category change, category delete-with-reassign; project delete vs archive/restore/cancel; firm activate/deactivate; firm limit on create + reactivate; firm isolation fixes; assign shared records to firms
+- [x] Data: day closing + month closing (counted cash, difference, closing backup, reopen, print, CSV); closed periods lock transactions; backup history / verify / export / restore; firm JSON export; hourly in-app backup scheduler; CSV import (products, customers, suppliers) with mapping, validation, reconciliation, rollback
+- [x] Access: user tiles + PIN or password login, PIN lockout, PIN unlock of the lock screen, forced password change gate; Printers page (OS printer list, per-document printers, paper size incl. 80/58 mm, direct print, test print)
+- [x] Cloud: setup-wizard License step (activate with registration details / 15-day trial / offline), heartbeat every 15 min, consented location (off / approximate / manual), support messages with offline queue, certificate refresh (renew / plan / limits / detach), License & About inside Settings
+- [x] Assist: offline Urdu / English help assistant (58 articles, Roman-Urdu, typo tolerant); WhatsApp Web module inside the app (QR link device, stays linked), Send on WhatsApp (PDF + chat + drag tile + send log, no automation)
+- [x] White-label: sidebar shows the active firm's name and logo; Digital Target stays in the footer
 
-## Desktop areas
-- [ ] documents — item name + description in editor/preview/print/PDF, invoice delete rules, template designer, thermal layout, Powered-by toggle
-- [x] catalog — product delete/archive/restore + bulk category + category delete-with-reassign, project delete/archive/cancel (list + detail), firm activate/deactivate + active-firm limit, firm isolation fixes, assign shared records (unit tested; e2e pending integrator run)
-- [x] documents — item name + description in editor/preview/print/PDF, invoice delete rules, template designer, thermal layout, Powered-by from license (unit-tested; UI e2e left to the integrator run)
-- [ ] catalog — product delete/archive + category change, project delete/archive, firm activate/deactivate, firm isolation + limit tests
-- [ ] data — day/month closing + closing backup, backup history/export/import/validation, CSV import + reconciliation
-- [x] access — user selection + PIN login (lockout 5/5min), PIN lock screen, forced password change gate, printers page + per-document printer + paper size + direct print, test print (unit-tested; consolidated e2e pending)
-- [x] data — day/month closing + closing backup + reopen + print/CSV, backup history (kind/integrity/firm/user) + verify/export/restore + firm JSON export + in-app daily schedule, CSV import + mapping + validation + reconciliation (unit-tested; UI e2e pending integrator run)
-- [ ] access — user selection + PIN login, PIN lock screen, forced password change, printers page + per-document printer, test print
-- [ ] cloud — registration in setup wizard, heartbeat + consented location, support messages with offline queue, certificate refresh, License & About in Settings
-- [ ] access — user selection + PIN login, PIN lock screen, forced password change, printers page + per-document printer, test print
-- [x] cloud — registration in setup wizard (key + registration / trial / offline), heartbeat + consented location (off/approximate/manual), support messages with offline queue, certificate refresh + detached lifetime, License & About in Settings (unit tests: tests/cloud.test.ts; emulator REST check vs real rules: scripts/cloud-emulator-check.mjs — 32/32; Playwright e2e left to integrator)
-- [ ] assist — offline Urdu/English help assistant, built-in WhatsApp Web module (QR link device) + send document flow with log
-- [~] assist — [x] offline Urdu/English help assistant (58 bilingual articles, EN/Urdu/Roman-Urdu search with synonyms, BM25, typo tolerance, low-confidence fallback; unit tested) · [x] WhatsApp send log service (draft/phone normalisation/templates/dedupe/status flow; unit tested) · [~] built-in WhatsApp Web module (WebContentsView, persist:whatsapp partition, QR link, open chat, unlink, notifications), Send on WhatsApp dialog + outbox PDF + drag tile, Settings → WhatsApp — typecheck/build pass, Electron e2e not run yet (integrator); migration 8 widens whatsapp_log.method
+## Super Admin portal (Firebase Spark: Firestore + Auth only)
+- [x] Role-based admins (owner, manager, sales, billing, support, technical, custom) enforced by Firestore rules; 28 rules tests on the emulator
+- [x] Dashboard, Clients, Licenses (generate, suspend, reactivate, revoke, renew, change plan / firm / device limits, history, lifetime detach), Devices (+ activation requests, offline activation), Device Map (consented locations only)
+- [x] Billing (invoices, payments, receipts, reports, print / PDF), public QR verification page `/v/<token>`, Support conversations
+- [x] Settings (branding, invoice, bank, payment QR, support, portal, signing key), Activity Log (filters, CSV, archive, retention), Verify Key
 
-## Super Admin portal areas
-- [x] portal-admin — Admins (RBAC users), Settings (branding/invoice/bank/QR/signing key), Activity Log (filters/export/archive/retention), Verify Key, rules tests
-- [ ] portal-licensing — Dashboard metrics/charts, Clients, Licenses lifecycle (renew/plan/limits/detach/history), Devices (+requests), Device Map
-- [ ] portal-admin — Admins (RBAC users), Settings (branding/invoice/bank/QR/signing key), Activity Log (filters/export/archive/retention), Verify Key, rules tests
-- [x] portal-licensing — Dashboard metrics/charts, Clients, Licenses lifecycle (renew/plan/limits/detach/history), Devices (+requests), Device Map (unit-tested; browser e2e left to integrator)
-- [x] portal-billing — Billing invoices/payments/receipts/reports/PDF, public QR verification page, Support conversations (unit-tested; browser e2e left to the consolidated integrator run)
+## Verification (latest run)
+- [x] Typecheck (desktop + portal), 218 unit tests, both production builds
+- [x] Desktop end-to-end smoke: wizard (trial), every screen incl. v1.1 screens, 8 print previews + PDFs — 0 errors
+- [x] Portal browser smoke on emulators: login, Initialise Super Admin, all pages, Verify Key, public verification (valid + invalid) — 0 page errors
+- [x] Desktop ↔ cloud REST calls against the real rules on the emulator (32 checks)
 
 ## Blocked / needs input
-- [!] External backup conversion: no sample backup was supplied — generic CSV import pipeline provided instead
+- [!] External backup conversion: no sample file of the other software was supplied — CSV import provided (docs/IMPORT.md)
 - [!] Multi-factor auth for admins: needs Firebase Identity Platform (paid upgrade)
+- [!] Not testable here: real Windows printers, the real web.whatsapp.com QR (needs internet on the customer PC), the Windows installer (built on Windows with npm run dist)

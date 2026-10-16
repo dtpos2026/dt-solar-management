@@ -18,6 +18,17 @@ licenses through Firebase on the free Spark plan (Firestore + Auth only, no Clou
 - Animated splash screen, 7 themes, auto-lock, automatic daily backups, restore with integrity check
 - Offline license with signed certificates, a 15-day trial, online (approval) or offline activation
 
+## New in v1.1
+- Setup wizard starts with **License**: activate with a key (company, owner, phone, address are sent for approval) or start the 15-day trial
+- Invoices and quotations print the **item name and item description**; **Invoice templates** designer (classic, modern, compact, 80 mm thermal)
+- Delete unpaid invoices (with audit snapshot), delete/archive products and projects, change categories
+- **Day Closing** and month closing with automatic closing backup; closed days are locked
+- **PIN login** with user tiles, **Printers** page (choose printer per document, test print)
+- **WhatsApp** module in the sidebar: WhatsApp Web inside the software — scan the QR once (WhatsApp → Linked devices),
+  then "Send on WhatsApp" on any invoice prepares the PDF and opens the chat; drag the PDF into the chat and press Send
+- **Help & Support**: offline Urdu / English help assistant; Settings → Support messages to Digital Target (works offline, sends later)
+- Sidebar shows the customer's own firm name and logo; License & About moved to Settings
+
 ## Build the Windows installer (on your Windows PC)
 Install **Node.js 22 LTS** (https://nodejs.org). Open **Command Prompt** in the project folder:
 
@@ -50,6 +61,14 @@ The panel goes live at **https://dt-soalr-mangement.web.app**. To log in:
 3. Open **Signing key** and load `keys\license-private.pem`.
 
 To run the panel locally instead, use `npm run dev` and open http://localhost:5180.
+
+**After updating to v1.1, deploy the rules and hosting again** (same two commands). The owner record is upgraded
+automatically; add more admin users under **Admins** (each gets a role and permissions).
+
+Portal pages: Dashboard, Clients, Licenses, Devices, Device Map, Billing, Support, Verify Key, Activity Log, Admins,
+Settings. Billing invoices carry a QR code that opens `https://dt-soalr-mangement.web.app/v/<code>` — a public page
+that confirms the invoice is genuine (it does not prove payment). Branding, bank details and the signing key are in
+**Settings**. Optional: `npm run test:rules` runs the Firestore rules tests (needs firebase-tools and Java).
 
 ## Selling a license
 1. Admin panel → **Licenses → New license** (choose plan, limits and expiry) → copy the **license key**.

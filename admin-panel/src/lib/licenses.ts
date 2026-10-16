@@ -382,37 +382,61 @@ function cleanInput(i: LicenseInput) {
   }
 }
 
-export async function createLicense(input: LicenseInput, by: string, action = 'license_created'): Promise<{ id: string; licenseKey: string }> {
+/**
+ * Creates or updates the client of a license INSIDE the license transaction (reads first, then writes) and returns
+ * the client id to link. Built by clientsDb.clientSyncFor (matching by phone / company + owner, no duplicates).
+ */
+export type ClientLinker = (tx: Transaction) => Promise<{ clientId: string; label: string; created: boolean }>
+
+export async function createLicense(
+  input: LicenseInput,
+  by: string,
+  action = 'license_created',
+  linkClient?: ClientLinker
+): Promise<{ id: string; licenseKey: string; clientId: string; client?: { label: string; created: boolean } }> {
   const data = cleanInput(input)
   if (!data.businessName && !data.customerName) throw new Error('Enter the business name or customer name.')
   const planErr = planTermsError(data.planType, data.expiresAt ? data.expiresAt.toMillis() : null)
   if (planErr) throw new Error(planErr)
   const licenseKey = await generateUniqueKey()
   const ref = doc(licensesCol())
-  const batch = writeBatch(db)
-  batch.set(ref, {
-    licenseKey,
-    ...data,
-    status: 'active',
-    detached: false,
-    paymentStatus: 'none',
-    activatedAt: null,
-    activeDevices: 0,
-    devicesSummary: {},
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-    createdBy: by
+  const write = (w: Writer, clientId: string, clientLabel: string) => {
+    ;(w as WriteBatch).set(ref, {
+      licenseKey,
+      ...data,
+      clientId,
+      status: 'active',
+      detached: false,
+      paymentStatus: 'none',
+      activatedAt: null,
+      activeDevices: 0,
+      devicesSummary: {},
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      createdBy: by
+    })
+    ;(w as WriteBatch).set(licenseStatusRef(ref.id), { status: 'active', expiresAt: data.expiresAt, deactivatedDevices: [], poweredBy: data.poweredBy, detached: false, updatedAt: serverTimestamp() })
+    writeLog(
+      w,
+      ref.id,
+      action,
+      by,
+      `${data.plan} (${data.planType}) license ${licenseKey} for ${data.businessName || data.customerName}; ${data.maxDevices} device(s), ${data.maxFirms} firm(s), ${data.maxUsers} user(s); expires ${data.expiresAt ? fmtDate(data.expiresAt) : 'never (lifetime)'}${clientId ? `; client ${clientLabel || clientId}` : ''}`
+    )
+  }
+  if (!linkClient) {
+    const batch = writeBatch(db)
+    write(batch, data.clientId, '')
+    await batch.commit()
+    return { id: ref.id, licenseKey, clientId: data.clientId }
+  }
+  // Client (create / fill missing fields) + license + status + history + audit in one transaction.
+  const c = await runTransaction(db, async (tx) => {
+    const c = await linkClient(tx)
+    write(tx, c.clientId, c.label)
+    return c
   })
-  batch.set(licenseStatusRef(ref.id), { status: 'active', expiresAt: data.expiresAt, deactivatedDevices: [], poweredBy: data.poweredBy, detached: false, updatedAt: serverTimestamp() })
-  writeLog(
-    batch,
-    ref.id,
-    action,
-    by,
-    `${data.plan} (${data.planType}) license ${licenseKey} for ${data.businessName || data.customerName}; ${data.maxDevices} device(s), ${data.maxFirms} firm(s), ${data.maxUsers} user(s); expires ${data.expiresAt ? fmtDate(data.expiresAt) : 'never (lifetime)'}${data.clientId ? `; client ${data.clientId}` : ''}`
-  )
-  await batch.commit()
-  return { id: ref.id, licenseKey }
+  return { id: ref.id, licenseKey, clientId: c.clientId, client: { label: c.label, created: c.created } }
 }
 
 /**
@@ -420,9 +444,23 @@ export async function createLicense(input: LicenseInput, by: string, action = 'l
  * Plan, expiry and limits change through the dedicated actions (changeTerms) so each change has a reason.
  * Returns true when a field that is part of the certificates changed (re-signing is needed).
  */
-export async function updateLicense(current: License, input: LicenseInput, by: string): Promise<boolean> {
+export async function updateLicense(current: License, input: LicenseInput, by: string, linkClient?: ClientLinker): Promise<boolean> {
   const data = cleanInput(input)
   if (!data.businessName && !data.customerName) throw new Error('Enter the business name or customer name.')
+  if (linkClient) {
+    // The client is created / completed in the same transaction and its id is linked to the license.
+    return runTransaction(db, async (tx) => {
+      const c = await linkClient(tx)
+      return writeLicenseUpdate(tx, current, { ...data, clientId: c.clientId }, by, c.label)
+    })
+  }
+  const batch = writeBatch(db)
+  const certChange = writeLicenseUpdate(batch, current, data, by, '')
+  await batch.commit()
+  return certChange
+}
+
+function writeLicenseUpdate(w: Writer, current: License, data: ReturnType<typeof cleanInput>, by: string, clientLabel: string): boolean {
   const changes: string[] = []
   let certChange = false
   const cmp = (label: string, a: unknown, b: unknown, cert = true) => {
@@ -439,7 +477,7 @@ export async function updateLicense(current: License, input: LicenseInput, by: s
   cmp('City', current.city, data.city, false)
   cmp('Max users', current.maxUsers, data.maxUsers)
   cmp('Features', [...current.features].sort(), [...data.features].sort())
-  cmp('Client', current.clientId, data.clientId)
+  cmp('Client', current.clientId, clientLabel && data.clientId !== current.clientId ? `${data.clientId} (${clientLabel})` : data.clientId)
   if (!current.detached) {
     cmp('Check-in days', current.checkinDays, data.checkinDays)
     cmp('Grace days', current.graceDays, data.graceDays)
@@ -461,10 +499,8 @@ export async function updateLicense(current: License, input: LicenseInput, by: s
     patch.checkinDays = data.checkinDays
     patch.graceDays = data.graceDays
   }
-  const batch = writeBatch(db)
-  batch.update(licenseRef(current.id), patch)
-  writeLog(batch, current.id, 'license_updated', by, changes.length ? changes.join('; ') : 'No changes')
-  await batch.commit()
+  ;(w as WriteBatch).update(licenseRef(current.id), patch)
+  writeLog(w, current.id, 'license_updated', by, changes.length ? changes.join('; ') : 'No changes')
   return certChange
 }
 

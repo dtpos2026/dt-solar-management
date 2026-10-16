@@ -1,6 +1,6 @@
 /** Clients / companies: list with search, status + plan filters and pagination; /clients/:id shows the detail. */
-import { useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { Building2, Plus } from 'lucide-react'
 import { ErrorState, SkeletonRows } from '../components/kit'
 import { LICENSE_READ_PERMS } from './licensing/hooks'
@@ -29,7 +29,13 @@ function ClientList() {
   const [status, setStatus] = useState('')
   const [plan, setPlan] = useState<'' | PlanType>('')
   const [form, setForm] = useState(false)
-  const [msg, setMsg] = useState<NoticeMsg | null>(null)
+  const loc = useLocation()
+  // Notice handed over by the client page after a delete (shown once, then dropped from the history entry).
+  const notice = (loc.state as { notice?: string } | null)?.notice
+  const [msg, setMsg] = useState<NoticeMsg | null>(notice ? { tone: 'success', text: notice } : null)
+  useEffect(() => {
+    if (notice) nav(loc.pathname, { replace: true, state: null })
+  }, [notice]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const licCount = useMemo(() => {
     const m = new Map<string, number>()

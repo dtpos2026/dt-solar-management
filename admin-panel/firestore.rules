@@ -59,7 +59,8 @@ service cloud.firestore {
         && str(request.resource.data.get('company', ''), 200)
         && request.resource.data.get('status', 'active') in ['active', 'suspended', 'archived']
         && (!('logo' in request.resource.data) || request.resource.data.logo == null || str(request.resource.data.logo, 300000));
-      allow delete: if isOwner();
+      // Hard delete (the portal first unlinks the client's non-active licenses and refuses while an active one is linked).
+      allow delete: if can('clients.manage');
     }
 
     /* ----------------------------------------------- licenses ----------------------------------------------- */
@@ -82,15 +83,18 @@ service cloud.firestore {
         // A computer is only ever registered by an explicit approval of an admin holding devices.manage.
         allow create: if can('devices.manage');
         allow update: if canAny(['licenses.manage', 'devices.manage']);
-        // Only released / deactivated device records can be removed (clearing device history); active ones never.
-        allow delete: if canAny(['licenses.manage', 'devices.manage']) && resource.data.get('status', 'active') != 'active';
+        // Only released / deactivated device records can be removed (clearing device history); active ones only when
+        // the owner deletes the whole license (the license is gone after this write / batch).
+        allow delete: if (canAny(['licenses.manage', 'devices.manage']) && resource.data.get('status', 'active') != 'active')
+          || (isOwner() && !existsAfter(/databases/$(database)/documents/licenses/$(licenseId)));
       }
       match /history/{entryId} {
         allow read: if canAny(['licenses.view', 'licenses.manage', 'devices.view', 'devices.manage']);
         allow create: if canAny(['licenses.manage', 'licenses.generate', 'devices.manage']);
         allow update: if false;
         // Clearing license history is an owner / audit.manage action; the clearing itself is logged as a 'security' entry.
-        allow delete: if can('audit.manage');
+        // Deleting a whole license (owner) removes its history too.
+        allow delete: if can('audit.manage') || (isOwner() && !existsAfter(/databases/$(database)/documents/licenses/$(licenseId)));
       }
     }
 

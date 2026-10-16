@@ -67,6 +67,11 @@ export function dataUrlBytes(dataUrl: string | null | undefined): number {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PHONE_RE = /^[+()\-\s0-9]{5,30}$/
 
+/** Same phone format the client form accepts (digits, spaces, + - ( ), 5–30 characters). */
+export function isValidClientPhone(phone: string): boolean {
+  return PHONE_RE.test(phone.trim())
+}
+
 /** Field → message. Empty object = valid. */
 export function validateClient(c: ClientInput): Partial<Record<keyof ClientInput, string>> {
   const e: Partial<Record<keyof ClientInput, string>> = {}
@@ -103,6 +108,130 @@ export function hardDeleteGuard(x: { isOwner: boolean; linkedLicenses: number; l
   return { ok: true, reason: '' }
 }
 
+/**
+ * Delete check for a client. Active licenses (status active and not expired) block the delete — they must be moved
+ * to another client, unlinked or suspended / revoked first. Every other linked license is unlinked by the delete.
+ * Invoices are never deleted (they keep their own copy of the client name), so they only produce a warning.
+ */
+export interface ClientDeleteCheckInput {
+  canDelete: boolean
+  /** May the admin change license.clientId (licenses.manage / licenses.generate / devices.manage)? */
+  canUnlink: boolean
+  licenses: Array<{ id: string; licenseKey: string; status: string; expiresAtMs: number | null }>
+  /** null = the admin may not read invoices (not checked). */
+  invoices: number | null
+  openInvoices: number
+  threads: number
+  now?: number
+}
+export interface ClientDeleteCheck {
+  ok: boolean
+  blockers: string[]
+  warnings: string[]
+  /** Linked licenses that block the delete (active, not expired). */
+  active: string[]
+  /** Linked licenses the delete unlinks (suspended, revoked or expired). */
+  unlink: string[]
+}
+
+export function isActiveLicense(l: { status: string; expiresAtMs: number | null }, now = Date.now()): boolean {
+  return l.status === 'active' && (l.expiresAtMs === null || l.expiresAtMs > now)
+}
+
+export function clientDeleteCheck(x: ClientDeleteCheckInput): ClientDeleteCheck {
+  const now = x.now ?? Date.now()
+  const active = x.licenses.filter((l) => isActiveLicense(l, now))
+  const unlink = x.licenses.filter((l) => !isActiveLicense(l, now))
+  const blockers: string[] = []
+  const warnings: string[] = []
+  if (!x.canDelete) blockers.push('You need the “Create / edit clients” permission to delete a client. Archive it instead.')
+  if (active.length) {
+    blockers.push(
+      `${active.length} active license(s) still belong to this client (${active.map((l) => l.licenseKey).join(', ')}). Unlink them, move them to another client or suspend / revoke them first.`
+    )
+  }
+  if (unlink.length) {
+    if (!x.canUnlink) blockers.push(`${unlink.length} license(s) are linked to this client and unlinking them needs a license permission.`)
+    else warnings.push(`${unlink.length} suspended, revoked or expired license(s) will be unlinked (the licenses are kept, without a client).`)
+  }
+  if (x.invoices === null) warnings.push('Invoices could not be checked (no billing permission). Invoices are never deleted.')
+  else if (x.invoices > 0) {
+    warnings.push(
+      `${x.invoices} invoice(s) stay in Billing with their own copy of the client name${x.openInvoices ? ` — ${x.openInvoices} still ha${x.openInvoices === 1 ? 's' : 've'} an outstanding balance` : ''}.`
+    )
+  }
+  if (x.threads > 0) warnings.push(`${x.threads} support conversation(s) are kept (they belong to the installations).`)
+  return { ok: blockers.length === 0, blockers, warnings, active: active.map((l) => l.id), unlink: unlink.map((l) => l.id) }
+}
+
+/* -------------------------------------------- license → client sync -------------------------------------------- */
+
+/** Phone match key: digits only, last 10 ('' when fewer than 7 digits), so "+92 300 1234567" == "0300-1234567". */
+export function phoneKey(phone: string | null | undefined): string {
+  const d = (phone ?? '').replace(/\D/g, '')
+  return d.length >= 7 ? d.slice(-10) : ''
+}
+
+/** Name match key: trimmed, single spaces, lower case. */
+export function nameKey(s: string | null | undefined): string {
+  return (s ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+/** Client details entered on a license (company = business name, or the customer name when there is none). */
+export interface ClientDetails {
+  company: string
+  ownerName: string
+  phone: string
+  email: string
+  city: string
+}
+
+export function clientDetailsFromLicense(l: { businessName: string; customerName: string; phone: string; email: string; city: string }): ClientDetails {
+  return {
+    company: (l.businessName.trim() || l.customerName.trim()).slice(0, 200),
+    ownerName: l.customerName.trim().slice(0, 200),
+    phone: l.phone.trim(),
+    email: l.email.trim(),
+    city: l.city.trim()
+  }
+}
+
+/**
+ * The existing client for these details: the same phone (digits only, last 10), otherwise the same company AND owner
+ * name (ignoring case and extra spaces). Archived clients are never matched.
+ */
+export function findDuplicateClient<T extends { company: string; ownerName: string; phone: string; status: string }>(
+  clients: T[],
+  d: { company: string; ownerName: string; phone: string }
+): { client: T; by: 'phone' | 'name' } | null {
+  const live = clients.filter((c) => c.status !== 'archived')
+  const pk = phoneKey(d.phone)
+  if (pk) {
+    const c = live.find((x) => phoneKey(x.phone) === pk)
+    if (c) return { client: c, by: 'phone' }
+  }
+  const co = nameKey(d.company)
+  if (co) {
+    const own = nameKey(d.ownerName)
+    const c = live.find((x) => nameKey(x.company) === co && nameKey(x.ownerName) === own)
+    if (c) return { client: c, by: 'name' }
+  }
+  return null
+}
+
+/** Fields that are empty on the client and filled on the license (an existing value is never overwritten). */
+export function missingClientFields(c: Partial<ClientDetails>, d: ClientDetails): Partial<ClientDetails> {
+  const out: Partial<ClientDetails> = {}
+  for (const k of ['company', 'ownerName', 'phone', 'email', 'city'] as const) {
+    const v = d[k].trim()
+    if (!v || String(c[k] ?? '').trim()) continue
+    if (k === 'phone' && !PHONE_RE.test(v)) continue
+    if (k === 'email' && !EMAIL_RE.test(v)) continue
+    out[k] = v
+  }
+  return out
+}
+
 /** Prefill a client from a legacy license (licenses created before clients existed). */
 export function clientFromLicense(l: {
   businessName: string
@@ -115,6 +244,8 @@ export function clientFromLicense(l: {
   maxFirms: number
   maxDevices: number
 }): ClientInput {
+  // A trial license has no client plan / billing cycle: the client gets the defaults.
+  const trial = l.planType === 'trial' || l.plan === 'trial'
   return {
     ...blankClient(),
     company: (l.businessName || l.customerName).trim(),
@@ -122,8 +253,8 @@ export function clientFromLicense(l: {
     phone: l.phone.trim(),
     email: l.email.trim(),
     city: l.city.trim(),
-    plan: l.plan,
-    planType: l.planType,
+    plan: trial ? blankClient().plan : l.plan,
+    planType: trial ? blankClient().planType : l.planType,
     allowedFirms: Math.max(1, l.maxFirms || 1),
     allowedDevices: Math.max(1, l.maxDevices || 1)
   }

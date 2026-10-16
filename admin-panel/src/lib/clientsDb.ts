@@ -5,7 +5,6 @@
 import {
   Timestamp,
   collection,
-  deleteDoc,
   doc,
   getDocs,
   limit,
@@ -16,14 +15,39 @@ import {
   writeBatch,
   type DocumentData,
   type DocumentSnapshot,
-  type QueryDocumentSnapshot
+  type QueryDocumentSnapshot,
+  type Transaction
 } from 'firebase/firestore'
 import { db } from '../firebase'
-import { formatClientCode, hardDeleteGuard, validateClient, type ClientInput, type ClientStatus } from './clients'
-import { licenseFromSnap, licenseRef, licenseStatusPatch, licenseStatusRef, licensesCol, writeAuditEntry, writeLog } from './licenses'
+import {
+  clientDeleteCheck,
+  clientDetailsFromLicense,
+  clientFromLicense,
+  findDuplicateClient,
+  formatClientCode,
+  isActiveLicense,
+  missingClientFields,
+  validateClient,
+  type ClientDeleteCheck,
+  type ClientInput,
+  type ClientStatus
+} from './clients'
+import {
+  invalidateLicenses,
+  licenseFromSnap,
+  licenseRef,
+  licenseStatusPatch,
+  licenseStatusRef,
+  licensesCol,
+  writeAuditEntry,
+  writeLog,
+  type ClientLinker,
+  type LicenseInput
+} from './licenses'
+import { loadThreads } from './fleet'
 import { fromInputDate, toInputDate } from './format'
+import { invalidate } from './queryCache'
 import type { Client, License, PlanType } from './types'
-import { logActivity } from './audit'
 
 export const clientsCol = () => collection(db, 'clients')
 export const clientRef = (id: string) => doc(db, 'clients', id)
@@ -102,30 +126,38 @@ function cleanClient(i: ClientInput) {
 }
 
 /** Creates a client with the next code from counters/clients. Optionally links a license in the same transaction. */
+/** Takes the next client code from counters/clients and writes the client + its audit entry (reads first). */
+async function createClientInTx(tx: Transaction, data: ReturnType<typeof cleanClient>, by: string, note = ''): Promise<{ id: string; code: string }> {
+  const ref = doc(clientsCol())
+  const c = await tx.get(counterRef())
+  const next = c.exists() ? Math.max(1, Math.floor(Number(c.data()?.next) || 1)) : 1
+  const code = formatClientCode(next)
+  tx.set(counterRef(), { next: next + 1 }, { merge: true })
+  tx.set(ref, {
+    ...data,
+    code,
+    registeredAt: data.registeredAt ?? serverTimestamp(),
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    createdBy: by
+  })
+  writeAuditEntry(tx, { action: 'client_created', category: 'client', by, target: ref.id, targetType: 'client', details: `${code} ${data.company}${data.city ? ` (${data.city})` : ''}${note}` })
+  return { id: ref.id, code }
+}
+
 export async function createClient(input: ClientInput, by: string, link?: { license: License; reason?: string }): Promise<{ id: string; code: string }> {
   const data = cleanClient(input)
-  const ref = doc(clientsCol())
-  const code = await runTransaction(db, async (tx) => {
-    const c = await tx.get(counterRef())
-    const next = c.exists() ? Math.max(1, Math.floor(Number(c.data()?.next) || 1)) : 1
-    const code = formatClientCode(next)
-    tx.set(counterRef(), { next: next + 1 }, { merge: true })
-    tx.set(ref, {
-      ...data,
-      code,
-      registeredAt: data.registeredAt ?? serverTimestamp(),
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      createdBy: by
-    })
-    writeAuditEntry(tx, { action: 'client_created', category: 'client', by, target: ref.id, targetType: 'client', details: `${code} ${data.company}${data.city ? ` (${data.city})` : ''}` })
+  const r = await runTransaction(db, async (tx) => {
+    const { id, code } = await createClientInTx(tx, data, by)
+    const ref = clientRef(id)
     if (link) {
       tx.update(licenseRef(link.license.id), { clientId: ref.id, updatedAt: serverTimestamp() })
       writeLog(tx, link.license.id, 'client_linked', by, `License linked to new client ${code} ${data.company}${link.reason ? ` — ${link.reason}` : ''}`, 'client')
     }
-    return code
+    return { id, code }
   })
-  return { id: ref.id, code }
+  invalidate('clients')
+  return r
 }
 
 export async function updateClient(c: Client, input: ClientInput, by: string): Promise<void> {
@@ -198,13 +230,187 @@ export async function clientLinks(clientId: string, licenseIds: string[], opts: 
   return { licenses: lic.size, invoices, threads }
 }
 
-/** Owner-only hard delete, only when nothing links to the client (the rules allow owners only). */
-export async function deleteClient(c: Client, by: string, isOwner: boolean): Promise<void> {
-  const links = await clientLinks(c.id, [], { invoices: true, threads: false })
-  const g = hardDeleteGuard({ isOwner, linkedLicenses: links.licenses, linkedInvoices: links.invoices })
-  if (!g.ok) throw new Error(g.reason)
-  await deleteDoc(clientRef(c.id))
-  await logActivity({ action: 'client_deleted', category: 'client', target: c.id, targetType: 'client', details: `${c.code} ${c.company} permanently deleted by ${by}` })
+export interface ClientDeleteOptions {
+  /** clients.manage */
+  canDelete: boolean
+  /** licenses.manage / licenses.generate / devices.manage (may change license.clientId) */
+  canUnlink: boolean
+  /** The admin may read invoices / support threads. */
+  invoices: boolean
+  threads: boolean
+}
+export interface ClientDeletePreview {
+  licenses: License[]
+  invoices: number | null
+  openInvoices: number
+  threads: number
+  check: ClientDeleteCheck
+}
+
+/** Fresh look at everything linked to the client and whether it may be deleted now (see clientDeleteCheck). */
+export async function clientDeletePreview(c: Client, o: ClientDeleteOptions): Promise<ClientDeletePreview> {
+  const licenses = await loadClientLicenses(c.id)
+  let invoices: number | null = null
+  let openInvoices = 0
+  if (o.invoices) {
+    const snap = await getDocs(query(collection(db, 'invoices'), where('clientId', '==', c.id)))
+    invoices = snap.size
+    openInvoices = snap.docs.filter((d) => d.data().status !== 'cancelled' && Number(d.data().balance) > 0.005).length
+  }
+  const threads = o.threads && licenses.length ? (await loadThreads(licenses.map((l) => l.id))).length : 0
+  const check = clientDeleteCheck({
+    canDelete: o.canDelete,
+    canUnlink: o.canUnlink,
+    licenses: licenses.map((l) => ({ id: l.id, licenseKey: l.licenseKey, status: l.status, expiresAtMs: l.expiresAt ? l.expiresAt.toMillis() : null })),
+    invoices,
+    openInvoices,
+    threads
+  })
+  return { licenses, invoices, openInvoices, threads, check }
+}
+
+/** Licenses unlinked per transaction (3 writes each: license, history, audit). */
+const UNLINK_PER_TX = 120
+
+/**
+ * Hard delete of a client (clients.manage). Re-checks the links first: refused while an active license is linked;
+ * suspended / revoked / expired licenses are unlinked (history + audit on each), then the client document is deleted
+ * with a 'client_deleted' audit entry in the same transaction. Invoices and support threads are kept.
+ */
+export async function deleteClient(c: Client, by: string, o: ClientDeleteOptions): Promise<{ unlinked: number }> {
+  const prev = await clientDeletePreview(c, o)
+  if (!prev.check.ok) throw new Error(prev.check.blockers.join(' '))
+  const ids = prev.check.unlink
+  const chunks: string[][] = []
+  for (let i = 0; i < ids.length; i += UNLINK_PER_TX) chunks.push(ids.slice(i, i + UNLINK_PER_TX))
+  if (!chunks.length) chunks.push([])
+  let unlinked = 0
+  for (let i = 0; i < chunks.length; i++) {
+    const last = i === chunks.length - 1
+    const done = unlinked
+    unlinked += await runTransaction(db, async (tx) => {
+      const cs = await tx.get(clientRef(c.id))
+      if (!cs.exists()) throw new Error('This client no longer exists (deleted by another admin?).')
+      const snaps = await Promise.all(chunks[i].map((id) => tx.get(licenseRef(id))))
+      let n = 0
+      for (const s of snaps) {
+        if (!s.exists()) continue
+        const l = licenseFromSnap(s)
+        if (l.clientId !== c.id) continue
+        if (isActiveLicense({ status: l.status, expiresAtMs: l.expiresAt ? l.expiresAt.toMillis() : null })) {
+          throw new Error(`License ${l.licenseKey} was reactivated in the meantime, so the client was not deleted. Check the client again.`)
+        }
+        tx.update(licenseRef(l.id), { clientId: '', updatedAt: serverTimestamp() })
+        writeLog(tx, l.id, 'client_unlinked', by, `License unlinked from client ${c.code} ${c.company} (client deleted)`, 'client')
+        n++
+      }
+      if (last) {
+        tx.delete(clientRef(c.id))
+        const total = done + n
+        writeAuditEntry(tx, {
+          action: 'client_deleted',
+          category: 'client',
+          by,
+          target: c.id,
+          targetType: 'client',
+          details: `${c.code} ${c.company} permanently deleted${total ? `; ${total} license(s) unlinked` : ''}${prev.invoices ? `; ${prev.invoices} invoice(s) kept` : ''}`,
+          meta: { code: c.code, company: c.company, unlinked: total, invoices: prev.invoices }
+        })
+      }
+      return n
+    })
+  }
+  invalidate('clients')
+  invalidateLicenses()
+  return { unlinked }
+}
+
+/** Unlinks licenses from a client (the delete dialog offers it for active licenses, which then stay client-less). */
+export async function unlinkClientLicenses(c: Client, licenseIds: string[], by: string): Promise<number> {
+  let n = 0
+  for (let i = 0; i < licenseIds.length; i += UNLINK_PER_TX) {
+    const part = licenseIds.slice(i, i + UNLINK_PER_TX)
+    n += await runTransaction(db, async (tx) => {
+      const snaps = await Promise.all(part.map((id) => tx.get(licenseRef(id))))
+      let k = 0
+      for (const s of snaps) {
+        if (!s.exists() || s.data()?.clientId !== c.id) continue
+        tx.update(licenseRef(s.id), { clientId: '', updatedAt: serverTimestamp() })
+        writeLog(tx, s.id, 'client_unlinked', by, `License unlinked from client ${c.code} ${c.company}`, 'client')
+        k++
+      }
+      return k
+    })
+  }
+  invalidateLicenses()
+  return n
+}
+
+/* ------------------------------------------- license -> client sync ------------------------------------------- */
+
+export interface ClientSync {
+  /** picked = the client chosen in the form; matched = same phone / company + owner; new = created on save */
+  kind: 'picked' | 'matched' | 'new'
+  /** How an existing client was matched. */
+  by?: 'phone' | 'name'
+  client: Client | null
+  linker: ClientLinker
+}
+
+/**
+ * Decides which client a license's details belong to (no duplicates): the picked client, else an existing client
+ * with the same phone (digits only, last 10) or the same company + owner name, else a new client with the next code.
+ * The returned linker runs inside the license transaction: an existing client only gets its EMPTY fields filled
+ * from the license (never overwritten); a new client is created from the license details.
+ * `candidates` = all clients (read fresh when omitted).
+ */
+export async function clientSyncFor(input: LicenseInput, by: string, candidates?: Client[]): Promise<ClientSync> {
+  const all = candidates ?? (await loadClients())
+  const details = clientDetailsFromLicense(input)
+  const picked = input.clientId ? all.find((c) => c.id === input.clientId) ?? null : null
+  const match = picked ? null : findDuplicateClient(all, details)
+  const target = picked ?? match?.client ?? null
+  if (target) {
+    const id = target.id
+    return {
+      kind: picked ? 'picked' : 'matched',
+      by: match?.by,
+      client: target,
+      linker: async (tx) => {
+        const snap = await tx.get(clientRef(id))
+        if (!snap.exists()) throw new Error('The client was deleted in the meantime. Choose another client or save again.')
+        const cur = clientFromSnap(snap)
+        const patch = missingClientFields(cur, details)
+        const keys = Object.keys(patch)
+        if (keys.length) {
+          tx.update(clientRef(id), { ...patch, updatedAt: serverTimestamp() })
+          writeAuditEntry(tx, { action: 'client_updated', category: 'client', by, target: id, targetType: 'client', details: `${cur.code} ${cur.company}: filled from license details (${keys.join(', ')})` })
+        }
+        return { clientId: id, label: `${cur.code} ${cur.company}`, created: false }
+      }
+    }
+  }
+  const data = cleanClient(
+    clientFromLicense({
+      businessName: input.businessName,
+      customerName: input.customerName,
+      phone: input.phone,
+      email: input.email,
+      city: input.city,
+      plan: input.plan,
+      planType: input.planType ?? (input.expiresAt ? 'yearly' : 'lifetime'),
+      maxFirms: input.maxFirms,
+      maxDevices: input.maxDevices
+    })
+  )
+  return {
+    kind: 'new',
+    client: null,
+    linker: async (tx) => {
+      const { id, code } = await createClientInTx(tx, data, by, ' (created from license details)')
+      return { clientId: id, label: `${code} ${data.company}`, created: true }
+    }
+  }
 }
 
 export async function loadClients(): Promise<Client[]> {

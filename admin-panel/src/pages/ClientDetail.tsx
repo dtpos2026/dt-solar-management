@@ -1,17 +1,17 @@
 /** Client detail: profile, licenses, devices, billing history, support history, activity. */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { getDocs, limit, onSnapshot, query, where } from 'firebase/firestore'
 import { Archive, ArrowLeft, Pause, Pencil, Play, Plus, Trash2 } from 'lucide-react'
 import { PageTitle, Stat } from '../components/ui'
-import { clientFromSnap, clientRef, clientLinks, deleteClient, setClientStatus } from '../lib/clientsDb'
+import { clientDeletePreview, clientFromSnap, clientRef, deleteClient, setClientStatus, unlinkClientLicenses, type ClientDeletePreview } from '../lib/clientsDb'
 import { auditCol, auditFromSnap, expiryLabel, licenseFromSnap, licensesCol } from '../lib/licenses'
 import { useSharedDocs } from '../lib/liveData'
 import { deviceInfo, heartbeatLike, licenseInfo, loadDevicesFor, loadHeartbeatsForLicenses, loadThreads, type ThreadRow } from '../lib/fleet'
 import { mergeDeviceRows, type DeviceRow } from '../lib/devices'
-import { hardDeleteGuard, PLAN_TYPE_LABEL } from '../lib/clients'
+import { PLAN_TYPE_LABEL } from '../lib/clients'
 import { billingSummary } from '../lib/stats'
-import { useAdmin, useAdminEmail, useCan } from '../lib/auth'
+import { useAdminEmail, useCan } from '../lib/auth'
 import { errorMessage, fmtDate, fmtDateTime, timeAgo } from '../lib/format'
 import type { AuditEntry, Client } from '../lib/types'
 import { ConfirmDialog, Empty, fmtMoney, Loading, Notice, Panel, Pill, type ConfirmOptions, type NoticeMsg } from './licensing/kit'
@@ -25,7 +25,6 @@ type Dlg = 'suspended' | 'active' | 'archived' | 'delete'
 export function ClientDetail({ id }: { id: string }) {
   const nav = useNavigate()
   const can = useCan()
-  const admin = useAdmin()
   const by = useAdminEmail()
   const [c, setC] = useState<Client | null | undefined>(undefined)
   const [msg, setMsg] = useState<NoticeMsg | null>(null)
@@ -36,6 +35,11 @@ export function ClientDetail({ id }: { id: string }) {
   const [devices, setDevices] = useState<DeviceRow[] | null>(null)
   const [threads, setThreads] = useState<ThreadRow[] | null>(null)
   const [activity, setActivity] = useState<AuditEntry[] | null>(null)
+  // Delete dialog: fresh check of linked licenses / invoices; a deleted client is not shown as "not found".
+  const [delPrev, setDelPrev] = useState<ClientDeletePreview | null>(null)
+  const [delErr, setDelErr] = useState<string | null>(null)
+  const [delBusy, setDelBusy] = useState(false)
+  const deleting = useRef(false)
   // Only this client's licenses (live, shared per client) instead of the whole licenses collection.
   const allLicenses = useSharedDocs(`licenses:client:${id}`, () => query(licensesCol(), where('clientId', '==', id)))
   const licenses = useMemo(() => allLicenses.docs.map(licenseFromSnap).sort((a, b) => (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0)), [allLicenses.docs])
@@ -43,6 +47,7 @@ export function ClientDetail({ id }: { id: string }) {
   const billing = BILLING_READ_PERMS.some(can)
   const invoices = useInvoices(billing, { field: 'clientId', value: id })
   const manage = can('clients.manage')
+  const delOpts = { canDelete: manage, canUnlink: ['licenses.manage', 'licenses.generate', 'devices.manage'].some(can), invoices: billing, threads: can('support.manage') }
 
   useEffect(() => onSnapshot(clientRef(id), (s) => setC(s.exists() ? clientFromSnap(s) : null), (e) => { setC(null); setMsg({ tone: 'error', text: errorMessage(e) }) }), [id])
 
@@ -76,19 +81,75 @@ export function ClientDetail({ id }: { id: string }) {
   const sum = useMemo(() => billingSummary(invoices.data, null), [invoices.data])
 
   if (c === undefined) return <Loading />
+  if (c === null && deleting.current) return <Loading label="Deleting…" />
   if (c === null) return <Empty title="Client not found">{msg && <Notice msg={msg} />}<Link className="underline" to="/clients">Back to clients</Link></Empty>
   const client = c
 
+  const loadDelPreview = () => {
+    setDelPrev(null)
+    setDelErr(null)
+    clientDeletePreview(client, delOpts).then(setDelPrev, (e) => setDelErr(errorMessage(e)))
+  }
+  const openDelete = () => {
+    setDlg('delete')
+    loadDelPreview()
+  }
+  const unlinkActive = async () => {
+    if (!delPrev) return
+    setDelBusy(true)
+    try {
+      await unlinkClientLicenses(client, delPrev.check.active, by)
+      loadDelPreview()
+    } catch (e) {
+      setDelErr(errorMessage(e))
+    } finally {
+      setDelBusy(false)
+    }
+  }
+  const delCheck = delPrev?.check
+
   const opts: ConfirmOptions | null = !dlg ? null : dlg === 'delete'
     ? {
-        title: `Delete ${client.code} permanently`, confirmLabel: 'Delete', tone: 'danger', typeToConfirm: 'DELETE',
-        body: 'Only possible when no license, invoice or support thread links to this client. Prefer archiving.',
+        title: `Delete ${client.code} permanently`, confirmLabel: 'Delete client', tone: 'danger', typeToConfirm: 'DELETE',
+        body: (
+          <div className="space-y-2">
+            <p>The client record <b>{client.code} · {client.company}</b> is removed permanently. This cannot be undone — <b>Archive</b> keeps the record instead.</p>
+            {delErr ? <div className="rounded-lg bg-red-50 p-2.5 text-[13px] text-red-700">{delErr}</div> : !delPrev || !delCheck ? <Loading label="Checking linked licenses and invoices…" /> : (
+              <>
+                {delCheck.blockers.length > 0 && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-2.5 text-[13px] text-red-700">
+                    <b>Delete is blocked</b>
+                    <ul className="mt-1 list-disc space-y-1 pl-5">{delCheck.blockers.map((b) => <li key={b}>{b}</li>)}</ul>
+                    {delCheck.active.length > 0 && delOpts.canUnlink && delOpts.canDelete && (
+                      <div className="mt-2">
+                        <button type="button" className="btn btn-sm btn-secondary" disabled={delBusy} onClick={unlinkActive}>
+                          Unlink {delCheck.active.length} active license(s) from this client
+                        </button>
+                        <div className="mt-1 text-[12px] text-[#7a6d92]">The licenses stay active and keep working; they just no longer belong to a client.</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <ul className="list-disc space-y-1 pl-5 text-[13px]">
+                  <li>{delPrev.licenses.length ? `${delPrev.licenses.length} license(s) linked: ${delPrev.licenses.map((l) => `${l.licenseKey} (${licenseDisplayStatus(l)})`).join(', ')}.` : 'No license is linked to this client.'}</li>
+                  {delCheck.warnings.map((w) => <li key={w}>{w}</li>)}
+                  <li>The activity log keeps a record of the deletion.</li>
+                </ul>
+              </>
+            )}
+          </div>
+        ),
         run: async () => {
-          const links = await clientLinks(client.id, licenses.map((l) => l.id), { invoices: billing, threads: can('support.manage') })
-          const g = hardDeleteGuard({ isOwner: !!admin?.isOwner, linkedLicenses: links.licenses, linkedInvoices: links.invoices, linkedThreads: links.threads })
-          if (!g.ok) throw new Error(g.reason)
-          await deleteClient(client, by, !!admin?.isOwner)
-          nav('/clients')
+          if (!delPrev || !delCheck) throw new Error('Still checking what is linked to this client — try again in a moment.')
+          if (!delCheck.ok) throw new Error(delCheck.blockers.join(' '))
+          deleting.current = true
+          try {
+            const r = await deleteClient(client, by, delOpts)
+            nav('/clients', { state: { notice: `Client ${client.code} ${client.company} deleted.${r.unlinked ? ` ${r.unlinked} license(s) unlinked.` : ''}` } })
+          } catch (e) {
+            deleting.current = false
+            throw e
+          }
         }
       }
     : {
@@ -119,7 +180,7 @@ export function ClientDetail({ id }: { id: string }) {
           {client.status === 'active' && <button className="btn btn-secondary" onClick={() => setDlg('suspended')}><Pause className="h-4 w-4" />Suspend</button>}
           {client.status !== 'active' && <button className="btn btn-secondary" onClick={() => setDlg('active')}><Play className="h-4 w-4" />Reactivate</button>}
           {client.status !== 'archived' && <button className="btn btn-secondary" onClick={() => setDlg('archived')}><Archive className="h-4 w-4" />Archive</button>}
-          {admin?.isOwner && <button className="btn btn-danger" onClick={() => setDlg('delete')}><Trash2 className="h-4 w-4" />Delete</button>}
+          <button className="btn btn-danger" onClick={openDelete}><Trash2 className="h-4 w-4" />Delete</button>
         </>}
       />
       <Notice msg={msg} onClose={() => setMsg(null)} className="mb-4" />

@@ -97,7 +97,7 @@ export function SendWhatsAppDialog({ entity, id, phone, params, onClose }: { ent
     api<Draft>('whatsapp.draft', { entity, id, params })
       .then((d) => {
         setDraft(d)
-        setTo(d.phone ? `+${d.phone}` : d.phoneRaw || phone || '')
+        setTo(phone && looksLikePhone(phone) ? phone : d.phone ? `+${d.phone}` : d.phoneRaw || phone || '')
         setMsg(d.message)
       })
       .catch((e) => setErr((e as Error).message))

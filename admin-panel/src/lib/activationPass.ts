@@ -13,11 +13,11 @@
  * (<PassSync/> in the app shell): new licenses, renewals and term changes get a fresh pass; suspended / revoked
  * licenses lose theirs. The private key never leaves the browser.
  */
-import { doc, serverTimestamp, writeBatch } from 'firebase/firestore'
+import { doc, getDocs, serverTimestamp, writeBatch } from 'firebase/firestore'
 import { db } from '../firebase'
 import { certTermsOf } from './approve'
 import { sha256Hex, signPayload, verifyCode, type LoadedKey } from './crypto'
-import { licenseRef, writeLog } from './licenses'
+import { backfillSummary, devicesCol, licenseRef, writeLog } from './licenses'
 import { buildCertPayload } from './terms'
 import type { License } from './types'
 
@@ -75,6 +75,8 @@ export function syncPasses(licenses: License[], key: LoadedKey, by: string): Pro
       if (!l.licenseKey) continue
       try {
         if (passWanted(l)) {
+          // Instant registration needs the device summary on the license (older licenses may lack it).
+          if (l.devicesSummary === null) await backfillSummary(l.id, (await getDocs(devicesCol(l.id))).docs, l.updatedAt?.toMillis() ?? null)
           if (l.passHash !== (await passTermsHash(l, key))) await publishPass(l, key, by)
         } else if (l.passHash) {
           await removePass(l, by)

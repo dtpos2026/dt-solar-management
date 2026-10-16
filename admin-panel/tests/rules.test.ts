@@ -195,7 +195,9 @@ describe('licenses', () => {
     await matrix(['owner', 'manager', 'technical'], (d) => setDoc(doc(d, `licenses/${LIC}/devices/${uid()}`), { deviceId: 'x' }))
     await matrix(['owner', 'manager', 'sales', 'technical'], (d) => setDoc(doc(d, `licenses/${LIC}/history/${uid()}`), { action: 'x' }))
     await assertFails(updateDoc(doc(db('owner'), `licenses/${LIC}/history/h1`), { action: 'forged' }))
-    await assertFails(deleteDoc(doc(db('owner'), `licenses/${LIC}/history/h1`)))
+    // Clearing history: audit.manage only (owner, manager); others never.
+    await assertFails(deleteDoc(doc(db('sales'), `licenses/${LIC}/history/h1`)))
+    await assertSucceeds(deleteDoc(doc(db('owner'), `licenses/${LIC}/history/h1`)))
   })
   it('licenseStatus: public get, no public list or write', async () => {
     await matrix([...ACTORS], (d) => getDoc(doc(d, `licenseStatus/${LIC}`)))
@@ -355,12 +357,12 @@ describe('auditLogs', () => {
     await assertFails(updateDoc(doc(db('owner'), 'auditLogs/oldGeneral'), { archived: false }))
     await assertFails(updateDoc(doc(db('owner'), 'auditLogs/newGeneral'), { action: 'tampered' }))
   })
-  it('delete: owner only, > 90 days, never security / financial / license / legacy', async () => {
-    for (const a of ACTORS.filter((x) => x !== 'owner')) await assertFails(deleteDoc(doc(db(a), 'auditLogs/oldGeneral')))
+  it('delete: audit.manage at any age, never security (protected audit trail)', async () => {
+    for (const a of ACTORS.filter((x) => !['owner', 'manager'].includes(x))) await assertFails(deleteDoc(doc(db(a), 'auditLogs/oldGeneral')))
     await assertSucceeds(deleteDoc(doc(db('owner'), 'auditLogs/oldGeneral')))
+    await assertSucceeds(deleteDoc(doc(db('manager'), 'auditLogs/newGeneral')))
+    await assertSucceeds(deleteDoc(doc(db('owner'), 'auditLogs/oldLegacy')))
     await assertFails(deleteDoc(doc(db('owner'), 'auditLogs/oldSecurity')))
-    await assertFails(deleteDoc(doc(db('owner'), 'auditLogs/oldLegacy')))
-    await assertFails(deleteDoc(doc(db('owner'), 'auditLogs/newGeneral')))
   })
 })
 

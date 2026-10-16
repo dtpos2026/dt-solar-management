@@ -63,9 +63,11 @@ Admin sets `status ('approved'|'rejected'|'processed'), certificate, message, pr
 (ISO string of the last successful license check, '' if none), firms (int), users (int), lastSeen (== request.time),
 location?`
 
-`location` (only when the customer enabled sharing): `{ lat, lng, accuracyKm, source ('approximate'|'manual'),
-label, consent: true, updatedAt (ISO) }`. `approximate` = derived from the internet IP address — always shown as
-approximate. The desktop never sends GPS coordinates it did not get from the customer.
+`location` (only when the customer enabled sharing): `{ lat, lng, accuracyKm, source ('device'|'approximate'|'manual'),
+label, consent: true, updatedAt (ISO) }`. `device` = Windows location service (GPS / Wi-Fi positioning, with its
+accuracy), only with the customer's consent and only when Windows location is enabled; `approximate` = derived from the
+internet IP address — city level at best, often the ISP's gateway city (e.g. Lahore for a device in Burewala) — always
+shown as approximate; `manual` = typed by the customer. The desktop never invents coordinates.
 
 Online status (derived in the panel): **online** if `lastSeen` < 30 min ago, **recent** < 24 h, otherwise **offline**.
 The desktop sends a heartbeat at start-up and every 15 minutes while online (≈ 96 writes/day/device, well inside
@@ -106,8 +108,10 @@ mapAttribution`. Public copy: `companyName, logo, phone, email, website, address
 `action, category ('security'|'financial'|'license'|'client'|'device'|'support'|'settings'|'general'), by (email),
 byUid, target, targetType, licenseId, details, meta, status ('success'|'failure'), at (== request.time), archived`
 
-Retention: anyone with `audit.manage` may archive. Only an owner may delete, only entries older than 90 days and
-never `security`, `financial` or `license` entries (legacy entries without `category` count as `license`).
+Retention: anyone with `audit.manage` may archive or delete activity entries of any age, except `security` entries,
+which form the protected audit trail (sign-ins, permission changes and every log-clearing action) and can never be
+deleted from the portal. License history entries and released (non-active) device records may also be cleared by
+`audit.manage` / device managers; active devices never.
 
 Rules test suite: `admin-panel/tests/rules.test.ts` (`npm run test:rules` in admin-panel; needs firebase-tools installed
 globally — `npm i -g firebase-tools` — and Java).

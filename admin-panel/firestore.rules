@@ -79,12 +79,16 @@ service cloud.firestore {
 
       match /devices/{deviceId} {
         allow read: if canAny(['licenses.view', 'licenses.manage', 'devices.view', 'devices.manage']);
-        allow write: if canAny(['licenses.manage', 'devices.manage']);
+        allow create, update: if canAny(['licenses.manage', 'devices.manage']);
+        // Only released / deactivated device records can be removed (clearing device history); active ones never.
+        allow delete: if canAny(['licenses.manage', 'devices.manage']) && resource.data.get('status', 'active') != 'active';
       }
       match /history/{entryId} {
         allow read: if canAny(['licenses.view', 'licenses.manage', 'devices.view', 'devices.manage']);
         allow create: if canAny(['licenses.manage', 'licenses.generate', 'devices.manage']);
-        allow update, delete: if false;
+        allow update: if false;
+        // Clearing license history is an owner / audit.manage action; the clearing itself is logged as a 'security' entry.
+        allow delete: if can('audit.manage');
       }
     }
 
@@ -129,7 +133,7 @@ service cloud.firestore {
         && l.keys().hasOnly(['lat', 'lng', 'accuracyKm', 'source', 'label', 'consent', 'updatedAt'])
         && l.lat is number && l.lat >= -90 && l.lat <= 90
         && l.lng is number && l.lng >= -180 && l.lng <= 180
-        && l.source in ['approximate', 'manual']
+        && l.source in ['device', 'approximate', 'manual']
         && l.consent == true
         && (!('accuracyKm' in l) || l.accuracyKm is number)
         && (!('label' in l) || str(l.label, 200))
@@ -265,11 +269,10 @@ service cloud.firestore {
         && request.resource.data.get('archived', false) == false;
       allow update: if can('audit.manage') && changed().hasOnly(['archived', 'archivedAt', 'archivedBy'])
         && request.resource.data.archived == true;
-      // Retention: only owners delete, only entries older than 90 days, never security / financial / license records
-      // (legacy entries without a category are license entries and are kept).
-      allow delete: if isOwner()
-        && !(resource.data.get('category', 'license') in ['security', 'financial', 'license'])
-        && resource.data.at < request.time - duration.value(90, 'd');
+      // Retention policy: ordinary activity (any category except 'security') may be cleared by an owner or an admin
+      // holding audit.manage, at any age. 'security' records (sign-ins, permission changes, log clearing itself) are a
+      // protected audit trail and can never be deleted from the portal.
+      allow delete: if can('audit.manage') && resource.data.get('category', 'license') != 'security';
     }
   }
 }

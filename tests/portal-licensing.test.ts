@@ -30,9 +30,28 @@ import {
   planTermsError,
   suggestExpiry,
   suggestRenewal,
+  classifyActivation,
+  replaceableError,
+  trialExpiry,
+  trialExpiryError,
+  maskLicenseKey,
+  maskDeviceId,
+  TRIAL_DAYS,
   type CertTerms
 } from '../admin-panel/src/lib/terms'
-import { filterDeviceRows, mergeDeviceRows, slotsUsed, sortDeviceRows, validLocation, type HeartbeatLike, type LicenseInfo } from '../admin-panel/src/lib/devices'
+import {
+  LOCATION_SOURCE_LABEL,
+  accuracyMetres,
+  accuracyText,
+  filterDeviceRows,
+  locationSource,
+  mergeDeviceRows,
+  slotsUsed,
+  sortDeviceRows,
+  validLocation,
+  type HeartbeatLike,
+  type LicenseInfo
+} from '../admin-panel/src/lib/devices'
 import { loadKey, signPayload, verifyCode } from '../admin-panel/src/lib/crypto'
 import { evaluate, parseCertificate, verifyCertificate } from '../src/main/license/verify'
 
@@ -399,5 +418,93 @@ describe('devices merged with heartbeats', () => {
   it('license status shows detached and pending', () => {
     const rows = mergeDeviceRows([L({ detached: true })], { L1: [dev({})] }, [], NOW)
     expect(rows[0]).toMatchObject({ licenseStatus: 'detached', online: 'never', lastSeenMs: null })
+  })
+})
+
+describe('device approval policy (no automatic approval)', () => {
+  const lic = (o: Partial<{ status: string; expiresAtMs: number | null; activeDevices: number; maxDevices: number }> = {}) => ({ status: 'active', expiresAtMs: NOW + 30 * DAY, activeDevices: 0, maxDevices: 1, ...o })
+  it('a new computer with a free slot takes it (still an explicit approval)', () => {
+    expect(classifyActivation(lic(), null, NOW)).toEqual({ kind: 'new', slotsUsed: 0, maxDevices: 1 })
+    expect(classifyActivation(lic({ activeDevices: 1, maxDevices: 2 }), 'deactivated', NOW)).toEqual({ kind: 'new', slotsUsed: 1, maxDevices: 2 })
+  })
+  it('re-activation from an already active computer is a re-issue, even when the limit is full', () => {
+    expect(classifyActivation(lic({ activeDevices: 1 }), 'active', NOW)).toEqual({ kind: 'reissue' })
+  })
+  it('a different computer on a full license needs reassignment', () => {
+    expect(classifyActivation(lic({ activeDevices: 1 }), null, NOW)).toEqual({ kind: 'reassign', slotsUsed: 1, maxDevices: 1 })
+    expect(classifyActivation(lic({ activeDevices: 2, maxDevices: 2 }), 'deactivated', NOW).kind).toBe('reassign')
+  })
+  it('suspended / revoked / expired licenses and suspended / revoked computers cannot be approved', () => {
+    expect(classifyActivation(lic({ status: 'suspended' }), null, NOW)).toMatchObject({ kind: 'invalid', reason: 'License is suspended' })
+    expect(classifyActivation(lic({ status: 'revoked' }), 'active', NOW)).toMatchObject({ kind: 'invalid' })
+    expect(classifyActivation(lic({ expiresAtMs: NOW - 1 }), 'active', NOW)).toMatchObject({ kind: 'invalid', reason: 'License expired' })
+    expect(classifyActivation(lic(), 'suspended', NOW).kind).toBe('invalid')
+    expect(classifyActivation(lic(), 'revoked', NOW).kind).toBe('invalid')
+    expect(classifyActivation(lic({ expiresAtMs: null }), null, NOW).kind).toBe('new')
+  })
+  it('only a computer holding a slot, other than the requester, can be replaced', () => {
+    expect(replaceableError(null, 'NEW')).toMatch(/no longer exists/)
+    expect(replaceableError({ deviceId: 'NEW', status: 'active' }, 'NEW')).toMatch(/itself/)
+    expect(replaceableError({ deviceId: 'OLD', status: 'deactivated' }, 'NEW')).toMatch(/already released/)
+    expect(replaceableError({ deviceId: 'OLD', status: 'active' }, 'NEW')).toBeNull()
+    expect(replaceableError({ deviceId: 'OLD', status: 'suspended' }, 'NEW')).toBeNull()
+  })
+})
+
+describe('trial licenses', () => {
+  it('expire at the end of the day 15 days later by default', () => {
+    const e = trialExpiry(new Date(NOW))
+    expect(TRIAL_DAYS).toBe(15)
+    expect(e.getDate()).toBe(30)
+    expect(e.getMonth()).toBe(9)
+    expect(e.getHours()).toBe(23)
+    expect(suggestExpiry('trial', new Date(NOW))!.getTime()).toBe(e.getTime())
+  })
+  it('expiry is editable but must be in the future and at most 90 days', () => {
+    expect(trialExpiryError(null, NOW)).toMatch(/needs an expiry/)
+    expect(trialExpiryError(NOW - 1, NOW)).toMatch(/future/)
+    expect(trialExpiryError(NOW + 7 * DAY, NOW)).toBeNull()
+    expect(trialExpiryError(NOW + 120 * DAY, NOW)).toMatch(/at most 90/)
+    expect(planTermsError('trial', null)).toMatch(/needs an expiry/)
+  })
+})
+
+describe('masking', () => {
+  it('license keys keep only the first and last group in lists', () => {
+    expect(maskLicenseKey('DTSP-AB12-CD34-EF56-GH78')).toBe('DTSP-AB12-••••-••••-GH78')
+    expect(maskLicenseKey('DTSP-AB12-CD34-EF56-GH78')).not.toContain('CD34')
+    expect(maskLicenseKey('')).toBe('')
+  })
+  it('device ids are never shown or logged in full', () => {
+    const id = 'A1B2C3D4E5F6G7H8I9J0'
+    expect(maskDeviceId(id)).toBe('A1B2…I9J0')
+    expect(maskDeviceId(id)).not.toContain('C3D4E5')
+    expect(maskDeviceId('SHORTID')).toBe('SH…')
+    expect(maskDeviceId('')).toBe('')
+  })
+})
+
+describe('location display', () => {
+  const base = { lat: 31.52, lng: 74.35, consent: true as const }
+  it('accepts device-service points (metres) and labels every source', () => {
+    const dev = validLocation({ ...base, source: 'device', accuracyKm: 0.035 })
+    expect(dev?.source).toBe('device')
+    expect(accuracyMetres(dev)).toBe(35)
+    expect(accuracyText(dev)).toBe('±35 m')
+    expect(LOCATION_SOURCE_LABEL[locationSource(dev)]).toBe('Device location service')
+  })
+  it('IP points are approximate, never precise, with a kilometre accuracy circle', () => {
+    const ip = validLocation({ ...base, source: 'approximate', accuracyKm: 25 })
+    expect(LOCATION_SOURCE_LABEL[locationSource(ip)]).toBe('Approximate (internet IP) — usually the ISP’s city')
+    expect(LOCATION_SOURCE_LABEL[locationSource(ip)].toLowerCase()).not.toContain('precise')
+    expect(accuracyText(ip)).toBe('±25 km')
+    expect(accuracyMetres(ip)).toBe(25000)
+  })
+  it('manual and unavailable', () => {
+    expect(LOCATION_SOURCE_LABEL[locationSource(validLocation({ ...base, source: 'manual' }))]).toMatch(/^Manual/)
+    expect(locationSource(validLocation({ ...base, source: 'device', consent: false }))).toBe('unavailable')
+    expect(locationSource(null)).toBe('unavailable')
+    expect(accuracyText(null)).toBe('')
+    expect(validLocation({ ...base, source: 'gps' })).toBeNull()
   })
 })

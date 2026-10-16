@@ -4,7 +4,7 @@ import { MapPin, RefreshCw, Send, Wifi, WifiOff } from 'lucide-react'
 import { api } from '../../api'
 import { Badge, Button, Card, Field, Input, Kv, Loading, Toggle, cx, toast } from '../../components/ui'
 
-type Mode = 'off' | 'approximate' | 'manual'
+type Mode = 'off' | 'device' | 'approximate' | 'manual'
 interface Loc {
   lat: number
   lng: number
@@ -20,7 +20,7 @@ interface Overview {
   background: boolean
   installId: string
   everyMinutes: number
-  location: { mode: Mode; manual: string; manualError: string | null; location: Loc | null; note: string | null; geo: { label: string; fetchedAt: string } | null; geoError: string | null }
+  location: { mode: Mode; manual: string; manualError: string | null; location: Loc | null; note: string | null; geo: { label: string; fetchedAt: string } | null; geoError: string | null; device?: { accuracyKm: number; fetchedAt: string } | null; deviceError?: string | null }
   preview: Record<string, unknown>
   heartbeat: { lastAttemptAt: string | null; lastOkAt: string | null; ok: boolean | null; error: string | null }
 }
@@ -31,6 +31,13 @@ interface Preview {
 }
 
 const when = (iso: string | null | undefined): string => (iso ? new Date(iso).toLocaleString() : 'Never')
+
+const SOURCE_LABEL: Record<string, string> = {
+  device: "This computer's location service (Windows)",
+  approximate: "Approximate (internet IP — usually the ISP's city, e.g. Lahore for Burewala)",
+  manual: 'Entered manually'
+}
+const accuracy = (km: number): string => (!km ? 'unknown' : km < 1 ? `about ${Math.round(km * 1000)} m` : `about ${Math.round(km * 10) / 10} km`)
 
 export function CloudSection(): JSX.Element {
   const [ov, setOv] = useState<Overview | null>(null)
@@ -147,7 +154,8 @@ export function CloudSection(): JSX.Element {
             <div className="grid gap-3 sm:grid-cols-2">
               {(
                 [
-                  ['approximate', 'Approximate (city level)', 'Looked up from your internet address via ipwho.is, about 25 km accurate. Refreshed at most once a day.'],
+                  ['device', "Use this computer's location service", 'Reads the Windows location service (GPS / Wi-Fi positioning) with its real accuracy. Windows location must be on (Settings → Privacy → Location). Refreshed at most every 6 hours. If it is unavailable, nothing is sent.'],
+                  ['approximate', "Approximate (internet IP — usually the ISP's city, e.g. Lahore for Burewala)", 'Looked up from your internet address via ipwho.is, about 25 km accurate or worse. Refreshed at most once a day.'],
                   ['manual', 'Exact (I enter it)', 'Type the latitude and longitude of your office, e.g. from Google Maps.']
                 ] as const
               ).map(([k, t, d]) => (
@@ -163,6 +171,18 @@ export function CloudSection(): JSX.Element {
               <Input value={manual} maxLength={200} placeholder="30.1979, 71.4697 | Head office" onChange={(e) => setManual(e.target.value)} />
             </Field>
           )}
+          {sharing && mode === ov.location.mode && (
+            <div className="grid gap-x-8 rounded-xl border border-line p-3 text-[13px] sm:grid-cols-2">
+              <Kv label="Source">{SOURCE_LABEL[mode] ?? mode}</Kv>
+              <Kv label="Status">
+                {ov.location.location ? <Badge tone="ok">Shared</Badge> : <Badge tone="warn">{mode === 'device' && ov.location.deviceError ? 'Unavailable' : 'Not available yet'}</Badge>}
+              </Kv>
+              <Kv label="Accuracy">{ov.location.location ? accuracy(ov.location.location.accuracyKm) : '—'}</Kv>
+              <Kv label="Last update">{ov.location.location ? when(ov.location.location.updatedAt) : mode === 'device' && ov.location.device ? when(ov.location.device.fetchedAt) : '—'}</Kv>
+            </div>
+          )}
+          {mode === 'device' && mode === ov.location.mode && ov.location.note && <div className="text-[12.5px] text-warn">{ov.location.note}</div>}
+          {preview?.note && mode === 'device' && mode !== ov.location.mode && <div className="text-[12.5px] text-muted">{preview.note}</div>}
           {ov.location.geoError && mode === 'approximate' && <div className="text-[12.5px] text-warn">Last lookup failed: {ov.location.geoError}</div>}
           {preview?.note && mode === 'approximate' && <div className="text-[12.5px] text-muted">{preview.note}</div>}
           <div className="flex gap-2">

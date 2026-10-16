@@ -10,6 +10,7 @@ import { createBackup, exportBackup, exportFirmData, listBackups, replaceDatabas
 import { reopenDatabase } from '../../database'
 import * as closing from '../../services/closing'
 import * as importer from '../../services/importer'
+import { exportCsv } from '../../services/csvExport'
 
 const backupDir = (db: Parameters<typeof getSetting>[0]): string => getSetting(db, 'backup_dir', '') || runtime.paths.backups
 const safetyDir = (): string => join(runtime.paths.backups, 'safety')
@@ -158,11 +159,11 @@ export const dataRoutes: RouteMap = {
       return { fileName: basename(file), text: readFileSync(file, 'utf8') }
     }
   },
-  'import.analyze': { perm: 'import.manage', handler: (c, a) => importer.analyzeImport(c.ctx, { kind: a.kind, text: String(a.text ?? ''), mapping: a.mapping }) },
+  'import.analyze': { perm: 'import.manage', handler: (c, a) => importer.analyzeImport(c.ctx, { ...importOpts(a), dryRun: !!a.dryRun }) },
   'import.run': {
     perm: 'import.manage',
     write: true,
-    handler: (c, a) => importer.runImport(c.ctx, { kind: a.kind, text: String(a.text ?? ''), mapping: a.mapping, fileName: a.fileName })
+    handler: (c, a) => importer.runImport(c.ctx, { ...importOpts(a), fileName: a.fileName ? String(a.fileName) : undefined })
   },
   'import.runs': { perm: 'import.manage', handler: (c) => importer.listImportRuns(c.ctx) },
   'import.template': {
@@ -173,5 +174,28 @@ export const dataRoutes: RouteMap = {
       writeFileSync(dest, importer.importTemplate(a.kind))
       return { file: dest }
     }
+  },
+  /* ---------------- CSV export (same columns as the import, so a file round-trips) ---------------- */
+  'csv.export': {
+    perm: 'backup.manage',
+    handler: async (c, a) => {
+      const r = exportCsv(c.ctx, a.kind, { from: a.from ? String(a.from) : undefined, to: a.to ? String(a.to) : undefined })
+      const dest = await saveDialog(c.sender, `${r.kind}-${today()}.csv`, [{ name: 'CSV', extensions: ['csv'] }])
+      if (!dest) return null
+      writeFileSync(dest, r.text, 'utf8')
+      audit(c.ctx, 'export', 'csv', null, `Exported ${r.rows} ${r.kind} row(s) to CSV: ${basename(dest)}`)
+      return { file: dest, rows: r.rows }
+    }
+  }
+}
+
+function importOpts(a: Record<string, unknown>): importer.ImportOptions {
+  return {
+    kind: importer.assertKind(a.kind),
+    text: String(a.text ?? ''),
+    mapping: a.mapping && typeof a.mapping === 'object' ? (a.mapping as importer.Mapping) : undefined,
+    dateFormat: a.dateFormat === 'dmy' ? 'dmy' : 'ymd',
+    duplicates: a.duplicates === 'update' ? 'update' : 'skip',
+    skipInvalid: !!a.skipInvalid
   }
 }

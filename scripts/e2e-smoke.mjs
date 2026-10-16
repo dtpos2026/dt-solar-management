@@ -5,12 +5,17 @@
  *
  * Usage (Linux CI / headless):  npx electron-vite build && xvfb-run -a node scripts/e2e-smoke.mjs [playwright-module-path]
  * Output: e2e-output/ (screenshots, PDFs, console-errors.txt)
+ *
+ * Licensing: there is no local trial. The harness creates a THROWAWAY Ed25519 key pair, points the unpackaged app at its
+ * public key (DTSP_LICENSE_PUBLIC_KEY_FILE — ignored by packaged builds) and activates offline with an activation code
+ * signed by that throwaway key. Online features are disabled (DTSP_CLOUD_DISABLED=1) so nothing reaches the live service.
  */
 import { mkdirSync, rmSync, writeFileSync } from 'fs'
 import { createRequire } from 'module'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { tmpdir } from 'os'
+import { buildPayload, certificateToCode, decodeRequestCode, generateKeyPair, signPayload } from './license-core.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const require = createRequire(import.meta.url)
@@ -23,10 +28,16 @@ const userData = join(tmpdir(), `dtsp-e2e-${process.pid}`)
 rmSync(userData, { recursive: true, force: true })
 
 const errors = []
+// Throwaway test key (never the real signing key).
+const testKeys = generateKeyPair()
+const keyDir = join(tmpdir(), `dtsp-e2e-key-${process.pid}`)
+mkdirSync(keyDir, { recursive: true })
+const testPubFile = join(keyDir, 'test-license-public.pem')
+writeFileSync(testPubFile, testKeys.publicPem)
 const app = await electron.launch({
   executablePath: join(root, 'node_modules/electron/dist/electron'),
   args: [root, '--no-sandbox'],
-  env: { ...process.env, DTSP_USER_DATA: userData, ELECTRON_ENABLE_LOGGING: '1' }
+  env: { ...process.env, DTSP_USER_DATA: userData, ELECTRON_ENABLE_LOGGING: '1', DTSP_LICENSE_PUBLIC_KEY_FILE: testPubFile, DTSP_CLOUD_DISABLED: '1' }
 })
 
 async function mainWindow() {
@@ -52,13 +63,28 @@ const page = await mainWindow()
 page.on('pageerror', (e) => errors.push(`pageerror [${page.url().split('#')[1] ?? ''}]: ${e.message} | ${(e.stack ?? '').split('\n').slice(0, 4).join(' | ')}`))
 page.on('console', (m) => (m.type() === 'error' || /useEffect|destroy/.test(m.text())) && errors.push(`console [${page.url().split('#')[1] ?? ''}]: ${m.text().slice(0, 900)}`))
 await page.setViewportSize({ width: 1440, height: 900 }).catch(() => undefined)
-// v1.1: the wizard starts with the License step — take the 15-day trial path.
-await page.waitForSelector('text=Start 15-day trial', { timeout: 30000 })
+// v1.2: the wizard starts with the License step — no local trial; activate offline with a throwaway-key activation code.
+await page.waitForSelector('text=Offline activation', { timeout: 30000 })
 await page.screenshot({ path: join(out, '01a-setup-license.png') })
-await page.getByText('Start 15-day trial').first().click()
-await page.waitForTimeout(300)
-const trialBtn = page.locator('button:has-text("Start 15-day trial")')
-if (await trialBtn.count()) await trialBtn.last().click()
+if (await page.locator('button:has-text("Start 15-day trial")').count()) throw new Error('The wizard still offers a local trial')
+const continueBtn = page.locator('button:has-text("Continue")').last()
+if (!(await continueBtn.isDisabled())) throw new Error('The wizard can continue without a license')
+await page.click('[data-testid=lic-offline]')
+await page.locator('input[placeholder="DTSP-XXXX-XXXX-XXXX-XXXX"]').fill('DTSPE2E0TEST0KEY0001')
+await page.click('button:has-text("Generate request code")')
+const reqCode = await page.locator('textarea[readonly]').inputValue({ timeout: 10000 })
+const req = decodeRequestCode(reqCode)
+if (!req.deviceId && !req.d) throw new Error('Request code has no device id')
+const cert = signPayload(
+  buildPayload({ deviceId: req.deviceId ?? req.d, businessName: 'WETCO SOLAR SOLUTIONS', plan: 'trial', maxFirms: 5, maxUsers: 5, expiresAt: new Date(Date.now() + 15 * 86400000).toISOString() }),
+  testKeys.privatePem
+)
+await page.fill('[data-testid=lic-code]', certificateToCode(cert))
+await page.click('button:has-text("Install activation code")')
+await page.waitForSelector('text=License activated', { timeout: 15000 })
+await page.waitForSelector('text=/Trial — \\d+ day\\(s\\) left/', { timeout: 5000 })
+await page.screenshot({ path: join(out, '01b-setup-license-activated.png') })
+await continueBtn.click()
 await page.waitForSelector('text=Business details', { timeout: 30000 })
 await page.waitForTimeout(800)
 await page.screenshot({ path: join(out, '01-setup-business.png') })
@@ -162,3 +188,4 @@ console.log(`Screens captured in ${out}. Errors: ${errors.length}`)
 for (const e of errors.slice(0, 40)) console.log(' -', e)
 await app.close()
 rmSync(userData, { recursive: true, force: true })
+rmSync(keyDir, { recursive: true, force: true })

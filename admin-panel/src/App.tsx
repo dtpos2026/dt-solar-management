@@ -20,6 +20,7 @@ import { Settings } from './pages/Settings'
 import { Requests } from './pages/Requests'
 import { Offline } from './pages/Offline'
 import { SigningKeyPage } from './pages/SigningKey'
+import { PassSync } from './components/PassSync'
 
 function Login() {
   const { state, notice, signIn, signOut, resetPassword, initialiseSuperAdmin } = useAuth()
@@ -95,6 +96,7 @@ function Shell() {
   const items = NAV.filter((n) => n.perms.length === 0 || n.perms.some(can))
   return (
     <div className="flex h-full">
+      <PassSync />
       <aside className="flex w-60 shrink-0 flex-col bg-gradient-to-b from-[#1e0538] to-[#2b0750] text-[#dacdf2]">
         <div className="flex items-center gap-3 px-5 py-5">
           <img src="/icon.png" className="h-10 w-10 rounded-xl" alt="" />

@@ -117,7 +117,7 @@ export async function issueForDevice(
   dev: DeviceInfo,
   key: LoadedKey,
   by: string,
-  activationType: 'online' | 'offline',
+  activationType: 'online' | 'offline' | 'instant',
   opts: IssueOptions = {}
 ): Promise<IssueResult> {
   const found = await findLicenseByKey(licenseKey)

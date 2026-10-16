@@ -162,7 +162,7 @@ export function Dashboard() {
     <div>
       <PageTitle icon={<LayoutDashboard />} title="Dashboard" sub={`Live overview · ${new Date(thisMonth).toLocaleString(undefined, { month: 'long', year: 'numeric' })}`} />
       {!key && canRequests && (
-        <Notice tone="warn" className="mb-4">No signing key loaded — approvals and certificate publishing need it. <Link className="font-semibold underline" to="/key">Load key</Link></Notice>
+        <Notice tone="warn" className="mb-4">No signing key loaded on this computer — load it once (remembered) so new licenses get instant activation and approvals work. <Link className="font-semibold underline" to="/key">Load key</Link></Notice>
       )}
       {[lic.error, cli.error, inv.error].filter(Boolean).map((e) => <Notice key={e} tone="error" className="mb-3">{e}</Notice>)}
 

@@ -64,6 +64,49 @@ service cloud.firestore {
 
     /* ----------------------------------------------- licenses ----------------------------------------------- */
 
+    // Instant activation (no server on Spark): the desktop, holding the activation pass fetched with the license key,
+    // registers ONE brand-new computer in a single commit — license counter + summary entry + device record.
+    // Accepted only while the license is active and not expired, a slot is free and the computer was never registered
+    // on this license (released / deactivated computers and full licenses still need an admin approval).
+    function licPath(lid) { return /databases/$(database)/documents/licenses/$(lid); }
+    function devPath(lid, did) { return /databases/$(database)/documents/licenses/$(lid)/devices/$(did); }
+    function validDeviceId(did) { return did is string && did.size() >= 10 && did.size() <= 64 && did.matches('^[A-Za-z0-9_-]+$'); }
+    function selfActivation(lid) {
+      let d = request.resource.data;
+      let did = d.get('selfActivatedDevice', '');
+      let before = resource.data.get('devicesSummary', null);
+      return resource.data.status == 'active'
+        && (resource.data.get('expiresAt', null) == null || resource.data.expiresAt > request.time)
+        && changed().hasOnly(['activeDevices', 'devicesSummary', 'updatedAt', 'selfActivatedDevice'])
+        && validDeviceId(did)
+        && before is map
+        && !(did in before)
+        && d.activeDevices == resource.data.get('activeDevices', 0) + 1
+        && d.activeDevices <= resource.data.get('maxDevices', 1)
+        && d.devicesSummary.diff(before).affectedKeys().hasOnly([did])
+        && d.devicesSummary[did].keys().hasOnly(['deviceName', 'os', 'appVersion', 'status', 'activatedAt', 'activationType', 'statusNote'])
+        && d.devicesSummary[did].status == 'active'
+        && d.devicesSummary[did].activationType == 'instant'
+        && d.devicesSummary[did].activatedAt == request.time
+        && d.updatedAt == request.time
+        && !exists(devPath(lid, did))
+        && existsAfter(devPath(lid, did))
+        && !(did in get(/databases/$(database)/documents/licenseStatus/$(lid)).data.get('deactivatedDevices', []));
+    }
+    function selfDevice(lid, did) {
+      let d = request.resource.data;
+      let after = getAfter(licPath(lid)).data;
+      return validDeviceId(did)
+        && after.get('selfActivatedDevice', '') == did
+        && after.activeDevices == get(licPath(lid)).data.get('activeDevices', 0) + 1
+        && d.keys().hasOnly(['deviceId', 'deviceName', 'os', 'appVersion', 'status', 'activatedAt', 'activationType',
+             'statusNote', 'installToken'])
+        && d.deviceId == did && d.status == 'active' && d.activationType == 'instant'
+        && d.activatedAt == request.time
+        && optStr(d, 'deviceName', 200) && optStr(d, 'os', 200) && optStr(d, 'appVersion', 40)
+        && optStr(d, 'statusNote', 300) && optStr(d, 'installToken', 64);
+    }
+
     match /licenses/{licenseId} {
       allow read: if canAny(['licenses.view', 'licenses.manage', 'licenses.generate', 'devices.view', 'devices.manage', 'verify.use', 'billing.create', 'clients.view']);
       allow create: if canAny(['licenses.generate', 'licenses.manage'])
@@ -74,13 +117,16 @@ service cloud.firestore {
       allow update: if (can('licenses.manage') && request.resource.data.status in ['active', 'suspended', 'revoked']
                         && request.resource.data.licenseKey == resource.data.licenseKey)
         || (canAny(['devices.manage', 'licenses.generate'])
-            && changed().hasOnly(['activeDevices', 'devicesSummary', 'updatedAt', 'lastVerifiedAt', 'activatedAt', 'clientId']));
+            && changed().hasOnly(['activeDevices', 'devicesSummary', 'updatedAt', 'lastVerifiedAt', 'activatedAt', 'clientId', 'passHash']))
+        || selfActivation(licenseId);
       allow delete: if isOwner();
 
       match /devices/{deviceId} {
         allow read: if canAny(['licenses.view', 'licenses.manage', 'devices.view', 'devices.manage']);
-        // A computer is only ever registered by an explicit approval of an admin holding devices.manage.
-        allow create: if can('devices.manage');
+        // The desktop reads its own record by id (licenseId is only known to certificate / pass holders).
+        allow get: if true;
+        // Registered by an admin approval (devices.manage) or by instant activation (see selfActivation).
+        allow create: if can('devices.manage') || selfDevice(licenseId, deviceId);
         allow update: if canAny(['licenses.manage', 'devices.manage']);
         // Only released / deactivated device records can be removed (clearing device history); active ones never.
         allow delete: if canAny(['licenses.manage', 'devices.manage']) && resource.data.get('status', 'active') != 'active';
@@ -92,6 +138,13 @@ service cloud.firestore {
         // Clearing license history is an owner / audit.manage action; the clearing itself is logged as a 'security' entry.
         allow delete: if can('audit.manage');
       }
+    }
+
+    // Activation pass (see selfActivation), fetched by the SHA-256 of the license key; never listable.
+    match /activationPasses/{hash} {
+      allow get: if true;
+      allow list: if false;
+      allow write: if canAny(['licenses.manage', 'licenses.generate']) && hash.matches('^[0-9a-f]{64}$');
     }
 
     // Public status of one license, read by the desktop app by id (cannot be listed).

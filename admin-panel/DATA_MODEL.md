@@ -46,11 +46,21 @@ v1.2: `plan` and `planType` may be `'trial'` (portal "Issue trial": 1 computer, 
 `devicesSummary: { [deviceId]: { deviceName, os, appVersion, status, activatedAt, activationType, statusNote } }` — a
 denormalised copy of `devices/*` rewritten in the same transaction as every device change (absent on older licenses until
 an admin with devices.manage backfills it), so the Devices page needs no read per license. Device approval is always an
-explicit action of an admin with `devices.manage` (rules: `devices/{id}` create needs devices.manage); an already active
+explicit action of an admin with `devices.manage`, or (v1.3) instant self-registration with the activation pass within the
+device limit (see `activationPasses`); an already active
 computer is re-issued (no new slot); a full license needs "replace computer X" (release + approve in one transaction).
 
 `status`: `active` | `suspended` | `revoked`. Pending = license with `activeDevices == 0` and no device ever activated.
 Expired = `expiresAt` in the past (derived).
+
+### `activationPasses/{sha256hex(licenseKey)}` — public `get`, no `list` (v1.3, instant activation)
+`licenseId, cert (activation code signed for deviceId '*'), updatedAt`. Written by the portal (`lib/activationPass.ts`,
+`<PassSync/>`) whenever an admin with license rights has the signing key loaded: every active license gets one, re-signed when
+its terms change (`licenses.passHash` = terms + key fingerprint), withdrawn when suspended / revoked. The desktop registers
+itself with it: one commit that increments `licenses/{id}.activeDevices`, adds `devicesSummary[deviceId]` (activationType
+`instant`), sets `selfActivatedDevice` and creates `devices/{deviceId}` (status active). The rules (`selfActivation`,
+`selfDevice`) accept it only for an active, unexpired license with a free slot and a computer that has no device record and is
+not in `deactivatedDevices`. Device records are readable by id (`get`) so the desktop can recognise its own registration.
 
 ### `licenseStatus/{licenseId}` — public `get`, no `list`
 `status, expiresAt, deactivatedDevices: string[], poweredBy: bool, detached: bool, updatedAt,

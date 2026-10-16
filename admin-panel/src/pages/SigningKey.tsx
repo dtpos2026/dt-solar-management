@@ -16,7 +16,7 @@ export function SigningKeyPage() {
 export function SigningKeyPanel() {
   const { key, restoring, remembered, load, setRemember, forget } = useSigningKey()
   const [text, setText] = useState('')
-  const [remember, setRem] = useState(false)
+  const [remember, setRem] = useState(true)
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const doLoad = async (t: string) => {
@@ -87,7 +87,7 @@ export function SigningKeyPanel() {
           <textarea className="input font-mono text-[11.5px]" rows={5} value={text} onChange={(e) => setText(e.target.value)} placeholder="-----BEGIN PRIVATE KEY-----" aria-label="Private key PEM" />
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <button className="btn btn-primary" disabled={!text.trim() || busy} onClick={() => doLoad(text)}>Load key</button>
-            <label className="flex items-center gap-2 text-[13px]"><input type="checkbox" checked={remember} onChange={(e) => setRem(e.target.checked)} />Remember on this computer (only on your own PC)</label>
+            <label className="flex items-center gap-2 text-[13px]"><input type="checkbox" checked={remember} onChange={(e) => setRem(e.target.checked)} />Remember on this computer — load once, no more prompts (untick on a shared PC)</label>
           </div>
           {err && <div className="mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{err}</div>}
         </div>

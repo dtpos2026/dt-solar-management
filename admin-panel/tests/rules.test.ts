@@ -191,7 +191,9 @@ describe('licenses', () => {
     await matrix(['owner'], (d, a) => deleteDoc(doc(d, a === 'owner' ? `licenses/${LIC}` : 'licenses/none')))
   })
   it('devices / history subcollections', async () => {
-    await matrix(['owner', 'manager', 'sales', 'billing', 'support', 'technical'], (d) => getDoc(doc(d, `licenses/${LIC}/devices/d1`)))
+    // A device record is readable by id (the desktop checks its own registration); listing needs device / license viewers.
+    await matrix([...ACTORS], (d) => getDoc(doc(d, `licenses/${LIC}/devices/d1`)))
+    await matrix(['owner', 'manager', 'sales', 'billing', 'support', 'technical'], (d) => getDocs(collection(d, `licenses/${LIC}/devices`)))
     await matrix(['owner', 'manager', 'technical'], (d) => setDoc(doc(d, `licenses/${LIC}/devices/${uid()}`), { deviceId: 'x' }))
     await matrix(['owner', 'manager', 'sales', 'technical'], (d) => setDoc(doc(d, `licenses/${LIC}/history/${uid()}`), { action: 'x' }))
     await assertFails(updateDoc(doc(db('owner'), `licenses/${LIC}/history/h1`), { action: 'forged' }))

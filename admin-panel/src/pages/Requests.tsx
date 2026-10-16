@@ -6,12 +6,12 @@
  * computer with it in one transaction. Approving signs the certificate in this browser (no server) and can create
  * or link the client from the registration details the desktop wizard sent.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { getDocs, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore'
+import { getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
 import { Building2, Check, Inbox, KeyRound, Loader2, Repeat, X } from 'lucide-react'
 import { Field, Modal, PageTitle } from '../components/ui'
-import { deviceFromSnap, devicesCol, findLicenseByKey, requestFromSnap, requestsCol } from '../lib/licenses'
+import { deviceFromSnap, devicesCol, findLicenseByKey, requestFromSnap, requestRef, requestsCol } from '../lib/licenses'
 import { approveRequest, rejectRequest, type ApproveOutcome } from '../lib/approve'
 import { loadLicenses } from '../lib/fleet'
 import { classifyActivation, holdsSlot, maskDeviceId, type ActivationPlan } from '../lib/terms'
@@ -101,6 +101,21 @@ export function Requests({ embedded = false }: { embedded?: boolean }) {
       alive = false
     }
   }, [allowed, pendingKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A request whose computer meanwhile activated itself instantly (a slot was freed / the pass was published) needs
+  // nothing more: close it so it does not wait in the queue.
+  const closed = useRef(new Set<string>())
+  useEffect(() => {
+    if (!allowed || !licenses) return
+    const byKey = new Map(licenses.map((l) => [l.licenseKey, l]))
+    for (const r of pending) {
+      if (r.type !== 'activate' || closed.current.has(r.id)) continue
+      const l = byKey.get(normaliseLicenseKey(r.licenseKey ?? ''))
+      if (l?.devicesSummary?.[r.deviceId]?.status !== 'active') continue
+      closed.current.add(r.id)
+      void updateDoc(requestRef(r.id), { status: 'processed', message: 'Activated instantly (valid key, free device slot).', licenseId: l.id, processedAt: serverTimestamp(), processedBy: by }).catch(() => closed.current.delete(r.id))
+    }
+  }, [allowed, licenses, pending, by])
 
   const quickApprove = async (r: ActivationRequest) => {
     if (!key) return setMsg({ tone: 'warn', text: 'Load the signing key first (Settings → Signing key).' })

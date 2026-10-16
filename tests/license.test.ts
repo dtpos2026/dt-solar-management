@@ -27,6 +27,12 @@ describe('license certificates', () => {
     expect(verifyCertificate(cert, keys.publicPem, 'OTHER-DEVICE').ok).toBe(false)
     expect(verifyCertificate(cert, generateKeyPair().publicPem, payload.deviceId).ok).toBe(false)
   })
+  it('an activation pass (device *) is valid only on a computer that registered it online', () => {
+    const pass = signPayload(buildPayload({ deviceId: '*', licenseId: 'LIC-P', businessName: 'B' }), keys.privatePem)
+    expect(verifyCertificate(pass, keys.publicPem, payload.deviceId).ok).toBe(false)
+    expect(verifyCertificate(pass, keys.publicPem, payload.deviceId, (lid) => lid === 'OTHER').ok).toBe(false)
+    expect(verifyCertificate(pass, keys.publicPem, payload.deviceId, (lid) => lid === 'LIC-P').ok).toBe(true)
+  })
 })
 
 describe('license evaluation', () => {

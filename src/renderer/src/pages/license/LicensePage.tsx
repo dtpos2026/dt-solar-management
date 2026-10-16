@@ -41,6 +41,7 @@ interface Lic extends Omit<LicenseStatus, 'payload'> {
   certUpdate?: { at: string; summary: string } | null
   lastCheckError?: string | null
   pendingRequestId?: string | null
+  pendingReason?: string | null
 }
 
 interface ActivationResult {
@@ -186,11 +187,11 @@ export function LicensePage({ embedded = false }: { embedded?: boolean } = {}): 
     [startPending]
   )
 
-  const pollOnce = useCallback(async (): Promise<void> => {
+  const pollOnce = useCallback(async (force = false): Promise<void> => {
     if (inFlight.current || !pendingRef.current) return
     inFlight.current = true
     try {
-      const r = await api<ActivationResult>('license.pollActivation')
+      const r = await api<ActivationResult>('license.pollActivation', { force })
       if (!pendingRef.current) return // cancelled meanwhile
       setLic(r.status)
       setLastPoll(Date.now())
@@ -421,6 +422,7 @@ export function LicensePage({ embedded = false }: { embedded?: boolean } = {}): 
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-[16px] font-semibold">Waiting for approval from Digital Target…</div>
+              {lic?.pendingReason && <div className="mt-1 text-[13px] font-medium text-warn">Why approval is needed: {lic.pendingReason}</div>}
               <div className="mt-0.5 text-[13px] text-muted">
                 Your activation request has been sent. This page checks automatically every 5 seconds — the license installs itself as soon as it is approved. You can keep working or close this page;
                 checking resumes when you come back.
@@ -441,7 +443,7 @@ export function LicensePage({ embedded = false }: { embedded?: boolean } = {}): 
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" icon={<RefreshCw className="h-4 w-4" />} onClick={() => void pollOnce()}>
+              <Button size="sm" icon={<RefreshCw className="h-4 w-4" />} onClick={() => void pollOnce(true)}>
                 Check now
               </Button>
               <Button size="sm" icon={<MessageCircle className="h-4 w-4" />} onClick={() => openExternal(`${VENDOR.whatsapp}?text=${encodeURIComponent(`DT Solar Pro activation request ID: ${pendingId}\nDevice ID: ${lic?.deviceId ?? ''}`)}`)}>

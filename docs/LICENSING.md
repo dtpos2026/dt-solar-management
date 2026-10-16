@@ -13,8 +13,13 @@ Code: `src/main/license/*` (certificate, evaluation, check-ins), `src/main/ipc/r
 
 ## Activation (no local trial)
 - A fresh install is **Not activated**: the setup wizard's License step offers only
-  (a) **online activation** — license key + company / owner / phone / address → `activationRequests` document → Super Admin
-  approves → certificate written back → installed automatically; or
+  (a) **online activation** — license key + company / owner / phone / address. **Instant** (v1.3): the app fetches the
+  license's activation pass (`activationPasses/{sha256(key)}`, signed by the owner's key for device `*`), verifies it,
+  checks `licenseStatus`, and registers this computer on the license in one Firestore commit (rules: license active, not
+  expired, free slot, computer never registered before) → active at once, no waiting. Only when that is impossible (no pass
+  published yet / unknown key, device limit full, computer released or deactivated earlier) an `activationRequests` document
+  is created with the reason shown to the customer; the app keeps retrying the instant path (≤ 1/min, "Check now" forces it),
+  so a freed slot or a newly published pass completes the activation without an admin; or
   (b) **offline activation** — request code (key + device id) → Digital Target → activation code pasted in the app.
   The wizard cannot continue and no business data can be created (`auth.setup` refuses) until a valid certificate is installed.
 - A **trial** is a normal certificate issued by the Super Admin with plan `trial` and a short expiry (about 15 days); the app shows
@@ -22,8 +27,9 @@ Code: `src/main/license/*` (certificate, evaluation, check-ins), `src/main/ipc/r
 - **Old installations** that used the former local 15-day trial (state `trialStartedAt` or `app_meta.trial_started_at`) keep all
   data and open **read-only** (view / print / export / backup) with "Activate your license". The old state is still read safely;
   no local trial is ever started.
-- **One device per approval**: re-entering the key on a computer already activated with it verifies online instead of creating a
-  new request. Another computer needs its own request that the Super Admin approves.
+- **One slot per computer**: re-entering the key on a computer already registered binds the pass again without using a new
+  slot. A pass is valid only on the computer that registered it online (state `boundPass`); copying it elsewhere is refused.
+  When the Super Admin later publishes per-device certificates (`licenseStatus.certs`), they replace the pass at check-in.
 - License keys and full device ids are never written to logs or the audit trail (the UI shows a masked installation id).
 
 ## Modes

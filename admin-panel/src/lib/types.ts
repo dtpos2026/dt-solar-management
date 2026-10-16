@@ -59,6 +59,8 @@ export interface License {
    * every device change so the Devices page needs no read per license. null on licenses never touched since.
    */
   devicesSummary: Record<string, DeviceSummary> | null
+  /** Terms fingerprint of the published activation pass ('' = none yet). See lib/activationPass.ts. */
+  passHash: string
 }
 
 export interface DeviceSummary {
@@ -67,7 +69,7 @@ export interface DeviceSummary {
   appVersion: string
   status: 'active' | 'suspended' | 'revoked' | 'deactivated'
   activatedAtMs: number | null
-  activationType: 'online' | 'offline'
+  activationType: 'online' | 'offline' | 'instant'
   statusNote: string
 }
 
@@ -80,7 +82,7 @@ export interface Device {
   /** active | suspended | revoked hold a slot of maxDevices; deactivated (released) frees it. */
   status: 'active' | 'suspended' | 'revoked' | 'deactivated'
   activatedAt: Timestamp | null
-  activationType: 'online' | 'offline'
+  activationType: 'online' | 'offline' | 'instant'
   lastIssuedAt: Timestamp | null
   deactivatedAt?: Timestamp | null
   /** v1.1: reason / note of the last suspend / revoke / release, when and by whom. */

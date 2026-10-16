@@ -172,6 +172,8 @@ export interface Write {
   serverTime?: string[]
   /** Precondition: true = must exist (update), false = must not exist (create). */
   exists?: boolean
+  /** Integer fields incremented by the server (field path → amount). */
+  increment?: Record<string, number>
 }
 
 type FetchLike = (url: string, init?: { method?: string; headers?: Record<string, string>; body?: string; signal?: AbortSignal }) => Promise<{ status: number; ok?: boolean; json: () => Promise<unknown>; text?: () => Promise<string> }>
@@ -294,7 +296,9 @@ export class FirestoreRest {
       writes: writes.map((w) => {
         const out: Record<string, unknown> = { update: { name: this.docName(w.path), fields: encodeFields(w.fields) } }
         if (w.mask) out.updateMask = { fieldPaths: w.mask }
-        if (w.serverTime?.length) out.updateTransforms = w.serverTime.map((fieldPath) => ({ fieldPath, setToServerValue: 'REQUEST_TIME' }))
+        const transforms: Array<Record<string, unknown>> = (w.serverTime ?? []).map((fieldPath) => ({ fieldPath, setToServerValue: 'REQUEST_TIME' }))
+        for (const [fieldPath, n] of Object.entries(w.increment ?? {})) transforms.push({ fieldPath, increment: { integerValue: String(Math.trunc(n)) } })
+        if (transforms.length) out.updateTransforms = transforms
         if (w.exists !== undefined) out.currentDocument = { exists: w.exists }
         return out
       })

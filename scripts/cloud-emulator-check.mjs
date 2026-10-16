@@ -39,7 +39,7 @@ await build({
   stdin: {
     contents: `
       export { LicenseService } from './src/main/license/service'
-      export { FirestoreRest, resolveFirestoreConfig, FirestoreError } from './src/main/cloud/firestore'
+      export { FirestoreRest, resolveFirestoreConfig, FirestoreError, timestamp } from './src/main/cloud/firestore'
       export { buildHeartbeat, heartbeatWrite } from './src/main/cloud/heartbeat'
       export { buildLocation, parseGeoIp } from './src/main/cloud/location'
       export * as support from './src/main/cloud/support'
@@ -268,6 +268,77 @@ await rejected('activation request pre-approved', () =>
   anon.commit([{ path: 'activationRequests/forgedRequest0000002', fields: { type: 'activate', licenseKey: key, deviceId: lic.deviceId, status: 'approved' }, serverTime: ['createdAt'], exists: false }])
 )
 await rejected('licenseStatus write by a customer', () => anon.commit([{ path: `licenseStatus/${licenseId}`, fields: { status: 'active', poweredBy: false } }]))
+
+/* ------------------------------------------------ 5. instant activation (activation pass) ------------------------------------------------ */
+console.log('\nInstant activation (valid key -> active at once within the device limit)')
+{
+  const { createHash } = await import('node:crypto')
+  const key2 = 'DTSP-IN57-ANT0-0000-0001'
+  const lid2 = 'LIC-INST-0001'
+  const exp = new Date(Date.now() + 300 * 86400000)
+  const passPayload = core.buildPayload({ deviceId: '*', businessName: 'Instant Solar', licenseId: lid2, issuedAt: new Date(Date.now() - 60000).toISOString(), expiresAt: exp.toISOString() })
+  await admin.patch(`licenses/${lid2}`, { licenseKey: key2, businessName: 'Instant Solar', status: 'active', maxDevices: 2, activeDevices: 0, devicesSummary: {}, expiresAt: M.timestamp(exp) })
+  await admin.patch(`licenseStatus/${lid2}`, { status: 'active', expiresAt: M.timestamp(exp), deactivatedDevices: [] })
+  await admin.patch(`activationPasses/${createHash('sha256').update(key2).digest('hex')}`, { licenseId: lid2, cert: core.certificateToCode(core.signPayload(passPayload, keys.privatePem)) })
+  const pc = (name) => new M.LicenseService({ dir: mkdtempSync(join(tmpdir(), `inst-${name}-`)), machineId: `machine-${name}`, publicKeyPem: keys.publicPem, firestore: { projectId: PROJECT, apiKey: 'emulator' }, appVersion: '1.2.0', env })
+  const tryAct = async (svc) => {
+    try {
+      return await svc.activateOnline(key2, reg)
+    } catch (e) {
+      return { error: e }
+    }
+  }
+  const A = pc('A')
+  const rA = await tryAct(A)
+  ok(rA.state === 'approved' && A.status(true).mode === 'active' && A.status(true).canWrite, `computer A activated instantly (${rA.message ?? rA.error?.message})`)
+  let L = await admin.get(`licenses/${lid2}`)
+  ok(L?.data.activeDevices === 1 && L?.data.devicesSummary?.[A.deviceId]?.activationType === 'instant', 'slot counted + summary entry written')
+  ok((await admin.get(`licenses/${lid2}/devices/${A.deviceId}`))?.data.status === 'active', 'device record created')
+  ok((await A.checkIn(false)).mode === 'active', 'check-in of the instantly activated computer')
+  const B = pc('B')
+  ok((await tryAct(B)).state === 'approved', 'computer B activated instantly (2 of 2)')
+  const C = pc('C')
+  const rC = await tryAct(C)
+  ok(rC.state === 'pending' && /slot/i.test(rC.message) && C.status(true).pendingReason, `limit full -> approval request with reason (${rC.message})`)
+  L = await admin.get(`licenses/${lid2}`)
+  ok(L?.data.activeDevices === 2, 'no slot over the limit')
+  const A2 = new M.LicenseService({ dir: mkdtempSync(join(tmpdir(), 'inst-A2-')), machineId: 'machine-A', publicKeyPem: keys.publicPem, firestore: { projectId: PROJECT, apiKey: 'emulator' }, appVersion: '1.2.0', env })
+  const rA2 = await tryAct(A2)
+  ok(rA2.state === 'approved' && /no new slot/i.test(rA2.message) && (await admin.get(`licenses/${lid2}`))?.data.activeDevices === 2, 'same computer re-installed -> active, no new slot')
+  const D = pc('D')
+  let copied = null
+  try {
+    D.install(core.certificateToCode(core.signPayload(passPayload, keys.privatePem)))
+  } catch (e) {
+    copied = e
+  }
+  ok(!!copied && D.status(true).mode === 'not_activated', 'pass copied to another computer is refused offline')
+  await rejected('forged slot (counter only, no device record)', () =>
+    anon.commit([{ path: `licenses/${lid2}`, fields: { selfActivatedDevice: 'FORGED-0000-0000-0000' }, mask: ['selfActivatedDevice'], increment: { activeDevices: 1 }, serverTime: ['updatedAt'], exists: true }])
+  )
+  await rejected('customer raising maxDevices', () => anon.commit([{ path: `licenses/${lid2}`, fields: { maxDevices: 50 }, mask: ['maxDevices'], exists: true }]))
+  // Admin releases B -> C (still pending) activates by itself at the next check; B now needs approval.
+  await admin.patch(`licenses/${lid2}/devices/${B.deviceId}`, { status: 'deactivated' }, ['status'])
+  await admin.patch(`licenses/${lid2}`, { activeDevices: 1, devicesSummary: { [A.deviceId]: L.data.devicesSummary[A.deviceId], [B.deviceId]: { ...L.data.devicesSummary[B.deviceId], status: 'deactivated' } } }, ['activeDevices', 'devicesSummary'])
+  await admin.patch(`licenseStatus/${lid2}`, { deactivatedDevices: [B.deviceId] }, ['deactivatedDevices'])
+  const pC = await C.pollActivation(true)
+  ok(pC.state === 'approved' && C.status(true).mode === 'active', 'pending computer C activates as soon as a slot is free')
+  const B2 = new M.LicenseService({ dir: mkdtempSync(join(tmpdir(), 'inst-B2-')), machineId: 'machine-B', publicKeyPem: keys.publicPem, firestore: { projectId: PROJECT, apiKey: 'emulator' }, appVersion: '1.2.0', env })
+  const rB2 = await tryAct(B2)
+  ok(rB2.state === 'pending' && /released or deactivated/i.test(rB2.message), 'released computer needs approval again')
+  await admin.patch(`licenseStatus/${lid2}`, { status: 'suspended' }, ['status'])
+  await admin.patch(`licenses/${lid2}`, { status: 'suspended' }, ['status'])
+  const rE = await tryAct(pc('E'))
+  ok(!!rE.error && /suspended/i.test(rE.error.message), 'suspended license refused without a request')
+  const unknown = pc('F')
+  let rF
+  try {
+    rF = await unknown.activateOnline('DTSP-ZZZZ-ZZZZ-ZZZZ-ZZZZ', reg)
+  } catch (e) {
+    rF = { error: e }
+  }
+  ok(rF.state === 'pending' && /not enabled for instant/i.test(rF.message), 'unknown key -> request for review (no pass)')
+}
 
 console.log(`\n${passed} passed, ${failed} failed`)
 process.exit(failed ? 1 : 0)

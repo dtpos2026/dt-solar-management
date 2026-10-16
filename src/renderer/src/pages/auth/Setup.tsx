@@ -385,6 +385,26 @@ function LicenseStep({ defaults, onDone }: { defaults: { companyName: string; ph
     return () => clearInterval(t)
   }, [phase])
 
+  const checkNow = async (): Promise<void> => {
+    setBusy('check')
+    try {
+      const r = await api<ActResult>('license.pollActivation', { force: true })
+      setLic(r.status)
+      if (r.state === 'approved') {
+        setPhase('approved')
+        setNote(r.status.message || r.message)
+      } else if (r.state === 'none') setPhase('form')
+      else setNote(r.message)
+    } catch (e) {
+      if ((e as ApiError).code === 'LICENSE_REJECTED') {
+        setPhase('rejected')
+        setNote((e as Error).message)
+      } else toast.error(e)
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const activate = async (): Promise<void> => {
     if (!reg.companyName.trim() || !reg.ownerName.trim() || !reg.phone.trim()) return toast.error('Enter the company name, owner name and phone.')
     if (!KEY_RE.test(key)) return toast.error('Enter a valid license key (DTSP-XXXX-XXXX-XXXX-XXXX).')
@@ -527,8 +547,11 @@ function LicenseStep({ defaults, onDone }: { defaults: { companyName: string; ph
           <div className="flex items-center gap-2 font-semibold">
             <Loader2 className="h-5 w-5 animate-spin text-brand" /> Waiting for approval <Badge tone="warn">Pending</Badge>
           </div>
-          <div className="text-[13px] text-muted">{note} Digital Target has received your request. This screen updates automatically; setup continues as soon as the license is approved.</div>
+          <div className="text-[13px] text-muted">{note} This screen updates automatically; setup continues as soon as the license is approved.</div>
           <div className="flex gap-3">
+            <Button variant="secondary" loading={busy === 'check'} onClick={() => void checkNow()}>
+              Check now
+            </Button>
             <Button variant="ghost" loading={busy === 'cancel'} onClick={cancel}>
               Cancel request
             </Button>

@@ -98,6 +98,8 @@ export interface LicenseStatus {
   lastCheckAt: string | null
   lastCheckError: string | null
   pendingRequestId: string | null
+  /** Why the pending activation needs Digital Target's approval (instant activation was not possible). */
+  pendingReason?: string | null
   onlineConfigured: boolean
   signingConfigured: boolean
   maxFirms: number

@@ -289,4 +289,51 @@ describe.runIf(run)('Devices page read cost (300 licenses / 600 devices / 600 he
     expect(Object.keys(again.devicesSummary ?? {})).toEqual(['LEGACY-DEVICE-0001'])
     expect(again.devicesSummary!['LEGACY-DEVICE-0001']).toMatchObject({ status: 'active', activationType: 'offline', os: 'Windows 10' })
   }, 60_000)
+
+  it('publishes an activation pass per active license (instant activation), re-signs on change, withdraws on suspend', async () => {
+    const { syncPasses, licenseKeyHash, passRef, PASS_DEVICE } = await import('../src/lib/activationPass')
+    const { licenseFromSnap, licenseRef } = await import('../src/lib/licenses')
+    const { verifyCode, base64UrlToUtf8 } = await import('../src/lib/crypto')
+    const { getDoc, updateDoc } = await import('firebase/firestore')
+    const key = await signingKey()
+    const K = 'DTSP-PASS-AAAA-BBBB-CCCC'
+    await seedLicense('pass1', K, { maxDevices: 3 })
+    const lic = async () => licenseFromSnap(await getDoc(licenseRef('pass1')))
+    await syncPasses([await lic()], key, 'owner@test')
+    const hash = await licenseKeyHash(K)
+    expect(hash).toMatch(/^[0-9a-f]{64}$/)
+    const p1 = await getDoc(passRef(hash))
+    expect(p1.exists()).toBe(true)
+    expect(p1.data()!.licenseId).toBe('pass1')
+    expect(await verifyCode(p1.data()!.cert, key.publicKey)).toBe(true)
+    const payload = JSON.parse(base64UrlToUtf8(String(p1.data()!.cert).split('.')[0]))
+    expect(payload.deviceId).toBe(PASS_DEVICE)
+    expect(payload.maxDevices).toBe(3)
+    const h1 = (await lic()).passHash
+    expect(h1).not.toBe('')
+    // unchanged terms: nothing re-signed
+    await syncPasses([await lic()], key, 'owner@test')
+    expect((await getDoc(passRef(hash))).data()!.cert).toBe(p1.data()!.cert)
+    // terms change -> new pass
+    await updateDoc(licenseRef('pass1'), { maxUsers: 9 })
+    await syncPasses([await lic()], key, 'owner@test')
+    expect((await lic()).passHash).not.toBe(h1)
+    expect(JSON.parse(base64UrlToUtf8(String((await getDoc(passRef(hash))).data()!.cert).split('.')[0])).maxUsers).toBe(9)
+    // suspended -> withdrawn
+    await updateDoc(licenseRef('pass1'), { status: 'suspended' })
+    await syncPasses([await lic()], key, 'owner@test')
+    expect((await getDoc(passRef(hash))).exists()).toBe(false)
+    expect((await lic()).passHash).toBe('')
+  })
+
+  it('rules: activation passes are public by id, never listable, written only by license admins', async () => {
+    const { collection, getDocs, getDoc, setDoc: set, doc: d } = await import('firebase/firestore')
+    const anon = env.unauthenticatedContext().firestore() as unknown as Firestore
+    const id = 'a'.repeat(64)
+    await env.withSecurityRulesDisabled(async (c) => set(d(c.firestore() as unknown as Firestore, 'activationPasses', id), { licenseId: 'x', cert: 'y' }))
+    expect((await getDoc(d(anon, 'activationPasses', id))).exists()).toBe(true)
+    await expect(getDocs(collection(anon, 'activationPasses'))).rejects.toThrow()
+    await expect(set(d(anon, 'activationPasses', 'b'.repeat(64)), { licenseId: 'x', cert: 'y' })).rejects.toThrow()
+  })
 })
+

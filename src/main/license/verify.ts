@@ -19,10 +19,15 @@ export function parseCertificate(text: string): LicenseCertificate {
   return obj
 }
 
+/** Device id of an activation pass: signed for any computer, valid only once this computer registered with it. */
+export const PASS_DEVICE = '*'
+
 export function verifyCertificate(
   cert: LicenseCertificate,
   publicKeyPem: string,
-  deviceId: string
+  deviceId: string,
+  /** Accepts an activation pass of this license (true only after this computer registered on it online). */
+  passBound: (licenseId: string) => boolean = () => false
 ): { ok: true; payload: LicensePayload } | { ok: false; reason: string } {
   if (!publicKeyPem || !publicKeyPem.includes('BEGIN PUBLIC KEY')) return { ok: false, reason: 'License verification key is not configured in this build.' }
   let valid = false
@@ -40,6 +45,10 @@ export function verifyCertificate(
     return { ok: false, reason: 'License data is corrupt.' }
   }
   if (payload.v !== 1) return { ok: false, reason: 'Unsupported license version. Please update the application.' }
+  if (payload.deviceId === PASS_DEVICE) {
+    if (!passBound(String(payload.licenseId))) return { ok: false, reason: 'This activation pass is not registered on this computer. Activate online with the license key.' }
+    return { ok: true, payload }
+  }
   if (payload.deviceId !== deviceId) return { ok: false, reason: 'This license was issued for a different computer.' }
   return { ok: true, payload }
 }

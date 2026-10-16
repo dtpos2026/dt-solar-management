@@ -31,7 +31,7 @@ import { hostname, networkInterfaces, platform, release } from 'os'
 import { join } from 'path'
 import type { ActivationNotice, ActivationResult, LicenseCertificate, LicensePayload, LicenseStatus, Registration, RemoteBlock, RemoteRecord } from './types'
 import { TRIAL_LIMITS } from './types'
-import { WRITE_MODES, blockReasonOf, evaluate, parseCertificate, verifyCertificate } from './verify'
+import { PASS_DEVICE, WRITE_MODES, blockReasonOf, evaluate, parseCertificate, verifyCertificate } from './verify'
 import { AppError } from '../services/context'
 import { FirestoreError, FirestoreRest, resolveFirestoreConfig, type FirestoreConfig, type RestOptions, type Write } from '../cloud/firestore'
 import { loadInstallToken, maskToken } from '../cloud/install'
@@ -48,7 +48,9 @@ interface State {
   remoteAt?: string | null
   lastCheckAt: string | null
   lastCheckError: string | null
-  pendingRequest: { id: string; licenseKey: string; createdAt: string } | null
+  pendingRequest: { id: string; licenseKey: string; createdAt: string; reason?: string } | null
+  /** Activation pass this computer registered with online (instant activation); only then is the pass valid here. */
+  boundPass?: { licenseId: string; deviceId: string } | null
   /** Latest "Powered by Digital Target" flag published by the Super Admin (overrides the certificate). */
   remotePoweredBy?: boolean | null
   /** v1.1 */
@@ -249,8 +251,14 @@ export class LicenseService {
       registration: s.registration ?? null,
       certUpdate: s.certUpdate ?? null,
       activationNotice: s.activationNotice ?? null,
-      activatedKey: s.activatedKey ?? null
+      activatedKey: s.activatedKey ?? null,
+      boundPass: s.boundPass && typeof s.boundPass.licenseId === 'string' ? s.boundPass : null
     }
+  }
+
+  /** True when this computer registered the activation pass of `licenseId` online. */
+  private passBound(s: State, licenseId: string): boolean {
+    return !!s.boundPass && s.boundPass.licenseId === licenseId && s.boundPass.deviceId === this.deviceId
   }
 
   private readDbRemote(): RemoteRecord | null {
@@ -362,7 +370,7 @@ export class LicenseService {
     let payload: LicensePayload | null = null
     let certError: string | null = null
     if (cert) {
-      const r = verifyCertificate(cert, this.opts.publicKeyPem, this.deviceId)
+      const r = verifyCertificate(cert, this.opts.publicKeyPem, this.deviceId, (lid) => this.passBound(s, lid))
       if (r.ok) payload = r.payload
       else certError = r.reason
     }
@@ -399,6 +407,7 @@ export class LicenseService {
       lastCheckAt: s.lastCheckAt,
       lastCheckError: s.lastCheckError,
       pendingRequestId: s.pendingRequest?.id ?? null,
+      pendingReason: s.pendingRequest?.reason ?? null,
       onlineConfigured: this.onlineConfigured,
       signingConfigured: this.signingConfigured,
       maxFirms: payload ? payload.maxFirms : TRIAL_LIMITS.maxFirms,
@@ -425,17 +434,19 @@ export class LicenseService {
   }
 
   /** Installs a certificate (from file contents or a pasted activation code). */
-  install(text: string): LicenseStatus {
+  install(text: string, bindPass = false): LicenseStatus {
     let cert: LicenseCertificate
     try {
       cert = parseCertificate(text)
     } catch {
       throw new AppError('This is not a valid DT Solar Pro license file or activation code.', 'LICENSE')
     }
-    const r = verifyCertificate(cert, this.opts.publicKeyPem, this.deviceId)
+    const s0 = this.readState()
+    const r = verifyCertificate(cert, this.opts.publicKeyPem, this.deviceId, (lid) => bindPass || this.passBound(s0, lid))
     if (!r.ok) throw new AppError(r.reason, 'LICENSE')
     const before = this.status(true).payload
     const s = this.readState()
+    if (bindPass && r.payload.deviceId === PASS_DEVICE) s.boundPass = { licenseId: r.payload.licenseId, deviceId: this.deviceId }
     // A stored remote block (suspended / revoked / device deactivated) can only be lifted by a certificate that Digital
     // Target issued AFTER that decision (re-approval) or by an online check-in, never by re-installing an older one.
     const remote = this.effectiveRemote(s, r.payload.licenseId)
@@ -498,7 +509,7 @@ export class LicenseService {
     const reg = registration === undefined || registration === null ? null : cleanRegistration(registration)
     const client = this.requireClient()
     const s = this.readState()
-    if (s.pendingRequest && s.pendingRequest.licenseKey === key) return this.pollActivation()
+    if (s.pendingRequest && s.pendingRequest.licenseKey === key) return this.pollActivation(true)
     // One device = one approval: this computer is already activated with this key -> verify instead of asking again.
     const cur = this.status(true)
     if (cur.payload && s.activatedKey === key && cur.mode !== 'device_deactivated') {
@@ -507,6 +518,9 @@ export class LicenseService {
       if (reg) this.saveRegistration(reg)
       return this.result('approved', 'This computer is already activated with this license key. No new approval is needed.')
     }
+    // A valid key activates a new computer at once (within the device limit); approval only where it is required.
+    const instant = await this.tryInstant(key, reg)
+    if ('state' in instant) return instant
     const id = LicenseService.randomId()
     const now = this.iso()
     const fields: Record<string, unknown> = {
@@ -526,15 +540,103 @@ export class LicenseService {
       throw LicenseService.netError(e, 'activation request')
     }
     const st = this.readState()
-    st.pendingRequest = { id, licenseKey: key, createdAt: now }
+    st.pendingRequest = { id, licenseKey: key, createdAt: now, reason: instant.approval }
     st.activationNotice = null
     if (reg) st.registration = reg
     this.writeState(st)
-    return this.result('pending', 'Activation request sent to Digital Target. It will be approved shortly — keep this window open or check again later.', id)
+    this.log('info', `Activation needs approval: ${instant.approval}`)
+    return this.result('pending', `${instant.approval} The request was sent to Digital Target — this window updates by itself when it is approved.`, id)
+  }
+
+  private lastInstantTry = 0
+
+  /**
+   * Instant activation: fetches the activation pass published for this key (activationPasses/{sha256(key)}), verifies
+   * its signature, checks the public license status and registers this computer on the license in ONE commit. The
+   * Firestore rules accept it only while the license is active, not expired, a device slot is free and this computer
+   * was never registered on the license. Returns the activation result, or the reason an admin approval is needed.
+   * Throws for final answers (license suspended / revoked / expired) and when offline.
+   */
+  private async tryInstant(key: string, reg: Registration | null): Promise<ActivationResult | { approval: string }> {
+    this.lastInstantTry = this.now()
+    const client = this.requireClient()
+    const did = this.deviceId
+    let pass
+    try {
+      pass = await client.get(`activationPasses/${createHash('sha256').update(key).digest('hex')}`)
+    } catch (e) {
+      throw LicenseService.netError(e, 'license check')
+    }
+    if (!pass || typeof pass.data.cert !== 'string') {
+      return { approval: 'This key is not enabled for instant activation (unknown key, or Digital Target has not published it yet), so it needs approval.' }
+    }
+    let cert: LicenseCertificate
+    try {
+      cert = parseCertificate(pass.data.cert)
+    } catch {
+      return { approval: 'The activation pass for this key could not be read, so it needs approval.' }
+    }
+    const v = verifyCertificate(cert, this.opts.publicKeyPem, did, () => true)
+    if (!v.ok || v.payload.deviceId !== PASS_DEVICE) {
+      return { approval: `The activation pass for this key could not be verified (${v.ok ? 'not a pass' : v.reason}), so it needs approval.` }
+    }
+    const p = v.payload
+    let statusDoc, deviceDoc
+    try {
+      ;[statusDoc, deviceDoc] = await Promise.all([client.get(`licenseStatus/${p.licenseId}`), client.get(`licenses/${p.licenseId}/devices/${did}`)])
+    } catch (e) {
+      throw LicenseService.netError(e, 'license check')
+    }
+    const block = statusDoc ? remoteDecision(statusDoc.data, did) : null
+    if (block === 'suspended' || block === 'revoked') throw new AppError(`This license is ${block}. Please contact Digital Target.`, 'LICENSE')
+    const exp = statusDoc ? statusDoc.data.expiresAt : p.expiresAt
+    const expMs = exp instanceof Date ? exp.getTime() : typeof exp === 'string' ? Date.parse(exp) : NaN
+    if (Number.isFinite(expMs) && expMs < this.now()) throw new AppError('This license has expired. Please contact Digital Target to renew it.', 'LICENSE')
+    if (block === 'deactivated' || (deviceDoc && deviceDoc.data.status !== 'active')) {
+      return { approval: 'This computer was released or deactivated on this license earlier, so Digital Target must approve it again.' }
+    }
+    if (!deviceDoc) {
+      const fp = `devicesSummary.\`${did}\``
+      const info = { deviceName: this.deviceName.slice(0, 200), os: this.os.slice(0, 200), appVersion: this.opts.appVersion.slice(0, 40) }
+      try {
+        await client.commit([
+          {
+            path: `licenses/${p.licenseId}`,
+            fields: { devicesSummary: { [did]: { ...info, status: 'active', activationType: 'instant', statusNote: '' } }, selfActivatedDevice: did },
+            mask: [fp, 'selfActivatedDevice'],
+            serverTime: ['updatedAt', `${fp}.activatedAt`],
+            increment: { activeDevices: 1 },
+            exists: true
+          },
+          {
+            path: `licenses/${p.licenseId}/devices/${did}`,
+            fields: { deviceId: did, ...info, status: 'active', activationType: 'instant', statusNote: '', installToken: this.installToken },
+            serverTime: ['activatedAt'],
+            exists: false
+          }
+        ])
+      } catch (e) {
+        if (e instanceof FirestoreError && e.offline) throw LicenseService.netError(e, 'activation')
+        this.log('warn', `Instant activation refused: ${(e as Error).message}`)
+        return { approval: `All ${p.maxDevices ?? ''} device slot(s) of this license are in use, so Digital Target must approve this computer (for example by replacing an old one).`.replace('All  device', 'All device') }
+      }
+    }
+    this.install(cert.payload + '.' + cert.signature, true)
+    const st = this.readState()
+    st.pendingRequest = null
+    st.activatedKey = key
+    st.lastCheckAt = this.iso()
+    st.lastCheckError = null
+    if (reg) st.registration = reg
+    const how = deviceDoc ? 'This computer was already registered on this license — no new slot used.' : 'Activated instantly.'
+    st.activationNotice = { kind: 'approved', message: `${how} Licensed to ${p.businessName}.`, at: st.lastCheckAt, licenseKey: key }
+    this.writeState(st)
+    this.log('info', `License activated instantly (${deviceDoc ? 'already registered' : 'new device slot'}).`)
+    return this.result('approved', `${how} Licensed to ${p.businessName}.`)
   }
 
   /** Checks a pending online activation request and installs the certificate when approved. */
-  async pollActivation(): Promise<ActivationResult> {
+  async pollActivation(force = false): Promise<ActivationResult> {
     const s = this.readState()
     if (!s.pendingRequest) return this.result('none', 'No activation request is pending.')
     const client = this.requireClient()
@@ -573,7 +675,27 @@ export class LicenseService {
       this.writeState(s)
       throw new AppError(`${msg.replace(/[.\s]+$/, '')}. Contact Digital Target if you believe this is a mistake.`, 'LICENSE_REJECTED')
     }
-    return this.result('pending', 'Waiting for approval from Digital Target…', s.pendingRequest.id)
+    // Meanwhile a slot may have been freed or instant activation enabled: retry it (at most once a minute).
+    if (force || this.now() - this.lastInstantTry > 60_000) {
+      try {
+        const r = await this.tryInstant(s.pendingRequest.licenseKey, s.registration ?? null)
+        if ('state' in r) return r
+        const st = this.readState()
+        if (st.pendingRequest) {
+          st.pendingRequest.reason = r.approval
+          this.writeState(st)
+        }
+      } catch (e) {
+        if (!(e instanceof AppError) || e.code !== 'LICENSE') throw e
+        const st = this.readState()
+        st.activationNotice = { kind: 'rejected', message: e.message, at: new Date().toISOString(), licenseKey: st.pendingRequest?.licenseKey }
+        st.pendingRequest = null
+        this.writeState(st)
+        throw new AppError(e.message, 'LICENSE_REJECTED')
+      }
+    }
+    const reason = this.readState().pendingRequest?.reason
+    return this.result('pending', reason ? `Waiting for approval from Digital Target — ${reason}` : 'Waiting for approval from Digital Target…', s.pendingRequest.id)
   }
 
   cancelPending(): LicenseStatus {

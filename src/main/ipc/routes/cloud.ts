@@ -94,8 +94,8 @@ export const cloudRoutes: RouteMap = {
   },
   'license.pollActivation': {
     public: true,
-    handler: async () => {
-      const r = await license().pollActivation()
+    handler: async (_c, a) => {
+      const r = await license().pollActivation(a?.force === true)
       if (r.state === 'approved') heartbeatSoon()
       return r
     }

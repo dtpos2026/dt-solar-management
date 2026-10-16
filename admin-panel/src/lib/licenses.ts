@@ -59,6 +59,8 @@ type Snap = DocumentSnapshot<DocumentData> | QueryDocumentSnapshot<DocumentData>
 
 const str = (v: unknown, d = ''): string => (typeof v === 'string' ? v : v === undefined || v === null ? d : String(v))
 const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : d)
+/** 'instant' = the computer registered itself with an activation pass (within the device limit). */
+const actType = (v: unknown): 'online' | 'offline' | 'instant' => (v === 'offline' || v === 'instant' ? v : 'online')
 const ts = (v: unknown): Timestamp | null => (v instanceof Timestamp ? v : null)
 
 export function licenseFromSnap(s: Snap): License {
@@ -95,7 +97,8 @@ export function licenseFromSnap(s: Snap): License {
     createdAt: ts(d.createdAt),
     updatedAt: ts(d.updatedAt),
     createdBy: str(d.createdBy),
-    devicesSummary: summaryFromData(d.devicesSummary)
+    devicesSummary: summaryFromData(d.devicesSummary),
+    passHash: str(d.passHash)
   }
 }
 
@@ -112,7 +115,7 @@ export function summaryFromData(v: unknown): Record<string, DeviceSummary> | nul
       appVersion: str(e.appVersion),
       status: (['suspended', 'revoked', 'deactivated'].includes(e.status as string) ? e.status : 'active') as DeviceSummary['status'],
       activatedAtMs: e.activatedAt instanceof Timestamp ? e.activatedAt.toMillis() : null,
-      activationType: e.activationType === 'offline' ? 'offline' : 'online',
+      activationType: actType(e.activationType),
       statusNote: str(e.statusNote)
     }
   }
@@ -127,7 +130,7 @@ export function summaryEntry(d: { deviceName?: string; os?: string; appVersion?:
     appVersion: (d.appVersion ?? '').slice(0, 40),
     status: d.status,
     activatedAt: d.activatedAt ?? null,
-    activationType: d.activationType === 'offline' ? 'offline' : 'online',
+    activationType: actType(d.activationType),
     statusNote: (d.statusNote ?? '').slice(0, 300)
   }
 }
@@ -159,7 +162,7 @@ export function deviceFromSnap(s: Snap): Device {
     appVersion: str(d.appVersion),
     status: (['suspended', 'revoked', 'deactivated'].includes(d.status) ? d.status : 'active') as Device['status'],
     activatedAt: ts(d.activatedAt),
-    activationType: d.activationType === 'offline' ? 'offline' : 'online',
+    activationType: actType(d.activationType),
     lastIssuedAt: ts(d.lastIssuedAt),
     deactivatedAt: ts(d.deactivatedAt),
     statusNote: str(d.statusNote),

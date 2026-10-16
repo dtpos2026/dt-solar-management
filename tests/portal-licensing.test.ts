@@ -18,7 +18,22 @@ import {
   paginate,
   paymentStatusFromInvoices
 } from '../admin-panel/src/lib/stats'
-import { blankClient, clientFromLicense, clientFromRegistration, dataUrlBytes, formatClientCode, hardDeleteGuard, matchClient, validateClient } from '../admin-panel/src/lib/clients'
+import {
+  blankClient,
+  clientDeleteCheck,
+  clientDetailsFromLicense,
+  clientFromLicense,
+  clientFromRegistration,
+  dataUrlBytes,
+  findDuplicateClient,
+  formatClientCode,
+  hardDeleteGuard,
+  isValidClientPhone,
+  matchClient,
+  missingClientFields,
+  phoneKey,
+  validateClient
+} from '../admin-panel/src/lib/clients'
 import {
   addMonthsClamped,
   buildCertPayload,
@@ -346,6 +361,49 @@ describe('clients', () => {
     expect(matchClient(clients, { companyName: 'x', phone: '03017654321' })?.id).toBe('b')
     expect(matchClient(clients, { companyName: 'bright solar' })?.id).toBe('a')
     expect(matchClient(clients, { companyName: 'Gone' })).toBeNull()
+  })
+  it('a trial license gives its client the default plan and billing cycle (trial is not a client plan)', () => {
+    const c = clientFromLicense({ businessName: 'T', customerName: '', phone: '', email: '', city: '', plan: 'trial', planType: 'trial', maxFirms: 1, maxDevices: 1 })
+    expect(c).toMatchObject({ plan: blankClient().plan, planType: blankClient().planType })
+    expect(validateClient(c)).toEqual({})
+  })
+  it('matches license details to an existing client: phone (digits, last 10) or company + owner', () => {
+    expect(phoneKey('+92 300 1234567')).toBe('3001234567')
+    expect(phoneKey('0300-1234567')).toBe('3001234567')
+    expect(phoneKey('12345')).toBe('')
+    expect(isValidClientPhone('+92 (300) 123-4567')).toBe(true)
+    expect(isValidClientPhone('call Ali')).toBe(false)
+    const clients = [
+      { id: 'a', company: 'Bright Solar', ownerName: 'Imran Ali', phone: '', status: 'active' },
+      { id: 'b', company: 'Other', ownerName: 'Sara', phone: '+92 301 7654321', status: 'suspended' },
+      { id: 'c', company: 'Gone', ownerName: 'X', phone: '03009999999', status: 'archived' }
+    ]
+    expect(findDuplicateClient(clients, { company: 'New', ownerName: '', phone: '0301-7654321' })).toMatchObject({ client: { id: 'b' }, by: 'phone' })
+    expect(findDuplicateClient(clients, { company: '  bright  SOLAR ', ownerName: 'imran ali', phone: '' })).toMatchObject({ client: { id: 'a' }, by: 'name' })
+    // same company but another owner is a different client; archived clients are never matched
+    expect(findDuplicateClient(clients, { company: 'Bright Solar', ownerName: 'Someone else', phone: '' })).toBeNull()
+    expect(findDuplicateClient(clients, { company: 'Gone', ownerName: 'X', phone: '0300 9999999' })).toBeNull()
+    const d = clientDetailsFromLicense({ businessName: '', customerName: ' Ali ', phone: '0300 1', email: 'bad', city: 'Multan' })
+    expect(d).toEqual({ company: 'Ali', ownerName: 'Ali', phone: '0300 1', email: 'bad', city: 'Multan' })
+    // only empty client fields are filled, invalid phone / e-mail never
+    expect(missingClientFields({ company: 'Ali Co', ownerName: '', phone: '', email: '', city: 'Lahore' }, d)).toEqual({ ownerName: 'Ali', phone: '0300 1' })
+    expect(missingClientFields({ company: 'A', ownerName: 'B', phone: '', email: '', city: '' }, { company: 'A', ownerName: 'B', phone: 'x', email: 'a@b.pk', city: '' })).toEqual({ email: 'a@b.pk' })
+  })
+  it('client delete check: active licenses block, others are unlinked, invoices only warn', () => {
+    const now = Date.UTC(2026, 0, 1)
+    const lic = (id: string, status: string, expiresAtMs: number | null) => ({ id, licenseKey: `DTSP-${id}`, status, expiresAtMs })
+    const base = { canDelete: true, canUnlink: true, invoices: 0, openInvoices: 0, threads: 0, now }
+    expect(clientDeleteCheck({ ...base, licenses: [] })).toMatchObject({ ok: true, blockers: [], unlink: [], active: [] })
+    const r = clientDeleteCheck({ ...base, licenses: [lic('A', 'active', null), lic('B', 'revoked', null), lic('C', 'active', now - 1), lic('D', 'suspended', now + 1e9)], invoices: 2, openInvoices: 1, threads: 1 })
+    expect(r.ok).toBe(false)
+    expect(r.active).toEqual(['A'])
+    expect(r.unlink).toEqual(['B', 'C', 'D'])
+    expect(r.blockers.join(' ')).toMatch(/1 active license/)
+    expect(r.warnings.join(' ')).toMatch(/3 suspended, revoked or expired license\(s\) will be unlinked/)
+    expect(r.warnings.join(' ')).toMatch(/2 invoice\(s\).*1 still has an outstanding balance/)
+    expect(clientDeleteCheck({ ...base, licenses: [lic('B', 'revoked', null)], canUnlink: false }).ok).toBe(false)
+    expect(clientDeleteCheck({ ...base, licenses: [], canDelete: false }).ok).toBe(false)
+    expect(clientDeleteCheck({ ...base, licenses: [], invoices: null }).warnings.join(' ')).toMatch(/could not be checked/)
   })
 })
 

@@ -23,6 +23,7 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  writeBatch,
   type Firestore
 } from 'firebase/firestore'
 import { ROLE_PRESETS } from '../src/lib/perm'
@@ -167,11 +168,11 @@ describe('admins', () => {
 
 /* ------------------------------------------------ clients / licenses ------------------------------------------------ */
 describe('clients', () => {
-  it('read clients.view, write clients.manage, delete owner', async () => {
+  it('read clients.view, write + delete clients.manage', async () => {
     await matrix(ADMINS_READ.filter((a) => a !== 'custom'), (d) => getDoc(doc(d, 'clients/c1')))
     await matrix(['owner', 'manager', 'sales'], (d) => setDoc(doc(d, `clients/${uid()}`), { company: 'A', status: 'active' }))
     await assertFails(setDoc(doc(db('owner'), 'clients/bad'), { company: 'A', status: 'deleted' }))
-    await matrix(['owner'], (d, a) => deleteDoc(doc(d, a === 'owner' ? 'clients/c1' : 'clients/zz')))
+    await matrix(['owner', 'manager', 'sales'], (d) => deleteDoc(doc(d, 'clients/c1')))
   })
 })
 
@@ -198,6 +199,22 @@ describe('licenses', () => {
     // Clearing history: audit.manage only (owner, manager); others never.
     await assertFails(deleteDoc(doc(db('sales'), `licenses/${LIC}/history/h1`)))
     await assertSucceeds(deleteDoc(doc(db('owner'), `licenses/${LIC}/history/h1`)))
+  })
+  it('license delete: active device records / history go only with the license (owner)', async () => {
+    await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), `licenses/${LIC}/devices/act1`), { deviceId: 'act1', status: 'active' }))
+    for (const a of ['owner', 'manager', 'technical'] as Actor[]) await assertFails(deleteDoc(doc(db(a), `licenses/${LIC}/devices/act1`)))
+    const m = db('manager')
+    const mb = writeBatch(m)
+    mb.delete(doc(m, `licenses/${LIC}`))
+    mb.delete(doc(m, `licenses/${LIC}/devices/act1`))
+    await assertFails(mb.commit())
+    const o = db('owner')
+    const ob = writeBatch(o)
+    ob.delete(doc(o, `licenses/${LIC}`))
+    ob.delete(doc(o, `licenseStatus/${LIC}`))
+    ob.delete(doc(o, `licenses/${LIC}/devices/act1`))
+    ob.delete(doc(o, `licenses/${LIC}/history/h1`))
+    await assertSucceeds(ob.commit())
   })
   it('licenseStatus: public get, no public list or write', async () => {
     await matrix([...ACTORS], (d) => getDoc(doc(d, `licenseStatus/${LIC}`)))

@@ -227,8 +227,15 @@ export function autoMap(headers: string[], kind: ImportKind): Mapping {
   const map: Mapping = {}
   // Pass 1: exact matches on the label (what our own export writes), key or an alias — for every field first,
   // so a loose match for one field never steals the exact column of another.
+  // Pass 0: the exact label wins (our own export), so an alias of an earlier field never takes a later field's column.
   for (const fl of fields) {
-    const idx = h.findIndex((x, i) => !used.has(i) && (x === norm(fl.label) || x === norm(fl.key) || fl.aliases.includes(x)))
+    const idx = h.findIndex((x, i) => !used.has(i) && x === norm(fl.label))
+    map[fl.key] = idx >= 0 ? idx : null
+    if (idx >= 0) used.add(idx)
+  }
+  for (const fl of fields) {
+    if (map[fl.key] !== null) continue
+    const idx = h.findIndex((x, i) => !used.has(i) && (x === norm(fl.key) || fl.aliases.includes(x)))
     map[fl.key] = idx >= 0 ? idx : null
     if (idx >= 0) used.add(idx)
   }

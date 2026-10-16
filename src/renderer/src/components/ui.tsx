@@ -300,7 +300,7 @@ export function Modal({ open, onClose, title, children, footer, size = 'md', sub
   if (!open) return null
   const w = { sm: 'max-w-md', md: 'max-w-2xl', lg: 'max-w-4xl', xl: 'max-w-6xl', full: 'max-w-[1400px]' }[size]
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 p-4 pt-[4vh] backdrop-blur-[2px]" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div data-overlay="modal" className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 p-4 pt-[4vh] backdrop-blur-[2px]" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className={cx('card fade-in flex max-h-[92vh] w-full flex-col shadow-2xl', w)} role="dialog" aria-modal="true">
         <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
           <div>
@@ -348,7 +348,7 @@ export function Toaster(): JSX.Element {
   return createPortal(
     <div className="no-print fixed right-4 bottom-4 z-[70] flex w-[380px] flex-col gap-2">
       {items.map((t) => (
-        <div key={t.id} className="card fade-in flex items-start gap-3 px-4 py-3 shadow-lg" onClick={() => remove(t.id)}>
+        <div key={t.id} data-overlay="toast" className="card fade-in flex items-start gap-3 px-4 py-3 shadow-lg" onClick={() => remove(t.id)}>
           {icon[t.tone]}
           <div className="flex-1 text-[13px]">{t.text}</div>
         </div>

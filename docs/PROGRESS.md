@@ -23,6 +23,7 @@ Status keys: [x] done & tested · [~] partial · [ ] not started · [!] blocked 
 - [ ] access — user selection + PIN login, PIN lock screen, forced password change, printers page + per-document printer, test print
 - [x] cloud — registration in setup wizard (key + registration / trial / offline), heartbeat + consented location (off/approximate/manual), support messages with offline queue, certificate refresh + detached lifetime, License & About in Settings (unit tests: tests/cloud.test.ts; emulator REST check vs real rules: scripts/cloud-emulator-check.mjs — 32/32; Playwright e2e left to integrator)
 - [ ] assist — offline Urdu/English help assistant, built-in WhatsApp Web module (QR link device) + send document flow with log
+- [~] assist — [x] offline Urdu/English help assistant (58 bilingual articles, EN/Urdu/Roman-Urdu search with synonyms, BM25, typo tolerance, low-confidence fallback; unit tested) · [x] WhatsApp send log service (draft/phone normalisation/templates/dedupe/status flow; unit tested) · [~] built-in WhatsApp Web module (WebContentsView, persist:whatsapp partition, QR link, open chat, unlink, notifications), Send on WhatsApp dialog + outbox PDF + drag tile, Settings → WhatsApp — typecheck/build pass, Electron e2e not run yet (integrator); migration 8 widens whatsapp_log.method
 
 ## Super Admin portal areas
 - [x] portal-admin — Admins (RBAC users), Settings (branding/invoice/bank/QR/signing key), Activity Log (filters/export/archive/retention), Verify Key, rules tests

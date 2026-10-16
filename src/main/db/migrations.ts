@@ -613,7 +613,7 @@ CREATE TABLE support_messages (
   read_at TEXT
 );
 
--- WhatsApp send log (status + duplicate-send guard). Sending happens in the built-in WhatsApp Web module (linked device).
+-- WhatsApp send log (status + duplicate-send guard).
 CREATE TABLE whatsapp_log (
   id INTEGER PRIMARY KEY,
   firm_id INTEGER REFERENCES firms(id),
@@ -622,7 +622,7 @@ CREATE TABLE whatsapp_log (
   entity TEXT,
   entity_id INTEGER,
   file_name TEXT,
-  method TEXT NOT NULL CHECK (method IN ('whatsapp_web','chat_link')),
+  method TEXT NOT NULL CHECK (method IN ('chat_link','cloud_api')),
   status TEXT NOT NULL,
   message_id TEXT,
   error TEXT,
@@ -648,6 +648,36 @@ CREATE TABLE import_runs (
   created_by INTEGER,
   created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
+`
+  },
+  {
+    version: 8,
+    name: 'assist: WhatsApp log supports the built-in WhatsApp Web module (method whatsapp_web); rows are copied, nothing is lost',
+    sql: /* sql */ `
+CREATE TABLE whatsapp_log_v8 (
+  id INTEGER PRIMARY KEY,
+  firm_id INTEGER REFERENCES firms(id),
+  party_id INTEGER REFERENCES parties(id),
+  phone TEXT NOT NULL,
+  entity TEXT,
+  entity_id INTEGER,
+  file_name TEXT,
+  method TEXT NOT NULL CHECK (method IN ('whatsapp_web','chat_link','cloud_api')),
+  status TEXT NOT NULL,
+  message_id TEXT,
+  error TEXT,
+  dedupe_key TEXT,
+  created_by INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  updated_at TEXT
+);
+INSERT INTO whatsapp_log_v8 (id, firm_id, party_id, phone, entity, entity_id, file_name, method, status, message_id, error, dedupe_key, created_by, created_at)
+  SELECT id, firm_id, party_id, phone, entity, entity_id, file_name, method, status, message_id, error, dedupe_key, created_by, created_at FROM whatsapp_log;
+DROP INDEX IF EXISTS idx_wa_dedupe;
+DROP TABLE whatsapp_log;
+ALTER TABLE whatsapp_log_v8 RENAME TO whatsapp_log;
+CREATE INDEX idx_wa_dedupe ON whatsapp_log(dedupe_key, created_at);
+CREATE INDEX idx_wa_firm ON whatsapp_log(firm_id, created_at);
 `
   }
 ]

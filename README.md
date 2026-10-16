@@ -16,10 +16,10 @@ licenses through Firebase on the free Spark plan (Firestore + Auth only, no Clou
 - Reports: P&L, sales and purchase registers, item profit, stock valuation, receivables and payables aging, project profitability, tax, day book, cash book
 - Professional A4 printing and PDF: logo, signature and stamp images, amount in words, multi-page tables
 - Animated splash screen, 7 themes, auto-lock, automatic daily backups, restore with integrity check
-- Offline license with signed certificates, a 15-day trial, online (approval) or offline activation
+- Offline license with signed certificates; **no automatic trial** — a trial is a short license issued by Digital Target; online (admin approval) or offline activation; revocation / suspension enforced before every protected action when online, and through the signed check-in deadline + grace period when offline
 
 ## New in v1.1
-- Setup wizard starts with **License**: activate with a key (company, owner, phone, address are sent for approval) or start the 15-day trial
+- Setup wizard starts with **License**: activate with a key (company, owner, phone, address are sent for approval) or offline with an activation code; nothing can be recorded before activation
 - Invoices and quotations print the **item name and item description**; **Invoice templates** designer (classic, modern, compact, 80 mm thermal)
 - Delete unpaid invoices (with audit snapshot), delete/archive products and projects, change categories
 - **Day Closing** and month closing with automatic closing backup; closed days are locked
@@ -28,6 +28,13 @@ licenses through Firebase on the free Spark plan (Firestore + Auth only, no Clou
   then "Send on WhatsApp" on any invoice prepares the PDF and opens the chat; drag the PDF into the chat and press Send
 - **Help & Support**: offline Urdu / English help assistant; Settings → Support messages to Digital Target (works offline, sends later)
 - Sidebar shows the customer's own firm name and logo; License & About moved to Settings
+
+## New in v1.2 (release hardening)
+- License: no local trial, approval per computer, device replacement, enforcement before every write (details: `docs/LICENSING.md`)
+- Device location: Windows location service (with consent), approximate IP (labelled — usually the ISP's city), manual, or off
+- Print / PDF: A4 pages with "Page x of y", portrait / landscape, preview shows the real page count, thermal 80 mm receipts
+- Backups: full **JSON backup (.js1)** export / restore, **CSV** export / import per entity, **Import from Vyapar (.vyb)** (`docs/VYAPAR_IMPORT.md`)
+- Super Admin portal redesign, faster pages (fewer Firestore reads), activity-log clearing by scope (security trail protected)
 
 ## Build the Windows installer (on your Windows PC)
 Install **Node.js 22 LTS** (https://nodejs.org). Open **Command Prompt** in the project folder:
@@ -73,7 +80,8 @@ that confirms the invoice is genuine (it does not prove payment). Branding, bank
 ## Selling a license
 1. Admin panel → **Licenses → New license** (choose plan, limits and expiry) → copy the **license key**.
 2. The customer installs DT Solar Pro → **License & About** → enters the key → **Activate online**.
-3. Admin panel → **Activation requests** → **Approve** (or tick *Auto-approve* and keep the page open). The customer's app activates automatically.
+3. Admin panel → **Devices → Activation requests** → **Approve** (every new computer needs an explicit approval; a valid key alone never grants access). If the license's computer limit is full, choose **Replace computer X with this one** or reject. The customer's app activates automatically.
+   Trial: Licenses → **Issue trial** (15 days, 1 computer, still needs approval).
 4. Customer without internet: they send the **request code** → admin panel **Offline activation** → send back the activation code / `.dtlic` file.
    Command-line alternative: `npm run license:issue -- --request <code> --business "Name" --days 365`
 

@@ -19,6 +19,7 @@ import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { tmpdir } from 'os'
 
+import { buildPayload, certificateToCode, decodeRequestCode, generateKeyPair, signPayload } from './license-core.mjs'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const require = createRequire(import.meta.url)
 const { _electron: electron } = require(process.argv[2] || 'playwright')
@@ -60,10 +61,14 @@ const isA4 = (b, landscape) => {
 }
 
 const errors = []
+// Throwaway test license key (never the real signing key); only honoured by unpackaged builds.
+const testKeys = generateKeyPair()
+const testPubFile = join(tmpdir(), `dtsp-pdf-key-${process.pid}.pem`)
+writeFileSync(testPubFile, testKeys.publicPem)
 const app = await electron.launch({
   executablePath: join(root, 'node_modules/electron/dist/electron'),
   args: [root, '--no-sandbox'],
-  env: { ...process.env, DTSP_USER_DATA: userData }
+  env: { ...process.env, DTSP_USER_DATA: userData, DTSP_LICENSE_PUBLIC_KEY_FILE: testPubFile, DTSP_CLOUD_DISABLED: '1' }
 })
 
 async function mainWindow() {
@@ -79,11 +84,20 @@ async function mainWindow() {
 
 const page = await mainWindow()
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
-await page.waitForSelector('text=Start 15-day trial', { timeout: 30000 })
-await page.getByText('Start 15-day trial').first().click()
-await page.waitForTimeout(300)
-const trialBtn = page.locator('button:has-text("Start 15-day trial")')
-if (await trialBtn.count()) await trialBtn.last().click()
+// License step: offline activation with an activation code signed by the throwaway key.
+await page.waitForSelector('text=Offline activation', { timeout: 30000 })
+await page.click('[data-testid=lic-offline]')
+await page.locator('input[placeholder="DTSP-XXXX-XXXX-XXXX-XXXX"]').fill('DTSPE2E0TEST0KEY0001')
+await page.click('button:has-text("Generate request code")')
+const req = decodeRequestCode(await page.locator('textarea[readonly]').inputValue({ timeout: 10000 }))
+const cert = signPayload(
+  buildPayload({ deviceId: req.deviceId ?? req.d, businessName: 'WETCO SOLAR SOLUTIONS', plan: 'trial', maxFirms: 5, maxUsers: 5, expiresAt: new Date(Date.now() + 15 * 86400000).toISOString() }),
+  testKeys.privatePem
+)
+await page.fill('[data-testid=lic-code]', certificateToCode(cert))
+await page.click('button:has-text("Install activation code")')
+await page.waitForSelector('text=License activated', { timeout: 15000 })
+await page.locator('button:has-text("Continue")').last().click()
 await page.waitForSelector('text=Business details', { timeout: 30000 })
 await page.waitForTimeout(800)
 await page.click('button:has-text("Continue")')

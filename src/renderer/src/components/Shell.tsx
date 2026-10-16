@@ -42,15 +42,15 @@ function Sidebar(): JSX.Element {
   const items = NAV.filter((n) => !n.perm || (Array.isArray(n.perm) ? n.perm.some(can) : can(n.perm)))
   let lastSection = ''
   return (
-    <aside className="no-print flex w-[232px] shrink-0 flex-col bg-side text-side-ink">
+    <aside className="no-print flex w-[232px] shrink-0 flex-col bg-side text-side-ink max-lg:w-[68px]">
       {/* White-label: the licensed business (active firm) is shown here; Digital Target stays in the footer. */}
-      <div className="flex items-center gap-3 px-5 pt-5 pb-4">
+      <div className="flex items-center gap-3 px-5 pt-5 pb-4 max-lg:justify-center max-lg:px-2">
         {firm?.logo ? (
           <img src={firm.logo} className="h-10 w-10 shrink-0 rounded-xl bg-white object-contain p-0.5 shadow-lg" alt="" />
         ) : (
           <img src={appIcon} className="h-10 w-10 shrink-0 rounded-xl shadow-lg" alt="" />
         )}
-        <div className="min-w-0 leading-tight">
+        <div className="min-w-0 leading-tight max-lg:hidden">
           {firm?.name ? (
             <div className="line-clamp-2 text-[14px] font-extrabold break-words text-white" title={firm.name}>{firm.name}</div>
           ) : (
@@ -58,37 +58,42 @@ function Sidebar(): JSX.Element {
               DT Solar <span className="text-sun">Pro</span>
             </div>
           )}
-          <div className="text-[10.5px] opacity-70">{firm?.name ? 'DT Solar Pro' : 'Powering a Greener Future'}</div>
+          <div className="mt-0.5 text-[12px] opacity-70">{firm?.name ? 'DT Solar Pro' : 'Powering a Greener Future'}</div>
         </div>
       </div>
-      <nav className="flex-1 overflow-y-auto px-3 pb-3">
+      <nav className="flex-1 overflow-x-hidden overflow-y-auto px-3 pb-3 max-lg:px-2">
         {items.map((n) => {
           const header = n.section && n.section !== lastSection ? n.section : null
           if (n.section) lastSection = n.section
           return (
             <div key={n.to}>
-              {header && <div className="mt-4 mb-1 px-3 text-[10.5px] font-semibold tracking-wider uppercase opacity-50">{header}</div>}
+              {header && (
+                <div className="mt-4 mb-1 truncate px-3 text-[12px] font-semibold tracking-wider uppercase opacity-60 max-lg:mx-2 max-lg:mt-3 max-lg:mb-2 max-lg:h-px max-lg:bg-white/15 max-lg:p-0 max-lg:text-[0px]">
+                  {header}
+                </div>
+              )}
               <NavLink
                 to={n.to}
                 end={n.to === '/'}
+                title={n.label}
                 className={({ isActive }) =>
                   cx(
-                    'mb-0.5 flex h-9 items-center gap-3 rounded-lg px-3 text-[13.5px] font-medium transition [&>svg]:h-[18px] [&>svg]:w-[18px]',
+                    'mb-0.5 flex h-9 items-center gap-3 rounded-lg px-3 text-[13.5px] font-medium transition max-lg:justify-center max-lg:px-0 [&>svg]:h-[18px] [&>svg]:w-[18px] [&>svg]:shrink-0',
                     isActive ? 'bg-side-active text-white shadow-md' : 'hover:bg-white/8 hover:text-white'
                   )
                 }
               >
                 {n.icon}
-                {n.label}
+                <span className="truncate max-lg:sr-only">{n.label}</span>
               </NavLink>
             </div>
           )
         })}
       </nav>
-      <div className="border-t border-white/10 px-5 py-3 text-[11px] opacity-70">
-        <div className="flex items-center gap-2">
-          <DtMark className="h-3.5 w-3.5" />
-          <span>
+      <div className="border-t border-white/10 px-5 py-3 text-[12px] opacity-70 max-lg:px-2" title="DT Solar Pro by DIGITAL TARGET">
+        <div className="flex items-center gap-2 max-lg:justify-center">
+          <DtMark className="h-3.5 w-3.5 shrink-0" />
+          <span className="max-lg:sr-only">
             DT Solar Pro by <b className="tracking-wider">DIGITAL TARGET</b>
           </span>
         </div>
@@ -141,8 +146,8 @@ function FirmSwitcher(): JSX.Element {
         title={multi ? 'Switch firm' : 'Active firm'}
       >
         {firm?.logo ? <img src={firm.logo} className="h-8 w-8 rounded-lg object-contain" alt="" /> : <Building2 className="h-8 w-8 rounded-lg bg-brand-soft p-1.5 text-brand" />}
-        <div className="max-w-[220px] leading-tight">
-          <div className="text-[10.5px] font-semibold tracking-wide text-muted uppercase">Active firm</div>
+        <div className="max-w-[220px] min-w-0 leading-tight max-xl:max-w-[150px]">
+          <div className="text-[12px] font-semibold tracking-wide text-muted uppercase">Active firm</div>
           <div className="truncate text-[13.5px] font-semibold">{firm?.name}</div>
         </div>
         {multi && <ChevronDown className="h-4 w-4 text-muted" />}
@@ -157,7 +162,7 @@ function FirmSwitcher(): JSX.Element {
                   {f.id === firm?.id && <span className="h-2.5 w-2.5 rounded-full bg-brand" />}
                 </span>
                 <span className="flex-1 truncate font-medium">{f.name}</span>
-                {f.is_default ? <span className="text-[10.5px] font-semibold text-muted">DEFAULT</span> : null}
+                {f.is_default ? <span className="text-[12px] font-semibold text-muted">DEFAULT</span> : null}
               </button>
             ))}
         </div>
@@ -191,7 +196,7 @@ function GlobalSearch(): JSX.Element {
     else if (r.result === 'project') nav(`/projects/${r.id}`)
   }
   return (
-    <div className="relative w-[420px] max-w-[40vw]">
+    <div className="relative w-[420px] min-w-[160px] shrink">
       <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted" />
       <input
         className="input h-10 rounded-xl pl-9"
@@ -206,11 +211,11 @@ function GlobalSearch(): JSX.Element {
         <div className="card fade-in absolute z-40 mt-2 max-h-[60vh] w-full overflow-y-auto p-1 shadow-xl">
           {results.map((r, i) => (
             <button key={i} type="button" onMouseDown={() => go(r)} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-surface-2 cursor-pointer">
-              <span className="w-20 shrink-0 text-[10.5px] font-semibold text-muted uppercase">{r.result === 'document' ? nice(r.doc_type) : r.result}</span>
+              <span className="w-20 shrink-0 truncate text-[12px] font-semibold text-muted uppercase">{r.result === 'document' ? nice(r.doc_type) : r.result}</span>
               <span className="flex-1 truncate">
                 {r.result === 'document' ? `${r.number} — ${r.party_name ?? ''}` : r.result === 'serial' ? `${r.serial} — ${r.name}` : r.result === 'project' ? `${r.code} ${r.name}` : r.name}
               </span>
-              <span className="text-[11.5px] text-muted">{r.result === 'document' ? date(r.date) : r.phone ?? r.sku ?? r.status ?? ''}</span>
+              <span className="num shrink-0 text-[12px] text-muted">{r.result === 'document' ? date(r.date) : r.phone ?? r.sku ?? r.status ?? ''}</span>
             </button>
           ))}
         </div>
@@ -250,7 +255,7 @@ function Notifications(): JSX.Element {
     <div className="relative">
       <button type="button" className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-line bg-surface hover:border-brand cursor-pointer" onClick={() => setOpen(!open)} onBlur={() => setTimeout(() => setOpen(false), 150)} title="Notifications">
         <Bell className="h-[18px] w-[18px]" />
-        {items.length > 0 && <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-bad px-1 text-[10.5px] font-bold text-white">{items.length}</span>}
+        {items.length > 0 && <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-bad px-1 text-[12px] leading-none font-bold text-white">{items.length}</span>}
       </button>
       {open && (
         <div data-overlay="dropdown" className="card fade-in absolute right-0 z-40 mt-2 w-80 p-1 shadow-xl">
@@ -290,9 +295,9 @@ function UserMenu({ onLogout }: { onLogout: () => void }): JSX.Element {
     <div ref={ref} className="relative">
       <button type="button" onClick={() => setOpen(!open)} className="flex items-center gap-2.5 rounded-xl px-2 py-1 hover:bg-surface-2 cursor-pointer" aria-label="User menu">
         <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-brand to-brand-600 text-[13px] font-bold text-on-brand">{initials}</span>
-        <span className="text-left leading-tight">
+        <span className="text-left leading-tight max-lg:hidden">
           <span className="block max-w-[140px] truncate text-[13px] font-semibold">{user?.fullName}</span>
-          <span className="block text-[11px] text-muted">{user?.roleName}</span>
+          <span className="block max-w-[140px] truncate text-[12px] text-muted">{user?.roleName}</span>
         </span>
         <ChevronDown className="h-4 w-4 text-muted" />
       </button>
@@ -660,14 +665,14 @@ export function Shell({ children, onLogout }: { children: ReactNode; onLogout: (
     <div className="flex h-full">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="no-print flex h-[68px] shrink-0 items-center gap-4 border-b border-line bg-surface px-6">
+        <header className="no-print flex h-[68px] shrink-0 items-center gap-3 border-b border-line bg-surface px-4 xl:gap-4 xl:px-6">
           <GlobalSearch />
           <div className="flex-1" />
-          <div className="hidden items-center gap-2 rounded-xl border border-line px-3 py-1.5 xl:flex">
+          <div className="hidden shrink-0 items-center gap-2 rounded-xl border border-line px-3 py-1.5 whitespace-nowrap xl:flex">
             <CalendarDays className="h-[18px] w-[18px] text-brand" />
             <div className="leading-tight">
               <div className="text-[13px] font-semibold">{new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
-              <div className="text-[11px] text-muted">{new Date().toLocaleDateString('en-GB', { weekday: 'long' })}</div>
+              <div className="text-[12px] text-muted">{new Date().toLocaleDateString('en-GB', { weekday: 'long' })}</div>
             </div>
           </div>
           <Notifications />
@@ -675,7 +680,7 @@ export function Shell({ children, onLogout }: { children: ReactNode; onLogout: (
           <UserMenu onLogout={onLogout} />
         </header>
         <LicenseBanner />
-        <main key={firm?.id} className="flex-1 overflow-y-auto p-6">
+        <main key={firm?.id} className="flex-1 overflow-y-auto p-4 xl:p-6">
           {user?.mustChangePassword ? null : children}
         </main>
       </div>

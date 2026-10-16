@@ -75,8 +75,13 @@ export function Field({ label, hint, error, children, className, required }: { l
         </span>
       )}
       {children}
-      {hint && !error && <span className="mt-1 block text-[11.5px] text-muted">{hint}</span>}
-      {error && <span className="mt-1 block text-[11.5px] text-bad">{error}</span>}
+      {hint && !error && <span className="mt-1 block text-[12px] leading-snug text-muted">{hint}</span>}
+      {error && (
+        <span role="alert" className="mt-1 flex items-start gap-1 text-[12px] leading-snug font-medium text-bad">
+          <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+          {error}
+        </span>
+      )}
     </label>
   )
 }
@@ -177,22 +182,22 @@ export function Card({ children, className, title, actions, pad = true }: { chil
           <div className="flex items-center gap-2">{actions}</div>
         </div>
       )}
-      <div className={pad ? 'p-4' : ''}>{children}</div>
+      <div className={pad ? 'p-4' : 'min-w-0 overflow-x-auto'}>{children}</div>
     </div>
   )
 }
 
 export function PageHeader({ title, subtitle, actions, icon }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode; icon?: ReactNode }): JSX.Element {
   return (
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <div className="flex items-center gap-3">
-        {icon && <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-soft text-brand">{icon}</div>}
-        <div>
-          <h1 className="text-[20px] font-bold tracking-tight">{title}</h1>
-          {subtitle && <div className="text-[13px] text-muted">{subtitle}</div>}
+    <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-3">
+      <div className="flex min-w-0 flex-[1_1_320px] items-center gap-3">
+        {icon && <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand">{icon}</div>}
+        <div className="min-w-0">
+          <h1 className="text-[20px] leading-tight font-bold tracking-tight">{title}</h1>
+          {subtitle && <div className="mt-0.5 text-[13px] text-muted">{subtitle}</div>}
         </div>
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="ml-auto flex flex-wrap items-center justify-end gap-2">{actions}</div>}
     </div>
   )
 }
@@ -206,7 +211,7 @@ const TONES: Record<string, string> = {
   muted: 'bg-surface-2 text-muted border border-line'
 }
 export function Badge({ tone = 'muted', children, className }: { tone?: string; children: ReactNode; className?: string }): JSX.Element {
-  return <span className={cx('inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11.5px] font-semibold whitespace-nowrap', TONES[tone] ?? TONES.muted, className)}>{children}</span>
+  return <span className={cx('inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[12px] leading-[18px] font-semibold whitespace-nowrap', TONES[tone] ?? TONES.muted, className)}>{children}</span>
 }
 
 export function Spinner({ className }: { className?: string }): JSX.Element {
@@ -245,7 +250,7 @@ export function Tabs<T extends string>({ tabs, value, onChange, className }: { t
             className={cx('flex h-8 items-center gap-2 rounded-lg px-3 text-[13px] font-medium transition cursor-pointer', value === t.key ? 'bg-brand text-on-brand shadow-sm' : 'text-muted hover:bg-surface-2 hover:text-ink')}
           >
             {t.label}
-            {t.count !== undefined && <span className={cx('rounded px-1.5 text-[11px]', value === t.key ? 'bg-white/20' : 'bg-surface-2')}>{t.count}</span>}
+            {t.count !== undefined && <span className={cx('num rounded px-1.5 text-[12px]', value === t.key ? 'bg-white/20' : 'bg-surface-2')}>{t.count}</span>}
           </button>
         ))}
     </div>
@@ -263,15 +268,13 @@ export function StatCard({ label, value, icon, tone = 'brand', trend, sub, onCli
   }
   return (
     <div onClick={onClick} className={cx('card fade-in p-4', onClick && 'cursor-pointer transition hover:-translate-y-0.5 hover:shadow-md')}>
-      <div className="flex items-start gap-3">
-        {icon && <div className={cx('flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-sm', toneBg[tone])}>{icon}</div>}
-        <div className="min-w-0 flex-1">
-          <div className="text-[12.5px] font-medium text-muted">{label}</div>
-          <div className="num mt-0.5 text-[17px] leading-snug font-bold tracking-tight break-words">{value}</div>
-        </div>
+      <div className="flex items-center gap-3">
+        {icon && <div className={cx('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-sm [&>svg]:h-5 [&>svg]:w-5', toneBg[tone])}>{icon}</div>}
+        <div className="min-w-0 flex-1 text-[13px] leading-tight font-medium text-muted">{label}</div>
       </div>
+      <div className="num mt-2.5 text-[19px] leading-snug font-bold tracking-tight [overflow-wrap:anywhere]">{value}</div>
       {(trend !== undefined || sub) && (
-        <div className="mt-3 flex items-center justify-between text-[12px]">
+        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-2 text-[12px]">
           {trend !== undefined && trend !== null ? (
             <span className={cx('inline-flex items-center gap-0.5 font-semibold', trend >= 0 ? 'text-ok' : 'text-bad')}>
               {trend >= 0 ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
@@ -300,12 +303,12 @@ export function Modal({ open, onClose, title, children, footer, size = 'md', sub
   if (!open) return null
   const w = { sm: 'max-w-md', md: 'max-w-2xl', lg: 'max-w-4xl', xl: 'max-w-6xl', full: 'max-w-[1400px]' }[size]
   return createPortal(
-    <div data-overlay="modal" className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 p-4 pt-[4vh] backdrop-blur-[2px]" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={cx('card fade-in flex max-h-[92vh] w-full flex-col shadow-2xl', w)} role="dialog" aria-modal="true">
+    <div data-overlay="modal" className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 p-3 pt-[3vh] backdrop-blur-[2px] sm:p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className={cx('card fade-in flex max-h-[94vh] w-full flex-col shadow-2xl', w)} role="dialog" aria-modal="true">
         <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
           <div>
-            <div className="text-[16px] font-semibold">{title}</div>
-            {subtitle && <div className="text-[12.5px] text-muted">{subtitle}</div>}
+            <div className="text-[16px] leading-snug font-semibold">{title}</div>
+            {subtitle && <div className="mt-0.5 text-[12.5px] text-muted">{subtitle}</div>}
           </div>
           <IconButton title="Close" onClick={onClose}>
             <X className="h-5 w-5" />
@@ -346,7 +349,7 @@ export function Toaster(): JSX.Element {
   const { items, remove } = useToasts()
   const icon = { ok: <CheckCircle2 className="h-5 w-5 text-ok" />, bad: <XCircle className="h-5 w-5 text-bad" />, info: <Info className="h-5 w-5 text-info" />, warn: <AlertTriangle className="h-5 w-5 text-warn" /> }
   return createPortal(
-    <div className="no-print fixed right-4 bottom-4 z-[70] flex w-[380px] flex-col gap-2">
+    <div className="no-print fixed right-4 bottom-4 z-[70] flex w-[380px] max-w-[calc(100vw-2rem)] flex-col gap-2">
       {items.map((t) => (
         <div key={t.id} data-overlay="toast" className="card fade-in flex items-start gap-3 px-4 py-3 shadow-lg" onClick={() => remove(t.id)}>
           {icon[t.tone]}
@@ -436,9 +439,9 @@ export function PeriodPicker({ from, to, onChange }: { from: string; to: string;
         ))}
         <option value="custom">Custom range</option>
       </Select>
-      <Input sm type="date" className="w-36" value={from} onChange={(e) => e.target.value && onChange(e.target.value, to)} />
+      <Input sm type="date" className="num w-[9.5rem]" value={from} onChange={(e) => e.target.value && onChange(e.target.value, to)} />
       <span className="text-muted">→</span>
-      <Input sm type="date" className="w-36" value={to} onChange={(e) => e.target.value && onChange(from, e.target.value)} />
+      <Input sm type="date" className="num w-[9.5rem]" value={to} onChange={(e) => e.target.value && onChange(from, e.target.value)} />
     </div>
   )
 }

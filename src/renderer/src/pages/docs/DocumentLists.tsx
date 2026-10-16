@@ -21,7 +21,7 @@ function DocList({ docType, partyNoun }: { docType: DocType; partyNoun: string }
   const cols: Array<Column<any>> = [
     { key: 'number', header: 'Number', render: (r) => <span className="font-semibold text-brand">{r.number}</span> },
     { key: 'date', header: 'Date', render: (r) => date(r.date) },
-    { key: 'party_name', header: partyNoun, render: (r) => <div><div className="font-medium">{r.party_name ?? '—'}</div>{r.party_phone && <div className="text-[11.5px] text-muted">{r.party_phone}</div>}</div> },
+    { key: 'party_name', header: partyNoun, render: (r) => <div><div className="font-medium">{r.party_name ?? '—'}</div>{r.party_phone && <div className="text-[12px] text-muted">{r.party_phone}</div>}</div> },
     { key: 'project_name', header: 'Project', render: (r) => (r.project_name ? <span className="text-[12.5px]">{r.project_code} · {r.project_name}</span> : <span className="text-muted">—</span>) },
     { key: 'grand_total', header: 'Total', align: 'right', render: (r) => money(r.grand_total) },
     { key: 'paid', header: docType.includes('return') ? 'Settled' : 'Paid', align: 'right', hidden: !financial, render: (r) => money(r.paid + (r.returned || 0)), value: (r) => r.paid },

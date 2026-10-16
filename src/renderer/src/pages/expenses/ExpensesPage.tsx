@@ -212,12 +212,12 @@ function ExpensesTab({ tick, onEdit }: { tick: number; onEdit: (e: any) => void 
                 nav(`/projects/${r.project_id}`)
               }}
             >
-              <div className="text-[11.5px] text-muted">{r.project_code}</div>
+              <div className="text-[12px] text-muted">{r.project_code}</div>
               <div>{r.project_name}</div>
             </button>
           ) : (
             <div>
-              <div className="text-[11.5px] text-muted">{r.project_code}</div>
+              <div className="text-[12px] text-muted">{r.project_code}</div>
               <div>{r.project_name}</div>
             </div>
           )
@@ -233,7 +233,7 @@ function ExpensesTab({ tick, onEdit }: { tick: number; onEdit: (e: any) => void 
         r.party_name || r.payee_name ? (
           <div>
             <div>{r.party_name ?? r.payee_name}</div>
-            {r.party_name && r.payee_name && <div className="text-[11.5px] text-muted">{r.payee_name}</div>}
+            {r.party_name && r.payee_name && <div className="text-[12px] text-muted">{r.payee_name}</div>}
           </div>
         ) : (
           <span className="text-muted">—</span>

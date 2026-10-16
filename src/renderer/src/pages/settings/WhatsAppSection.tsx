@@ -117,7 +117,7 @@ export function WhatsAppSection(): JSX.Element {
       render: (r) => (
         <span title={r.error ?? ''}>
           <Badge tone={STATUS_TONE[r.status]}>{r.status}</Badge>
-          {r.error && <div className="mt-0.5 max-w-[200px] truncate text-[11.5px] text-bad">{r.error}</div>}
+          {r.error && <div className="mt-0.5 max-w-[200px] truncate text-[12px] text-bad">{r.error}</div>}
         </span>
       )
     },

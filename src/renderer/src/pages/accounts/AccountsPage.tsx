@@ -196,7 +196,7 @@ function CashBankTab({ tick }: { tick: number }): JSX.Element {
                 <div className="mt-auto pt-3">
                   <div className="text-[12px] text-muted">{negative ? 'Balance (overdrawn)' : 'Current balance'}</div>
                   <div className={cx('num truncate text-[24px] font-bold tracking-tight', negative && 'text-bad')}>{money(a.balance)}</div>
-                  <div className="text-[11.5px] text-muted">Opening balance {money(a.opening_balance)}</div>
+                  <div className="text-[12px] text-muted">Opening balance {money(a.opening_balance)}</div>
                 </div>
                 <div className="mt-3 flex gap-2 border-t border-line pt-3">
                   <Button size="sm" variant="soft" icon={<BookOpen className="h-4 w-4" />} onClick={() => setLedger(a)}>
@@ -733,7 +733,7 @@ function PaymentDetailModal({ id, onClose, onChanged }: { id: number; onClose: (
               )}
               <Kv label="Recorded by">
                 {p.created_by_name ?? '—'}
-                {p.created_at ? <span className="ml-1 text-[11.5px] font-normal text-muted">{dateTime(p.created_at)}</span> : null}
+                {p.created_at ? <span className="ml-1 text-[12px] font-normal text-muted">{dateTime(p.created_at)}</span> : null}
               </Kv>
             </div>
           </div>
@@ -1036,7 +1036,7 @@ function AdjustmentsTab({ tick }: { tick: number }): JSX.Element {
       render: (r) => (
         <div>
           <Badge tone={r.direction === 'debit' ? 'warn' : 'ok'}>{r.direction === 'debit' ? 'Debit' : 'Credit'}</Badge>
-          <div className="mt-0.5 text-[11.5px] text-muted">{r.direction === 'debit' ? 'Balance increased' : 'Balance reduced'}</div>
+          <div className="mt-0.5 text-[12px] text-muted">{r.direction === 'debit' ? 'Balance increased' : 'Balance reduced'}</div>
         </div>
       )
     },

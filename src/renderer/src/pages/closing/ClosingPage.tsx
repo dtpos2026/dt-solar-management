@@ -114,9 +114,9 @@ export function ClosingPage(): JSX.Element {
 function Fig({ label, value, tone, sub }: { label: string; value: ReactNode; tone?: 'ok' | 'bad' | 'warn'; sub?: ReactNode }): JSX.Element {
   return (
     <div className="rounded-xl border border-line bg-surface-2 px-3 py-2">
-      <div className="text-[11.5px] text-muted">{label}</div>
+      <div className="text-[12px] text-muted">{label}</div>
       <div className={cx('num text-[17px] font-bold', tone === 'ok' && 'text-ok', tone === 'bad' && 'text-bad', tone === 'warn' && 'text-warn')}>{value}</div>
-      {sub && <div className="text-[11px] text-muted">{sub}</div>}
+      {sub && <div className="text-[12px] text-muted">{sub}</div>}
     </div>
   )
 }
@@ -265,7 +265,7 @@ function DayClosing(): JSX.Element {
           </Card>
           {!isClosed && (
             <Card title="Close the day">
-              <div className="grid gap-4 md:grid-cols-[220px_220px_1fr]">
+              <div className="grid gap-4 md:grid-cols-[220px_220px_minmax(0,1fr)]">
                 <Field label="Counted cash" hint="Count the cash in hand (cash accounts)">
                   <NumberInput value={counted ?? ''} min={0} placeholder={String(f.cash.expected)} onChange={(v) => setCounted(Number.isFinite(v) ? v : null)} />
                 </Field>

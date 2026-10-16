@@ -46,7 +46,7 @@ export function BarChart({ data, series, height = 240 }: { data: Array<Record<st
           return (
             <g key={i}>
               <line x1={pad.l} x2={W - pad.r} y1={y(v)} y2={y(v)} stroke="var(--border)" strokeDasharray={v === 0 ? '' : '3 4'} />
-              <text x={pad.l - 6} y={y(v) + 4} textAnchor="end" fontSize="10.5" fill="var(--muted)">
+              <text x={pad.l - 6} y={y(v) + 4} textAnchor="end" fontSize="12.5" fill="var(--muted)">
                 {short(v)}
               </text>
             </g>
@@ -63,7 +63,7 @@ export function BarChart({ data, series, height = 240 }: { data: Array<Record<st
                 const h = Math.abs(y(v) - y(0))
                 return <rect key={s.key} x={x0 + j * (barW + 3)} y={top} width={barW} height={Math.max(h, v ? 1 : 0)} rx={3} fill={s.color} opacity={hover === null || hover === i ? 1 : 0.55} />
               })}
-              <text x={pad.l + i * bw + bw / 2} y={H - 8} textAnchor="middle" fontSize="11" fill="var(--muted)">
+              <text x={pad.l + i * bw + bw / 2} y={H - 8} textAnchor="middle" fontSize="12.5" fill="var(--muted)">
                 {String(d.label ?? '')}
               </text>
             </g>

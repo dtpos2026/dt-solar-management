@@ -225,9 +225,9 @@ export function DocumentView(): JSX.Element {
                 <td className="text-muted">{l.line_no}</td>
                 <td>
                   <div className="font-semibold">{l.description}</div>
-                  {(l.brand || l.model) && l.description !== l.product_name && <div className="text-[11.5px] text-muted">{[l.brand, l.model].filter(Boolean).join(' · ')}</div>}
+                  {(l.brand || l.model) && l.description !== l.product_name && <div className="text-[12px] text-muted">{[l.brand, l.model].filter(Boolean).join(' · ')}</div>}
                   {l.details && <div className="mt-0.5 max-w-[640px] text-[12.5px] leading-snug whitespace-pre-line text-ink/80">{l.details}</div>}
-                  <div className="text-[11.5px] text-muted">
+                  <div className="text-[12px] text-muted">
                     {[l.sku, l.serials && `S/N: ${l.serials}`, l.warranty && `Warranty: ${l.warranty}`, l.returned_qty > 0 && `Returned: ${qty(l.returned_qty)}`].filter(Boolean).join(' · ')}
                   </div>
                 </td>

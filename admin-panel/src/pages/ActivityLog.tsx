@@ -15,14 +15,16 @@ import {
   type QueryConstraint,
   type QueryDocumentSnapshot
 } from 'firebase/firestore'
-import { Activity, Archive, Download, Eraser, Filter, Loader2, RefreshCw, RotateCcw } from 'lucide-react'
+import { Activity, Archive, Download, Eraser, Filter, History, Loader2, RefreshCw, RotateCcw } from 'lucide-react'
 import { db } from '../firebase'
 import { Badge, Field, PageTitle, cx } from '../components/ui'
-import { ConfirmDialog, Drawer, EmptyState, Loading, NoAccess, Notice, Pager, SearchBox, downloadText, usePaged } from '../components/kit'
-import { auditCol } from '../lib/licenses'
+import { ConfirmDialog, Drawer, EmptyState, ErrorState, NoAccess, Notice, Pager, SearchBox, SkeletonRows, downloadText, usePaged, useToast } from '../components/kit'
+import { auditCol, findLicenseByKey, licenseFromSnap, licenseRef } from '../lib/licenses'
+import type { License } from '../lib/types'
 import { logActivity } from '../lib/audit'
 import { useAdmin, useCan } from '../lib/auth'
 import { errorMessage, fmtDateTime, toInputDate } from '../lib/format'
+import { getDoc } from 'firebase/firestore'
 import {
   AUDIT_CATEGORIES,
   EMPTY_FILTERS,
@@ -43,10 +45,10 @@ import {
   type AuditRow,
   type ClearScope
 } from '../lib/auditLog'
-import { planAuditClear, runAuditClear, type ClearPlan } from '../lib/clearing'
+import { planAuditClear, planLicenseHistoryClear, planReleasedDevicesClear, runAuditClear, runLicenseHistoryClear, runReleasedDevicesClear, type ClearPlan } from '../lib/clearing'
 import { invalidate } from '../lib/queryCache'
 
-const FETCH_SIZE = 200
+const FETCH_SIZE = 100
 const PAGE_SIZE = 25
 const SCAN_SIZE = 400
 
@@ -89,6 +91,9 @@ export function ActivityLog() {
   const me = useAdmin()
   const canView = can('audit.view')
   const canManage = can('audit.manage')
+  const canDeviceRecords = can('licenses.manage') || can('devices.manage')
+  const [recordsOpen, setRecordsOpen] = useState(false)
+  const toast = useToast()
   const [rows, setRows] = useState<AuditRow[]>([])
   const [cursor, setCursor] = useState<Snap | null>(null)
   const [hasMore, setHasMore] = useState(false)
@@ -194,7 +199,7 @@ export function ActivityLog() {
     } catch {
       /* the export itself worked */
     }
-    setFlash({ tone: 'success', text: `${list.length} entries exported.` })
+    toast(`${list.length} entries exported.`)
   }
 
   const archiveIds = async (ids: string[], reason: string) => {
@@ -293,6 +298,7 @@ export function ActivityLog() {
             {canManage && (
               <button className="btn btn-secondary" onClick={() => { setDialogError(null); setDialog('archiveOlder') }}><Archive className="h-4 w-4" />Archive older…</button>
             )}
+            {(canManage || canDeviceRecords) && <button className="btn btn-secondary" onClick={() => setRecordsOpen(true)}><History className="h-4 w-4" />Clear license records…</button>}
             {canManage && <button className="btn btn-secondary text-red-700" onClick={openClear}><Eraser className="h-4 w-4" />Clear logs…</button>}
           </>
         }
@@ -347,15 +353,16 @@ export function ActivityLog() {
 
       <div className="card overflow-hidden">
         {loading ? (
-          <Loading label="Loading activity…" />
+          <SkeletonRows rows={10} cols={7} label="Loading activity…" />
         ) : loadError ? (
-          <div className="p-4"><Notice tone="error">{loadError}</Notice></div>
+          <ErrorState error={loadError} onRetry={() => void reload()} />
         ) : list.length === 0 ? (
           <EmptyState icon={<Activity />} title={rows.length ? 'No entries match the filters' : 'No activity recorded yet'} hint={rows.length ? 'Change or reset the filters, or load older entries.' : 'Admin actions appear here as they happen.'}>
             {hasMore && <button className="btn btn-secondary" onClick={loadMore} disabled={loadingMore}>{loadingMore && <Loader2 className="h-4 w-4 animate-spin" />}Load more</button>}
           </EmptyState>
         ) : (
           <>
+            <div className="tbl-wrap">
             <table className="tbl">
               <thead>
                 <tr>
@@ -384,6 +391,7 @@ export function ActivityLog() {
                 ))}
               </tbody>
             </table>
+            </div>
             <Pager {...paged} noun="entries" />
             {hasMore && (
               <div className="border-t border-[#ece6f4] px-4 py-2.5 text-center">
@@ -393,6 +401,15 @@ export function ActivityLog() {
           </>
         )}
       </div>
+
+      {recordsOpen && (
+        <LicenseRecordsDialog
+          canHistory={canManage}
+          canDevices={canDeviceRecords}
+          onClose={() => setRecordsOpen(false)}
+          onDone={(text) => { setRecordsOpen(false); toast(text); void reload() }}
+        />
+      )}
 
       <Drawer open={!!detail} onClose={() => setDetail(null)} title="Activity details">
         {detail && <DetailView r={detail} />}
@@ -500,5 +517,99 @@ function DetailView({ r }: { r: AuditRow }) {
         <pre className="max-h-80 overflow-auto rounded-xl border border-[#ece6f4] bg-[#1d1530] p-3 font-mono text-[11.5px] text-[#e9defa]">{Object.keys(r.meta).length ? JSON.stringify(r.meta, null, 2) : '{}'}</pre>
       </div>
     </div>
+  )
+}
+
+type RecordKind = 'history' | 'devices'
+
+/**
+ * Clears one license's history entries or its released (non-active) device records: find the license, count exactly,
+ * confirm, delete in batches of <= 450 with progress, then one 'security' entry records who cleared what and how many.
+ */
+function LicenseRecordsDialog({ canHistory, canDevices, onClose, onDone }: { canHistory: boolean; canDevices: boolean; onClose: () => void; onDone: (text: string) => void }) {
+  const [kind, setKind] = useState<RecordKind>(canHistory ? 'history' : 'devices')
+  const [input, setInput] = useState('')
+  const [lic, setLic] = useState<License | null>(null)
+  const [plan, setPlan] = useState<{ key: string; plan: ClearPlan } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [progress, setProgress] = useState<string | null>(null)
+  const key = `${kind}|${input.trim()}`
+  const ready = !!plan && plan.key === key && !!lic
+
+  const count = async () => {
+    setBusy(true)
+    setError(null)
+    setPlan(null)
+    try {
+      const raw = input.trim()
+      if (!raw) throw new Error('Enter a license key (DTSP-…) or a license id.')
+      let l: License | null = null
+      if (/^dtsp/i.test(raw)) l = await findLicenseByKey(raw)
+      else if (/^[A-Za-z0-9_-]{1,128}$/.test(raw)) {
+        const snap = await getDoc(licenseRef(raw))
+        l = snap.exists() ? licenseFromSnap(snap as Parameters<typeof licenseFromSnap>[0]) : null
+      }
+      if (!l) throw new Error('No license found for that key or id.')
+      setLic(l)
+      const p = kind === 'history' ? await planLicenseHistoryClear(l.id) : await planReleasedDevicesClear(l.id)
+      setPlan({ key, plan: p })
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const run = async () => {
+    if (!ready || !lic || !plan) return
+    setBusy(true)
+    setError(null)
+    try {
+      const onP = (done: number, total: number) => setProgress(`Deleted ${done} of ${total}…`)
+      const n = kind === 'history' ? await runLicenseHistoryClear(lic.id, plan.plan, onP) : await runReleasedDevicesClear(lic.id, plan.plan, onP)
+      invalidate('audit')
+      onDone(`${n} ${kind === 'history' ? 'history entr' + (n === 1 ? 'y' : 'ies') : 'released device record' + (n === 1 ? '' : 's')} of ${lic.licenseKey} deleted. A security record was added.`)
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setBusy(false)
+      setProgress(null)
+    }
+  }
+
+  const n = plan?.plan.refs.length ?? 0
+  return (
+    <ConfirmDialog
+      open
+      title="Clear license records"
+      danger
+      busy={busy}
+      error={error}
+      confirmLabel={ready ? `Delete ${n}` : 'Count first'}
+      disabled={!ready || n === 0}
+      onConfirm={run}
+      onClose={onClose}
+    >
+      <fieldset className="space-y-2" disabled={busy}>
+        <legend className="label">What to delete</legend>
+        <label className={cx('flex items-center gap-2', !canHistory && 'opacity-50')}><input type="radio" name="rec-kind" disabled={!canHistory} checked={kind === 'history'} onChange={() => { setKind('history'); setPlan(null) }} />License history entries (needs “Manage activity log”)</label>
+        <label className={cx('flex items-center gap-2', !canDevices && 'opacity-50')}><input type="radio" name="rec-kind" disabled={!canDevices} checked={kind === 'devices'} onChange={() => { setKind('devices'); setPlan(null) }} />Released device records (active computers are always kept)</label>
+        <Field label="License key or id">
+          <input className="input font-mono" value={input} onChange={(e) => { setInput(e.target.value); setPlan(null) }} placeholder="DTSP-XXXX-XXXX-XXXX-XXXX" aria-label="License key or id" />
+        </Field>
+      </fieldset>
+      <div className="flex items-center gap-2">
+        <button type="button" className="btn btn-secondary btn-sm" onClick={count} disabled={busy || !input.trim()}>{busy && !progress && <Loader2 className="h-4 w-4 animate-spin" />}{ready ? 'Count again' : 'Find & count'}</button>
+      </div>
+      {ready && lic && (
+        <Notice tone={n ? 'warn' : 'info'}>
+          <b>{n}</b> {kind === 'history' ? `history entr${n === 1 ? 'y' : 'ies'}` : `released device record${n === 1 ? '' : 's'}`} of <b>{lic.businessName || lic.customerName}</b> (<span className="font-mono">{lic.licenseKey}</span>) will be deleted.
+          {kind === 'devices' && plan!.plan.kept > 0 && <> {plan!.plan.kept} active device record(s) are kept.</>}
+        </Notice>
+      )}
+      <p className="text-[12.5px] text-[#6b5d85]">This cannot be undone. Deleted in batches of 450; a security record of who cleared what and how many is added to the Activity Log.</p>
+      {progress && <p className="text-[12.5px] font-semibold text-[#3d096d]" role="status">{progress}</p>}
+    </ConfirmDialog>
   )
 }

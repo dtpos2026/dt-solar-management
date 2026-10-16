@@ -1,6 +1,7 @@
 /** Small reusable building blocks for portal pages (pagination, confirmations, drawers, tabs, notices). */
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Info, Loader2, Lock, Search, X, XCircle } from 'lucide-react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Info, Loader2, Lock, RefreshCw, Search, X, XCircle } from 'lucide-react'
 import { Modal, cx } from './ui'
 
 /* ------------------------------------------------ paging ------------------------------------------------ */
@@ -222,4 +223,119 @@ export function downloadText(name: string, contents: string, type = 'text/plain;
   a.click()
   a.remove()
   setTimeout(() => URL.revokeObjectURL(a.href), 2000)
+}
+
+/* ------------------------------------------- skeletons / errors ------------------------------------------- */
+
+/** Shimmering placeholder block. */
+export function Skeleton({ className, style }: { className?: string; style?: CSSProperties }) {
+  return <span aria-hidden className={cx('skeleton', className ?? 'h-4 w-full')} style={style} />
+}
+
+/** Table-shaped loading placeholder for one section. */
+export function SkeletonRows({ rows = 6, cols = 5, label = 'Loading…' }: { rows?: number; cols?: number; label?: string }) {
+  return (
+    <div className="px-4 py-3" role="status" aria-label={label}>
+      {Array.from({ length: rows }, (_, r) => (
+        <div key={r} className="flex gap-4 border-b border-[#f3eff8] py-2.5 last:border-0">
+          {Array.from({ length: cols }, (_, c) => <Skeleton key={c} className="h-3.5" style={{ flex: c === 1 ? 2 : 1, opacity: 1 - r * 0.08 }} />)}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** Section error with a retry button. */
+export function ErrorState({ title = 'Could not load this section', error, onRetry }: { title?: string; error: string; onRetry?: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center px-6 py-10 text-center" role="alert">
+      <div className="mb-3 rounded-2xl bg-red-50 p-3 text-red-600"><XCircle className="h-6 w-6" /></div>
+      <div className="font-bold">{title}</div>
+      <div className="mt-1 max-w-md text-[12.5px] break-words text-[#7a6d92]">{error}</div>
+      {onRetry && <button className="btn btn-secondary btn-sm mt-4" onClick={onRetry}><RefreshCw className="h-4 w-4" />Try again</button>}
+    </div>
+  )
+}
+
+/* ------------------------------------------------ stat card ------------------------------------------------ */
+
+const STAT_TONES = {
+  brand: 'bg-[#f1e9fb] text-[#3d096d]',
+  green: 'bg-green-50 text-green-700',
+  amber: 'bg-amber-50 text-amber-700',
+  red: 'bg-red-50 text-red-600',
+  sky: 'bg-sky-50 text-sky-700',
+  slate: 'bg-slate-100 text-slate-600'
+} as const
+export type StatTone = keyof typeof STAT_TONES
+
+/** Summary card: icon, label, big value, optional sub line; `loading` shows a skeleton; `to` makes it a link. */
+export function StatCard({ icon, label, value, sub, tone = 'brand', loading, to, title }: { icon?: ReactNode; label: string; value: ReactNode; sub?: ReactNode; tone?: StatTone; loading?: boolean; to?: string; title?: string }) {
+  const body = (
+    <div className={cx('card h-full px-4 py-3.5', to && 'transition hover:border-[#d9c9f0] hover:shadow-md')} title={title}>
+      <div className="flex items-center gap-2.5">
+        {icon && <span className={cx('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg [&>svg]:h-4 [&>svg]:w-4', STAT_TONES[tone])}>{icon}</span>}
+        <span className="min-w-0 text-[12.5px] leading-tight font-semibold text-[#6b5d85]">{label}</span>
+      </div>
+      <div className="mt-2 text-[22px] leading-tight font-extrabold text-[#1d1530] tabular-nums">{loading ? <Skeleton className="h-6 w-20" /> : value}</div>
+      {sub !== undefined && <div className="mt-0.5 min-h-[18px] text-[12px] text-[#7a6d92]">{loading ? <Skeleton className="mt-1 h-3 w-28" /> : sub}</div>}
+    </div>
+  )
+  return to ? <Link to={to} className="block h-full">{body}</Link> : body
+}
+
+/** Card with a header row (title, optional sub + actions) used for page sections. */
+export function Section({ title, sub, actions, children, className, bodyClass }: { title?: ReactNode; sub?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; bodyClass?: string }) {
+  return (
+    <section className={cx('card overflow-hidden', className)}>
+      {(title || actions) && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#ece6f4] px-4 py-3">
+          <div className="min-w-0">
+            {title && <h2 className="flex items-center gap-2 text-[15px] font-bold [&>svg]:h-4 [&>svg]:w-4">{title}</h2>}
+            {sub && <div className="text-[12px] text-[#7a6d92]">{sub}</div>}
+          </div>
+          {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+        </div>
+      )}
+      <div className={bodyClass}>{children}</div>
+    </section>
+  )
+}
+
+/* ------------------------------------------------- toasts ------------------------------------------------- */
+
+export type ToastTone = 'success' | 'error' | 'info'
+interface ToastItem { id: number; tone: ToastTone; text: ReactNode }
+type ToastFn = (text: ReactNode, tone?: ToastTone) => void
+const ToastCtx = createContext<ToastFn | null>(null)
+
+/** Short-lived confirmation messages (bottom right). Wrap the app once. */
+export function ToastProvider({ children }: { children: ReactNode }) {
+  const [items, setItems] = useState<ToastItem[]>([])
+  const seq = useRef(0)
+  const close = useCallback((id: number) => setItems((l) => l.filter((t) => t.id !== id)), [])
+  const push = useCallback<ToastFn>((text, tone = 'success') => {
+    const id = ++seq.current
+    setItems((l) => [...l.slice(-3), { id, tone, text }])
+    setTimeout(() => close(id), tone === 'error' ? 8000 : 4500)
+  }, [close])
+  return (
+    <ToastCtx.Provider value={push}>
+      {children}
+      <div className="pointer-events-none fixed right-4 bottom-4 z-[60] flex w-[360px] max-w-[calc(100vw-2rem)] flex-col gap-2" aria-live="polite">
+        {items.map((t) => (
+          <div key={t.id} role={t.tone === 'error' ? 'alert' : 'status'} className={cx('toast-in pointer-events-auto flex items-start gap-2.5 rounded-xl border bg-white px-3.5 py-3 text-[13px] shadow-lg', t.tone === 'error' ? 'border-red-200' : t.tone === 'success' ? 'border-green-200' : 'border-[#e2d6f3]')}>
+            <span className={cx('mt-0.5 shrink-0 [&>svg]:h-4 [&>svg]:w-4', t.tone === 'error' ? 'text-red-600' : t.tone === 'success' ? 'text-green-600' : 'text-[#3d096d]')}>{t.tone === 'error' ? <XCircle /> : t.tone === 'success' ? <CheckCircle2 /> : <Info />}</span>
+            <div className="min-w-0 flex-1">{t.text}</div>
+            <button className="shrink-0 opacity-50 hover:opacity-100" onClick={() => close(t.id)} aria-label="Dismiss"><X className="h-4 w-4" /></button>
+          </div>
+        ))}
+      </div>
+    </ToastCtx.Provider>
+  )
+}
+
+/** Returns the toast function (a no-op outside ToastProvider, e.g. in isolated renders). */
+export function useToast(): ToastFn {
+  return useContext(ToastCtx) ?? (() => undefined)
 }

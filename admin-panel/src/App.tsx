@@ -4,6 +4,7 @@ import { Activity, BadgeCheck, Building2, CreditCard, KeyRound, LayoutDashboard,
 import { AuthProvider, useAuth, useCan } from './lib/auth'
 import { SigningKeyProvider, useSigningKey } from './lib/signingKey'
 import { cx } from './components/ui'
+import { ToastProvider } from './components/kit'
 import { Dashboard } from './pages/Dashboard'
 import { Clients } from './pages/Clients'
 import { Licenses } from './pages/Licenses'
@@ -124,7 +125,8 @@ function Shell() {
           <div className="mt-3 text-[10.5px] opacity-60">© Digital Target · +92 345 1873354</div>
         </div>
       </aside>
-      <main className="flex-1 overflow-y-auto p-7">
+      <main className="min-w-0 flex-1 overflow-y-auto px-7 py-6">
+        <div className="mx-auto max-w-[1440px]">
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/clients" element={<Clients />} />
@@ -148,6 +150,7 @@ function Shell() {
           <Route path="/audit" element={<Navigate to="/activity" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </div>
       </main>
     </div>
   )
@@ -163,7 +166,9 @@ export function App() {
     <AuthProvider>
       <SigningKeyProvider>
         <HashRouter>
-          <Gate />
+          <ToastProvider>
+            <Gate />
+          </ToastProvider>
         </HashRouter>
       </SigningKeyProvider>
     </AuthProvider>

@@ -51,14 +51,18 @@ export function Modal({ open, onClose, title, children, footer, wide }: { open: 
   )
 }
 
-export function PageTitle({ title, sub, actions }: { title: string; sub?: string; actions?: ReactNode }) {
+/** Page header: title + short subtitle on the left, actions (primary last) on the right. */
+export function PageTitle({ title, sub, actions, icon }: { title: string; sub?: ReactNode; actions?: ReactNode; icon?: ReactNode }) {
   return (
-    <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <h1 className="text-[22px] font-extrabold tracking-tight">{title}</h1>
-        {sub && <div className="text-[13px] text-[#7a6d92]">{sub}</div>}
+    <div className="mb-5 flex flex-wrap items-end justify-between gap-3 border-b border-[#ebe5f3] pb-4">
+      <div className="flex min-w-0 items-center gap-3">
+        {icon && <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#f1e9fb] text-[#3d096d] [&>svg]:h-5 [&>svg]:w-5">{icon}</span>}
+        <div className="min-w-0">
+          <h1 className="text-[22px] leading-tight font-extrabold tracking-tight">{title}</h1>
+          {sub && <div className="mt-0.5 text-[13px] text-[#7a6d92]">{sub}</div>}
+        </div>
       </div>
-      <div className="flex flex-wrap gap-2">{actions}</div>
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
   )
 }

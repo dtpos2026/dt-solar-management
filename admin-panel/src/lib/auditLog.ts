@@ -259,3 +259,36 @@ export function planClearBatches<T>(ids: readonly T[], size = CLEAR_BATCH_SIZE):
 export function withoutIds<T extends { id: string }>(rows: readonly T[], deleted: ReadonlySet<string>): T[] {
   return deleted.size ? rows.filter((r) => !deleted.has(r.id)) : rows.slice()
 }
+
+/* ------------------------------------------- dashboard summary ------------------------------------------- */
+
+/** Device activation events (online / offline activation, re-activation, rejected or failed requests). */
+export function isActivationEvent(r: Pick<AuditRow, 'action'>): boolean {
+  return /^(device_activated|device_reactivated|activation_[a-z_]+|offline_activation[a-z_]*)$/.test(r.action)
+}
+
+export interface RecentEventSummary {
+  activations: number
+  security: number
+  failures: number
+  /** True when the loaded window may not reach back to `sinceMs` (the counts are a lower bound). */
+  truncated: boolean
+}
+
+/**
+ * Counts activation / security / failed events since `sinceMs` in the newest-first `rows` (the latest `pageSize`
+ * entries). When every loaded row is newer than `sinceMs` and the page was full, older matches may exist → truncated.
+ */
+export function summarizeRecentEvents(rows: readonly Pick<AuditRow, 'action' | 'category' | 'status' | 'atMs'>[], sinceMs: number, pageSize: number): RecentEventSummary {
+  const out: RecentEventSummary = { activations: 0, security: 0, failures: 0, truncated: false }
+  let oldest = Infinity
+  for (const r of rows) {
+    if (r.atMs !== null) oldest = Math.min(oldest, r.atMs)
+    if (r.atMs === null || r.atMs < sinceMs) continue
+    if (isActivationEvent(r)) out.activations++
+    if (r.category === 'security') out.security++
+    if (r.status === 'failure') out.failures++
+  }
+  out.truncated = rows.length >= pageSize && oldest >= sinceMs
+  return out
+}

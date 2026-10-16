@@ -1,33 +1,57 @@
-/** Dashboard: live metrics from Firestore (only what the admin may read), SVG charts, recent activity. */
-import { useEffect, useMemo, useState } from 'react'
+/**
+ * Dashboard: summary cards, recent activity (searchable) and on-demand trends.
+ *
+ * Reads are kept small: licenses / clients / invoices come from shared live listeners (lib/liveData — one listener per
+ * collection for every page, so status changes appear at once and moving between pages does not re-read), online
+ * computers are aggregation counts on heartbeats, the activity table reads the latest 100 entries, and payment
+ * sub-collections are only read for the charts when the admin opens them.
+ */
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { getDocs, limit, orderBy, query } from 'firebase/firestore'
-import { Activity, BadgeCheck, Building2, CreditCard, Inbox, LifeBuoy, MonitorSmartphone } from 'lucide-react'
-import { PageTitle } from '../components/ui'
-import { auditCol, auditFromSnap, licenseBucketOf } from '../lib/licenses'
-import { loadPayments, loadThreads, type ThreadRow } from '../lib/fleet'
-import { billingSummary, bucketByMonth, countOnline, LICENSE_BUCKETS, monthStart, niceMax, ONLINE_THRESHOLD_LABEL, type MonthBucket, type PaymentLike } from '../lib/stats'
+import { Timestamp, collection, getCountFromServer, getDocs, limit, orderBy, query, where } from 'firebase/firestore'
+import {
+  Activity,
+  BadgeCheck,
+  Ban,
+  BarChart3,
+  Building2,
+  ChevronDown,
+  ChevronRight,
+  CircleDollarSign,
+  Clock,
+  Inbox,
+  LayoutDashboard,
+  LifeBuoy,
+  MonitorSmartphone,
+  PauseCircle,
+  RefreshCw,
+  ShieldAlert,
+  Zap
+} from 'lucide-react'
+import { db } from '../firebase'
+import { PageTitle, cx } from '../components/ui'
+import { EmptyState, ErrorState, Notice, Pager, SearchBox, Section, SkeletonRows, StatCard, usePaged } from '../components/kit'
+import { auditCol, licenseBucketOf, licenseFromSnap, licensesCol, requestsCol } from '../lib/licenses'
+import { clientFromSnap, clientsCol } from '../lib/clientsDb'
+import { heartbeatsCol, invoiceRow, loadPayments, threadRow, type ThreadRow } from '../lib/fleet'
+import { billingSummary, bucketByMonth, monthStart, niceMax, ONLINE_MS, RECENT_MS, type MonthBucket } from '../lib/stats'
+import { actionLabel, auditRowFromData, summarizeRecentEvents, type AuditRow } from '../lib/auditLog'
+import { invoicesWithPaymentsSince } from '../lib/billingViews'
+import { useSharedBranding, useCachedValue, useSharedDocs } from '../lib/liveData'
 import { useCan } from '../lib/auth'
 import { useSigningKey } from '../lib/signingKey'
-import { fmtDateTime } from '../lib/format'
-import type { AuditEntry } from '../lib/types'
-import { fmtCount, fmtMoney, Panel, Pill } from './licensing/kit'
-import { BILLING_READ_PERMS, DEVICE_READ_PERMS, LICENSE_READ_PERMS, useBranding, useClients, useInvoices, useLicenses } from './licensing/hooks'
-import { useFleet } from './licensing/useFleet'
-import { usePendingRequests } from './Licenses'
+import { fmtDateTime, timeAgo } from '../lib/format'
+import { fmtCount, fmtMoney, Pill } from './licensing/kit'
+import { BILLING_READ_PERMS, DEVICE_READ_PERMS, HEARTBEAT_READ_PERMS, LICENSE_READ_PERMS } from './licensing/hooks'
 
+const DAY = 86_400_000
+const RECENT_PAGE = 100
 const monthInput = (ms: number) => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
 const fromMonthInput = (s: string): number | null => { const m = /^(\d{4})-(\d{2})$/.exec(s); return m ? new Date(Number(m[1]), Number(m[2]) - 1, 1).getTime() : null }
 
-function Card({ icon, label, value, sub, to }: { icon: React.ReactNode; label: string; value: React.ReactNode; sub?: React.ReactNode; to?: string }) {
-  const body = (
-    <div className="card h-full px-4 py-3 transition hover:shadow-md">
-      <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-[#7a6d92]">{icon}{label}</div>
-      <div className="mt-1 text-[24px] font-extrabold text-[#2b0750]">{value}</div>
-      {sub && <div className="mt-0.5 text-[12px] text-[#7a6d92]">{sub}</div>}
-    </div>
-  )
-  return to ? <Link to={to}>{body}</Link> : body
+const CATEGORY_TONE: Record<string, string> = {
+  security: 'bg-red-50 text-red-700', financial: 'bg-emerald-50 text-emerald-700', license: 'bg-[#f1e9fb] text-[#3d096d]', client: 'bg-sky-50 text-sky-700',
+  device: 'bg-indigo-50 text-indigo-700', support: 'bg-amber-50 text-amber-800', settings: 'bg-slate-100 text-slate-700', general: 'bg-slate-100 text-slate-600'
 }
 
 function BarChart({ data, money, currency, line }: { data: MonthBucket[]; money?: boolean; currency?: string; line?: boolean }) {
@@ -64,142 +88,247 @@ function BarChart({ data, money, currency, line }: { data: MonthBucket[]; money?
   )
 }
 
+/** Online / recent / total heartbeat counts (3 aggregation queries instead of reading every heartbeat). */
+async function loadHeartbeatCounts(): Promise<{ online: number; recent: number; total: number }> {
+  const now = Date.now()
+  const c = (q: ReturnType<typeof query>) => getCountFromServer(q).then((s) => s.data().count)
+  const [online, recent, total] = await Promise.all([
+    c(query(heartbeatsCol(), where('lastSeen', '>=', Timestamp.fromMillis(now - ONLINE_MS)))),
+    c(query(heartbeatsCol(), where('lastSeen', '>=', Timestamp.fromMillis(now - RECENT_MS)))),
+    c(query(heartbeatsCol()))
+  ])
+  return { online, recent, total }
+}
+
+/** Support threads that need an answer: open ones and unread ones (two small equality queries, no composite index). */
+async function loadAttention(): Promise<ThreadRow[]> {
+  const col = collection(db, 'supportThreads')
+  const [open, unread] = await Promise.all([getDocs(query(col, where('status', '==', 'open'), limit(20))), getDocs(query(col, where('unreadByAdmin', '==', true), limit(20)))])
+  const m = new Map<string, ThreadRow>()
+  for (const d of [...unread.docs, ...open.docs]) m.set(d.id, threadRow(d))
+  return [...m.values()].sort((a, b) => Number(b.unreadByAdmin) - Number(a.unreadByAdmin) || (b.lastMessageAtMs ?? 0) - (a.lastMessageAtMs ?? 0))
+}
+
+async function loadRecent(): Promise<AuditRow[]> {
+  const s = await getDocs(query(auditCol(), orderBy('at', 'desc'), limit(RECENT_PAGE)))
+  return s.docs.map((d) => auditRowFromData(d.id, d.data()))
+}
+
 export function Dashboard() {
   const can = useCan()
   const any = (p: string[]) => p.some(can)
   const { key } = useSigningKey()
-  const branding = useBranding()
+  const branding = useSharedBranding()
   const canLic = any(LICENSE_READ_PERMS)
   const canBilling = any(BILLING_READ_PERMS)
   const canDevices = any(DEVICE_READ_PERMS)
-  const licenses = useLicenses(canLic)
-  const clients = useClients(can('clients.view'))
-  const invoices = useInvoices(canBilling)
-  const fleet = useFleet(canDevices, true)
-  const pending = usePendingRequests(can('devices.manage') || can('licenses.manage'))
-  const [payments, setPayments] = useState<PaymentLike[] | null>(null)
-  const [recent, setRecent] = useState<AuditEntry[] | null>(null)
-  const [threads, setThreads] = useState<ThreadRow[] | null>(null)
-  const now = Date.now()
-  const [from, setFrom] = useState(monthInput(new Date(new Date().getFullYear(), new Date().getMonth() - 11, 1).getTime()))
-  const [to, setTo] = useState(monthInput(now))
+  const canHb = any(HEARTBEAT_READ_PERMS)
+  const canClients = can('clients.view')
+  const canRequests = can('devices.manage') || can('licenses.manage')
+  const canAudit = can('audit.view')
 
-  useEffect(() => {
-    if (!canBilling || invoices.loading) return
-    let alive = true
-    loadPayments(invoices.data).then((p) => alive && setPayments(p), () => alive && setPayments(null))
-    return () => { alive = false }
-  }, [canBilling, invoices.loading, invoices.data])
-  useEffect(() => {
-    if (can('audit.view')) getDocs(query(auditCol(), orderBy('at', 'desc'), limit(10))).then((s) => setRecent(s.docs.map(auditFromSnap)), () => setRecent([]))
-    if (can('support.manage')) loadThreads().then(setThreads, () => setThreads(null))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  const lic = useSharedDocs('licenses', licensesCol, canLic)
+  const cli = useSharedDocs('clients', clientsCol, canClients)
+  const inv = useSharedDocs('invoices', () => collection(db, 'invoices'), canBilling)
+  const req = useSharedDocs('requests:pending', () => query(requestsCol(), where('status', '==', 'pending')), canRequests)
+  const hb = useCachedValue('heartbeats:counts', loadHeartbeatCounts, null, canHb, 60_000)
+  const recent = useCachedValue('audit:recent', loadRecent, [] as AuditRow[], canAudit, 30_000)
+  const attention = useCachedValue('support:attention', loadAttention, [] as ThreadRow[], can('support.manage'), 30_000)
+
+  const licenses = useMemo(() => lic.docs.map(licenseFromSnap), [lic.docs])
+  const clients = useMemo(() => cli.docs.map(clientFromSnap), [cli.docs])
+  const invoices = useMemo(() => inv.docs.map(invoiceRow), [inv.docs])
+  const now = Date.now()
+  const thisMonth = monthStart(now)
+
+  // Payments of this month only (invoices whose last payment is this month) for "Revenue this month".
+  const monthInvoices = useMemo(() => invoicesWithPaymentsSince(invoices.filter((i) => i.status !== 'cancelled'), thisMonth), [invoices, thisMonth])
+  const monthKeyStr = monthInvoices.map((i) => `${i.id}:${i.lastPaymentAtMs}`).join(',')
+  const monthPay = useCachedValue(`payments:since:${thisMonth}:${monthKeyStr}`, () => loadPayments(monthInvoices), null, canBilling && !inv.loading, 60_000)
 
   const buckets = useMemo(() => {
     const out: Record<string, number> = { active: 0, pending: 0, suspended: 0, revoked: 0, expired: 0, detached: 0 }
-    for (const l of licenses.data) { out[licenseBucketOf(l)]++; if (l.detached) out.detached++ }
+    for (const l of licenses) { out[licenseBucketOf(l)]++; if (l.detached) out.detached++ }
     return out
-  }, [licenses.data])
-  const sum = useMemo(() => billingSummary(invoices.data, payments), [invoices.data, payments])
-  const registered = fleet.rows.filter((r) => r.deviceStatus !== 'unregistered')
-  const online = useMemo(() => countOnline(fleet.rows.map((r) => r.lastSeenMs), fleet.loadedAt || now), [fleet.rows, fleet.loadedAt, now])
-
-  const fromMs = fromMonthInput(from) ?? 0
-  const toMonth = fromMonthInput(to)
-  const toMs = toMonth === null ? -1 : new Date(new Date(toMonth).getFullYear(), new Date(toMonth).getMonth() + 1, 1).getTime() - 1
-  const revenue = useMemo(
-    () => (payments ? bucketByMonth(payments.filter((p) => !p.cancelled), fromMs, toMs, (p) => p.dateMs, (p) => p.amount) : bucketByMonth(invoices.data.filter((i) => i.status !== 'cancelled'), fromMs, toMs, (i) => i.issueDateMs, (i) => i.total)),
-    [payments, invoices.data, fromMs, toMs]
-  )
-  const newLic = useMemo(() => bucketByMonth(licenses.data, fromMs, toMs, (l) => l.createdAt?.toMillis() ?? null), [licenses.data, fromMs, toMs])
-  const attention = threads?.filter((t) => t.unreadByAdmin || t.status === 'open') ?? null
-  const dash = (loading: boolean, v: React.ReactNode) => (loading ? '—' : v)
+  }, [licenses])
+  const approvedDevices = useMemo(() => licenses.filter((l) => l.status !== 'revoked').reduce((s, l) => s + Math.max(0, l.activeDevices || 0), 0), [licenses])
+  const sum = useMemo(() => billingSummary(invoices, monthPay.value, now), [invoices, monthPay.value, now])
+  const events = useMemo(() => summarizeRecentEvents(recent.value, now - 7 * DAY, RECENT_PAGE), [recent.value, now])
   const cur = branding.currency || 'PKR'
+  const plus = (n: number, truncated: boolean) => `${fmtCount(n)}${truncated ? '+' : ''}`
+  const liveClients = clients.filter((c) => c.status !== 'archived')
 
   return (
     <div>
-      <PageTitle title="Dashboard" sub={`Live figures from Firestore · ${new Date(monthStart(now)).toLocaleString(undefined, { month: 'long', year: 'numeric' })}`} />
-      {!key && (can('licenses.manage') || can('devices.manage')) && (
-        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-[13px] text-amber-800">No signing key loaded — approvals and certificate publishing need it. <Link className="font-semibold underline" to="/key">Load key</Link></div>
+      <PageTitle icon={<LayoutDashboard />} title="Dashboard" sub={`Live overview · ${new Date(thisMonth).toLocaleString(undefined, { month: 'long', year: 'numeric' })}`} />
+      {!key && canRequests && (
+        <Notice tone="warn" className="mb-4">No signing key loaded — approvals and certificate publishing need it. <Link className="font-semibold underline" to="/key">Load key</Link></Notice>
       )}
+      {[lic.error, cli.error, inv.error].filter(Boolean).map((e) => <Notice key={e} tone="error" className="mb-3">{e}</Notice>)}
 
-      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {can('clients.view') && <Card icon={<Building2 className="h-4 w-4" />} label="Clients / companies" value={dash(clients.loading, fmtCount(clients.data.filter((c) => c.status !== 'archived').length))} sub={clients.loading ? undefined : `${clients.data.filter((c) => c.status === 'suspended').length} suspended · ${clients.data.filter((c) => c.status === 'archived').length} archived`} to="/clients" />}
-        {canLic && <Card icon={<BadgeCheck className="h-4 w-4" />} label="Licenses" value={dash(licenses.loading, fmtCount(licenses.data.length))} sub={licenses.loading ? undefined : `${buckets.active} active · ${buckets.pending} pending (no computer yet)`} to="/licenses" />}
-        {canDevices && <Card icon={<MonitorSmartphone className="h-4 w-4" />} label="Registered computers" value={dash(fleet.loading, fmtCount(registered.length))} sub={fleet.loading ? undefined : `${registered.filter((r) => r.deviceStatus === 'active').length} active`} to="/devices" />}
-        {(can('devices.manage') || can('licenses.manage')) && <Card icon={<Inbox className="h-4 w-4" />} label="Pending activation requests" value={fmtCount(pending)} to="/licenses?tab=requests" />}
+      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        {canClients && <StatCard icon={<Building2 />} label="Clients" value={fmtCount(liveClients.length)} sub={`${clients.filter((c) => c.status === 'suspended').length} suspended`} loading={cli.loading} to="/clients" />}
+        {canLic && <StatCard icon={<BadgeCheck />} tone="green" label="Active licenses" value={fmtCount(buckets.active)} sub={`${buckets.pending} awaiting first activation`} loading={lic.loading} to="/licenses" />}
+        {canLic && <StatCard icon={<PauseCircle />} tone="amber" label="Suspended licenses" value={fmtCount(buckets.suspended)} sub={buckets.detached ? `${buckets.detached} detached (lifetime)` : 'apps blocked until reactivated'} loading={lic.loading} to="/licenses" />}
+        {canLic && <StatCard icon={<Ban />} tone="red" label="Expired / revoked" value={`${fmtCount(buckets.expired)} / ${fmtCount(buckets.revoked)}`} sub="renew or re-issue" loading={lic.loading} to="/licenses" />}
+        {canDevices && (
+          <StatCard
+            icon={<MonitorSmartphone />}
+            tone="sky"
+            label="Approved devices"
+            value={fmtCount(approvedDevices)}
+            sub={hb.value ? `${hb.value.online} online now · ${hb.value.recent} in 24 h` : canHb ? (hb.error ? 'online status unavailable' : '…') : 'online status needs Devices'}
+            loading={lic.loading}
+            to="/devices"
+            title="Active computers on non-revoked licenses (from the licenses’ device counters) · online = heartbeat in the last 30 minutes"
+          />
+        )}
+        {canRequests && <StatCard icon={<Inbox />} tone={req.docs.length ? 'amber' : 'slate'} label="Pending device requests" value={fmtCount(req.docs.length)} sub="activation requests to approve" loading={req.loading} to="/licenses?tab=requests" />}
       </div>
 
-      {canLic && (
-        <Panel className="mb-4" title="License status">
-          <div className="grid grid-cols-3 gap-3 px-4 py-3 md:grid-cols-6">
-            {[...LICENSE_BUCKETS, 'detached'].map((b) => (
-              <div key={b} className="rounded-lg bg-[#faf7fd] px-3 py-2"><Pill value={b} /><div className="mt-1 text-[20px] font-extrabold">{dash(licenses.loading, buckets[b])}</div></div>
-            ))}
-          </div>
-        </Panel>
-      )}
-
-      {canDevices && (
-        <Panel className="mb-4" title="Computers online" sub={`From desktop heartbeats: ${ONLINE_THRESHOLD_LABEL}`}>
-          {!fleet.heartbeats ? <div className="px-4 py-3 text-[13px] text-[#7a6d92]">You may not read heartbeats — online status unknown (—).</div> : (
-            <div className="grid grid-cols-2 gap-3 px-4 py-3 md:grid-cols-4">
-              {(['online', 'recent', 'offline', 'never'] as const).map((s) => (
-                <div key={s} className="rounded-lg bg-[#faf7fd] px-3 py-2"><Pill value={s} /><div className="mt-1 text-[20px] font-extrabold">{dash(fleet.loading, online[s])}</div></div>
-              ))}
-            </div>
-          )}
-        </Panel>
-      )}
-
-      {canBilling && (
-        <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Card icon={<CreditCard className="h-4 w-4" />} label="Total software sales" value={dash(invoices.loading, fmtMoney(sum.sales, cur))} sub={invoices.loading ? undefined : `${sum.invoiceCount} invoice(s)`} to="/billing" />
-          <Card icon={<CreditCard className="h-4 w-4" />} label="Paid vs outstanding" value={dash(invoices.loading, `${sum.paidCount} / ${sum.outstandingCount}`)} sub={invoices.loading ? undefined : `${sum.overdueCount} overdue`} to="/billing" />
-          <Card icon={<CreditCard className="h-4 w-4" />} label="Revenue this month" value={dash(invoices.loading, sum.revenueThisMonth === null ? '—' : fmtMoney(sum.revenueThisMonth, cur))} sub="payments received" />
-          <Card icon={<CreditCard className="h-4 w-4" />} label="Pending payments" value={dash(invoices.loading, fmtMoney(sum.outstanding, cur))} sub={invoices.loading ? undefined : `overdue ${fmtMoney(sum.overdue, cur)}`} />
+      {(canAudit || canBilling) && (
+        <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          {canAudit && <StatCard icon={<Zap />} tone="green" label="Activations · 7 days" value={plus(events.activations, events.truncated)} sub="device activations & requests" loading={recent.loading && !recent.value.length} to="/activity" />}
+          {canAudit && <StatCard icon={<ShieldAlert />} tone="red" label="Security events · 7 days" value={plus(events.security, events.truncated)} sub={`${events.failures} failed action(s)`} loading={recent.loading && !recent.value.length} to="/activity" />}
+          {canBilling && <StatCard icon={<CircleDollarSign />} label="Total sales" value={fmtMoney(sum.sales, cur)} sub={`${sum.invoiceCount} invoice(s)`} loading={inv.loading} to="/billing" />}
+          {canBilling && <StatCard icon={<CircleDollarSign />} tone="green" label="Revenue this month" value={sum.revenueThisMonth === null ? '—' : fmtMoney(sum.revenueThisMonth, cur)} sub="payments received" loading={inv.loading || monthPay.loading} to="/billing" />}
+          {canBilling && <StatCard icon={<Clock />} tone="amber" label="Outstanding" value={fmtMoney(sum.outstanding, cur)} sub={`${sum.outstandingCount} open invoice(s)`} loading={inv.loading} to="/billing" />}
+          {canBilling && <StatCard icon={<Clock />} tone="red" label="Overdue" value={fmtMoney(sum.overdue, cur)} sub={`${sum.overdueCount} invoice(s) past due`} loading={inv.loading} to="/billing" />}
         </div>
       )}
 
-      {(canBilling || canLic) && (
-        <Panel
-          className="mb-4"
-          title="Trends"
-          actions={<div className="flex items-center gap-2 text-[13px]">From <input type="month" className="input w-auto" value={from} onChange={(e) => setFrom(e.target.value)} /> to <input type="month" className="input w-auto" value={to} onChange={(e) => setTo(e.target.value)} /></div>}
-        >
-          <div className="grid gap-4 px-4 py-3 lg:grid-cols-2">
-            {canBilling && <div><div className="mb-1 text-[13px] font-semibold">Monthly revenue {payments ? '(payments received)' : '(invoiced)'}</div><BarChart data={revenue} money currency={cur} /></div>}
-            {canLic && <div><div className="mb-1 text-[13px] font-semibold">New licenses per month</div><BarChart data={newLic} line /></div>}
+      <div className="grid gap-4 xl:grid-cols-3">
+        {canAudit && (
+          <div className="xl:col-span-2">
+            <RecentActivity rows={recent.value} loading={recent.loading} error={recent.error} onRefresh={recent.reload} licenses={licenses} clients={clients} />
           </div>
-        </Panel>
-      )}
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        {can('audit.view') && (
-          <Panel title={<span className="flex items-center gap-2"><Activity className="h-4 w-4" />Recent activity</span>} actions={<Link className="text-[13px] text-[#3d096d] underline" to="/activity">All</Link>}>
-            {recent === null ? <div className="px-4 py-3 text-[#7a6d92]">Loading…</div> : recent.length === 0 ? <div className="px-4 py-3 text-[#7a6d92]">No activity yet.</div> : (
-              <ul className="divide-y divide-[#f1ecf7] text-[13px]">
-                {recent.map((a) => <li key={a.id} className="px-4 py-2"><b>{a.action.replace(/_/g, ' ')}</b> <span className="text-[#7a6d92]">· {fmtDateTime(a.at)} · {a.by}</span><div className="truncate text-[#5d4f78]">{a.details}</div></li>)}
-              </ul>
-            )}
-          </Panel>
         )}
         {can('support.manage') && (
-          <Panel title={<span className="flex items-center gap-2"><LifeBuoy className="h-4 w-4" />Support needing attention</span>} actions={<Link className="text-[13px] text-[#3d096d] underline" to="/support">Open support</Link>}>
-            {attention === null ? <div className="px-4 py-3 text-[#7a6d92]">—</div> : attention.length === 0 ? <div className="px-4 py-3 text-[#7a6d92]">Nothing waiting.</div> : (
+          <Section title={<><LifeBuoy />Support needing attention</>} actions={<Link className="text-[12.5px] font-semibold text-[#3d096d] hover:underline" to="/support">Open support</Link>}>
+            {attention.loading && !attention.value.length ? <SkeletonRows rows={4} cols={2} /> : attention.error ? <ErrorState error={attention.error} onRetry={attention.reload} /> : attention.value.length === 0 ? (
+              <EmptyState icon={<LifeBuoy />} title="Nothing waiting" hint="Open or unread conversations appear here." />
+            ) : (
               <ul className="divide-y divide-[#f1ecf7] text-[13px]">
-                {attention.slice(0, 10).map((t) => (
-                  <li key={t.id} className="px-4 py-2">
-                    <div className="flex justify-between gap-2"><Link className="font-semibold text-[#3d096d] underline" to={`/support/${t.id}`}>{t.companyName || t.contactName || t.id}</Link>{t.unreadByAdmin && <Pill value="pending" label="unread" />}</div>
-                    <div className="truncate text-[#5d4f78]">{t.lastMessagePreview}</div>
+                {attention.value.slice(0, 10).map((t) => (
+                  <li key={t.id} className="px-4 py-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <Link className="truncate font-semibold text-[#3d096d] hover:underline" to={`/support/${t.id}`}>{t.companyName || t.contactName || t.id}</Link>
+                      {t.unreadByAdmin ? <Pill value="pending" label="unread" /> : <Pill value={t.status} />}
+                    </div>
+                    <div className="flex justify-between gap-2 text-[12px] text-[#7a6d92]"><span className="truncate">{t.lastMessagePreview}</span><span className="shrink-0">{timeAgo(t.lastMessageAtMs)}</span></div>
                   </li>
                 ))}
               </ul>
             )}
-          </Panel>
+          </Section>
         )}
       </div>
+
+      {(canBilling || canLic) && <Trends canBilling={canBilling} canLic={canLic} invoices={invoices} licenses={licenses} currency={cur} />}
     </div>
+  )
+}
+
+function RecentActivity({ rows, loading, error, onRefresh, licenses, clients }: { rows: AuditRow[]; loading: boolean; error: string | null; onRefresh: () => void; licenses: ReturnType<typeof licenseFromSnap>[]; clients: ReturnType<typeof clientFromSnap>[] }) {
+  const [q, setQ] = useState('')
+  const names = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const c of clients) m.set(c.id, c.company)
+    for (const l of licenses) m.set(l.id, l.businessName || l.customerName || l.licenseKey)
+    return m
+  }, [licenses, clients])
+  const who = (r: AuditRow) => (r.licenseId && names.get(r.licenseId)) || names.get(r.target) || ''
+  const list = useMemo(() => {
+    const s = q.trim().toLowerCase()
+    return s ? rows.filter((r) => `${actionLabel(r.action)} ${r.action} ${r.category} ${r.by} ${r.target} ${r.details} ${who(r)}`.toLowerCase().includes(s)) : rows
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, q, names])
+  const paged = usePaged(list, 10, q)
+  return (
+    <Section
+      title={<><Activity />Recent activity</>}
+      sub={`Latest ${RECENT_PAGE} entries`}
+      actions={
+        <>
+          <SearchBox className="w-56" value={q} onChange={setQ} placeholder="Search activity…" />
+          <button className="btn btn-secondary btn-sm" onClick={onRefresh} disabled={loading} aria-label="Refresh activity"><RefreshCw className={cx('h-4 w-4', loading && 'animate-spin')} /></button>
+          <Link className="text-[12.5px] font-semibold text-[#3d096d] hover:underline" to="/activity">View all</Link>
+        </>
+      }
+    >
+      {loading && !rows.length ? <SkeletonRows rows={6} cols={4} /> : error ? <ErrorState error={error} onRetry={onRefresh} /> : list.length === 0 ? (
+        <EmptyState icon={<Activity />} title={rows.length ? 'Nothing matches the search' : 'No activity yet'} hint={rows.length ? 'Try another word.' : 'Admin and device actions appear here.'} />
+      ) : (
+        <>
+          <div className="tbl-wrap">
+            <table className="tbl">
+              <thead><tr><th className="w-36">Time</th><th>Event</th><th>Client / device</th><th>By</th></tr></thead>
+              <tbody>
+                {paged.slice.map((r) => (
+                  <tr key={r.id}>
+                    <td className="text-[12.5px] whitespace-nowrap text-[#6b5d85]" title={fmtDateTime(r.atMs)}>{fmtDateTime(r.atMs)}</td>
+                    <td>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold">{actionLabel(r.action)}</span>
+                        <span className={cx('rounded-md px-1.5 py-0.5 text-[10.5px] font-bold capitalize', CATEGORY_TONE[r.category] ?? CATEGORY_TONE.general)}>{r.category}</span>
+                        {r.status === 'failure' && <Pill value="rejected" label="failed" />}
+                      </div>
+                      <div className="max-w-[420px] truncate text-[12px] text-[#7a6d92]" title={r.details}>{r.details}</div>
+                    </td>
+                    <td className="max-w-[200px]">
+                      <div className="truncate">{who(r) || '—'}</div>
+                      {(r.licenseId || r.target) && <div className="truncate font-mono text-[11px] text-[#7a6d92]">{r.licenseId || r.target}</div>}
+                    </td>
+                    <td className="max-w-[180px] truncate text-[12.5px]" title={r.by}>{r.by || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pager {...paged} noun="entries" />
+        </>
+      )}
+    </Section>
+  )
+}
+
+/** Monthly revenue + new licenses; payments are read only when this panel is opened. */
+function Trends({ canBilling, canLic, invoices, licenses, currency }: { canBilling: boolean; canLic: boolean; invoices: ReturnType<typeof invoiceRow>[]; licenses: ReturnType<typeof licenseFromSnap>[]; currency: string }) {
+  const read = () => { try { return localStorage.getItem('dtsp.dash.trends') === '1' } catch { return false } }
+  const [open, setOpenState] = useState(read)
+  const setOpen = (v: boolean) => { setOpenState(v); try { localStorage.setItem('dtsp.dash.trends', v ? '1' : '0') } catch { /* private mode */ } }
+  const now = Date.now()
+  const [from, setFrom] = useState(monthInput(new Date(new Date().getFullYear(), new Date().getMonth() - 11, 1).getTime()))
+  const [to, setTo] = useState(monthInput(now))
+  const fromMs = fromMonthInput(from) ?? 0
+  const toMonth = fromMonthInput(to)
+  const toMs = toMonth === null ? -1 : new Date(new Date(toMonth).getFullYear(), new Date(toMonth).getMonth() + 1, 1).getTime() - 1
+  const need = useMemo(() => invoicesWithPaymentsSince(invoices.filter((i) => i.status !== 'cancelled'), fromMs), [invoices, fromMs])
+  const pay = useCachedValue(`payments:since:${fromMs}:${need.map((i) => `${i.id}:${i.lastPaymentAtMs}`).join(',')}`, () => loadPayments(need), null, open && canBilling, 60_000)
+  const revenue = useMemo(
+    () => (pay.value ? bucketByMonth(pay.value.filter((p) => !p.cancelled), fromMs, toMs, (p) => p.dateMs, (p) => p.amount) : bucketByMonth(invoices.filter((i) => i.status !== 'cancelled'), fromMs, toMs, (i) => i.issueDateMs, (i) => i.total)),
+    [pay.value, invoices, fromMs, toMs]
+  )
+  const newLic = useMemo(() => bucketByMonth(licenses, fromMs, toMs, (l) => l.createdAt?.toMillis() ?? null), [licenses, fromMs, toMs])
+  return (
+    <Section
+      className="mt-4"
+      title={<button className="flex items-center gap-2" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? <ChevronDown /> : <ChevronRight />}<BarChart3 />Trends</button>}
+      sub={open ? undefined : 'Monthly revenue and new licenses — opens on demand (reads payment records).'}
+      actions={open && <div className="flex items-center gap-2 text-[12.5px]">From <input type="month" className="input h-8 w-auto" value={from} onChange={(e) => setFrom(e.target.value)} /> to <input type="month" className="input h-8 w-auto" value={to} onChange={(e) => setTo(e.target.value)} /></div>}
+    >
+      {open && (
+        <div className="grid gap-4 px-4 py-3 lg:grid-cols-2">
+          {canBilling && (
+            <div>
+              <div className="mb-1 text-[13px] font-semibold">Monthly revenue {pay.value ? '(payments received)' : pay.loading ? '(loading payments…)' : '(invoiced)'}</div>
+              {pay.error && <Notice tone="error" className="mb-2">{pay.error}</Notice>}
+              <BarChart data={revenue} money currency={currency} />
+            </div>
+          )}
+          {canLic && <div><div className="mb-1 text-[13px] font-semibold">New licenses per month</div><BarChart data={newLic} line /></div>}
+        </div>
+      )}
+    </Section>
   )
 }

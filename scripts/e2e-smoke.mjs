@@ -49,8 +49,8 @@ try {
 }
 
 const page = await mainWindow()
-page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
-page.on('console', (m) => m.type() === 'error' && errors.push(`console: ${m.text()}`))
+page.on('pageerror', (e) => errors.push(`pageerror [${page.url().split('#')[1] ?? ''}]: ${e.message} | ${(e.stack ?? '').split('\n').slice(0, 4).join(' | ')}`))
+page.on('console', (m) => (m.type() === 'error' || /useEffect|destroy/.test(m.text())) && errors.push(`console [${page.url().split('#')[1] ?? ''}]: ${m.text().slice(0, 900)}`))
 await page.setViewportSize({ width: 1440, height: 900 }).catch(() => undefined)
 // v1.1: the wizard starts with the License step — take the 15-day trial path.
 await page.waitForSelector('text=Start 15-day trial', { timeout: 30000 })
@@ -102,7 +102,8 @@ const screens = [
   ['29c-settings-cloud', '#/settings?tab=cloud'],
   ['29d-settings-support', '#/settings?tab=support'],
   ['29e-settings-whatsapp', '#/settings?tab=whatsapp'],
-  ['29f-firms', '#/firms']
+  ['29f-firms', '#/firms'],
+  ['29g-whatsapp', '#/whatsapp']
 ]
 for (const [name, hash] of screens) {
   await page.evaluate((h) => (window.location.hash = h), hash)

@@ -89,7 +89,10 @@ export function HelpPage(): JSX.Element {
     }
   }
 
-  useEffect(() => endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }), [turns])
+  useEffect(() => {
+    // Braces matter: newer Chromium returns a Promise from scrollIntoView, which must not become the effect cleanup.
+    void endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [turns])
 
   const ask = (question: string): void => {
     const text = question.trim()

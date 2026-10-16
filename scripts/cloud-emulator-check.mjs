@@ -131,6 +131,60 @@ await accepted('licenseStatus get (public)', async () => {
 ok(st?.poweredBy === true, 'poweredBy applied')
 ok(!!st?.certUpdate && st.maxUsers === 9, `renewed certificate installed (${st?.certUpdate?.summary})`)
 
+/* ------------------------------------------------ 2b. write gating (suspend / device deactivated) ------------------------------------------------ */
+console.log('\nWrite gating against the emulator (suspend, device deactivated)')
+{
+  // The business-DB copy of the remote decision (settings.license_remote in the app).
+  let dbRemote = null
+  let offset = 0
+  // A protected write re-verifies when the last success is older than 5 minutes: move a test clock forward each step.
+  const svc = (online = true) =>
+    new M.LicenseService({
+      dir,
+      publicKeyPem: keys.publicPem,
+      firestore: online ? { projectId: PROJECT, apiKey: 'emulator' } : null,
+      appVersion: '1.1.0',
+      env: online ? env : { DTSP_CLOUD_DISABLED: '1' },
+      now: () => Date.now() + offset,
+      getDbRemote: () => dbRemote,
+      setDbRemote: (r) => (dbRemote = r)
+    })
+  const step = () => (offset += 6 * 60_000)
+  step()
+  let g = await svc().ensureFresh()
+  ok(g.canWrite && g.mode === 'active', `active license: write allowed after a fresh check (${g.mode})`)
+  await admin.patch(`licenseStatus/${licenseId}`, { status: 'suspended' }, ['status'])
+  const p3 = { ...p2, issuedAt: new Date(Date.now() + offset).toISOString(), maxUsers: 11 }
+  await admin.patch(`licenseStatus/${licenseId}`, { certs: { [lic.deviceId]: core.certificateToCode(core.signPayload(p3, keys.privatePem)) } }, ['certs'])
+  step()
+  g = await svc().ensureFresh()
+  ok(!g.canWrite && g.mode === 'suspended' && g.blockReason === 'license', `suspend -> next write blocked with the license message (${g.mode}: ${g.message.slice(0, 60)}…)`)
+  ok(g.maxUsers === 9, 'certificate published while suspended was NOT installed')
+  ok(dbRemote?.status === 'suspended', 'suspension also stored in the business DB copy')
+  // Network failure never clears the stored suspension.
+  step()
+  const off = svc(false)
+  ok(!off.status(true).canWrite, 'offline (no service) still blocked by the stored suspension')
+  await admin.patch(`licenseStatus/${licenseId}`, { status: 'active', certs: {} }, ['status', 'certs'])
+  step()
+  g = await svc().ensureFresh()
+  ok(g.canWrite && dbRemote === null, `re-activated by Digital Target -> writes allowed again, DB copy cleared (${g.mode})`)
+  await admin.patch(`licenseStatus/${licenseId}`, { deactivatedDevices: [lic.deviceId] }, ['deactivatedDevices'])
+  step()
+  const s5 = svc()
+  g = await s5.ensureFresh()
+  ok(!g.canWrite && g.mode === 'device_deactivated' && g.blockReason === 'device', `device deactivated -> blocked with the device message (${g.message.slice(0, 60)}…)`)
+  ok(/computer/i.test(g.message) && !/license is suspended/i.test(g.message), 'device message differs from the license message')
+  // Deleting the license-folder state does not lift it: the business DB copy still blocks.
+  const { rmSync } = await import('node:fs')
+  rmSync(join(dir, 'state.json'), { force: true })
+  ok(svc(false).status(true).mode === 'device_deactivated', 'state.json deleted -> DB copy still blocks')
+  await admin.patch(`licenseStatus/${licenseId}`, { deactivatedDevices: [] }, ['deactivatedDevices'])
+  step()
+  g = await svc().ensureFresh()
+  ok(g.canWrite, `device re-approved -> writes allowed (${g.mode})`)
+}
+
 /* ------------------------------------------------ 3. heartbeats ------------------------------------------------ */
 console.log('\nHeartbeats')
 const token = lic.installToken
@@ -147,6 +201,13 @@ await accepted('heartbeat update with approximate location (integer coords)', ()
 )
 hb = await admin.get(`heartbeats/${token}`)
 ok(hb?.data.location?.source === 'approximate' && hb.data.location.consent === true, 'location stored with consent')
+await accepted('heartbeat update with Windows location service (device) location', () =>
+  lic.client.commit([
+    M.heartbeatWrite(token, M.buildHeartbeat({ ...base, location: M.buildLocation('device', { device: { lat: 30.0457, lng: 72.3489, accuracyKm: 0.035, fetchedAt: new Date().toISOString() } }) }))
+  ])
+)
+hb = await admin.get(`heartbeats/${token}`)
+ok(hb?.data.location?.source === 'device' && hb.data.location.label === 'Windows location service' && hb.data.location.accuracyKm === 0.035, 'device location stored with its accuracy')
 await accepted('heartbeat update after withdrawing consent', () => lic.client.commit([M.heartbeatWrite(token, M.buildHeartbeat(base))]))
 hb = await admin.get(`heartbeats/${token}`)
 ok(hb && !('location' in hb.data), 'location removed from the cloud')

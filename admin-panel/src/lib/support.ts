@@ -1,7 +1,7 @@
 /** Support conversations (supportThreads/{installToken} + messages). Only the DATA_MODEL.md thread fields are written. */
 import { Timestamp, collection, doc, serverTimestamp, updateDoc, writeBatch, type DocumentData, type DocumentSnapshot, type QueryDocumentSnapshot, type WriteBatch } from 'firebase/firestore'
-import { auth, db } from '../firebase'
-import { auditCol } from './licenses'
+import { db } from '../firebase'
+import { writeActivity } from './audit'
 import type { SupportMessage, SupportThread } from './types'
 
 type Snap = DocumentSnapshot<DocumentData> | QueryDocumentSnapshot<DocumentData>
@@ -27,11 +27,8 @@ export function messageFromSnap(x: Snap): SupportMessage {
   return { id: x.id, from: d.from === 'admin' ? 'admin' : 'customer', body: s(d.body), authorName: s(d.authorName), at: ts(d.at) }
 }
 
-function audit(b: WriteBatch, action: string, by: string, t: SupportThread, details: string) {
-  b.set(doc(auditCol()), {
-    action, category: 'support', by, byUid: auth.currentUser?.uid ?? '', target: t.companyName || t.deviceId, targetType: 'support',
-    licenseId: t.licenseId || null, details, meta: {}, status: 'success', archived: false, at: serverTimestamp()
-  })
+function audit(b: WriteBatch, action: string, _by: string, t: SupportThread, details: string) {
+  writeActivity(b, { action, category: 'support', target: t.companyName || t.deviceId, targetType: 'support', licenseId: t.licenseId || null, details })
 }
 
 export async function replyToThread(t: SupportThread, body: string, authorName: string, status: SupportThread['status'], by: string): Promise<void> {

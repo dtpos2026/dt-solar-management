@@ -3,14 +3,15 @@
  * Totals always come from lib/billing.ts. Invoices are never deleted (cancelled instead); payments are append-only.
  */
 import {
-  Timestamp, collection, doc, getDoc, getDocs, orderBy, query, runTransaction, serverTimestamp, updateDoc,
+  Timestamp, collection, doc, getDocs, orderBy, query, runTransaction, serverTimestamp, updateDoc,
   type DocumentData, type DocumentSnapshot, type QueryDocumentSnapshot, type Transaction
 } from 'firebase/firestore'
-import { auth, db } from '../firebase'
-import { auditCol, licenseRef } from './licenses'
+import { db } from '../firebase'
+import { licenseRef } from './licenses'
+import { writeActivity } from './audit'
+import { loadBranding as loadBrandingDoc } from './brandingStore'
 import { applyPayment, computeTotals, formatNumber, makeToken, publicCustomerName, rebalance, round2, voidPayment, type LineInput } from './billing'
 import type { Branding, Client, Invoice, InvoicePayment, PlanType } from './types'
-import { DEFAULT_BRANDING } from './types'
 
 type Snap = DocumentSnapshot<DocumentData> | QueryDocumentSnapshot<DocumentData>
 const s = (v: unknown, d = ''): string => (typeof v === 'string' ? v : v == null ? d : String(v))
@@ -44,25 +45,15 @@ export function clientFromSnap(x: Snap): Client {
   return { id: x.id, ...(x.data() ?? {}) } as Client
 }
 
-export async function loadBranding(): Promise<Branding> {
-  try {
-    const b = await getDoc(doc(db, 'settings', 'branding'))
-    return { ...DEFAULT_BRANDING, ...(b.exists() ? (b.data() as Partial<Branding>) : {}) }
-  } catch {
-    return DEFAULT_BRANDING
-  }
-}
+export const loadBranding = (): Promise<Branding> => loadBrandingDoc()
 
 export async function loadPayments(invoiceId: string): Promise<InvoicePayment[]> {
   const r = await getDocs(query(paymentsCol(invoiceId), orderBy('createdAt', 'asc')))
   return r.docs.map(paymentFromSnap)
 }
 
-function txAudit(tx: Transaction, action: string, by: string, target: string, details: string, licenseId: string | null, meta: Record<string, unknown> = {}) {
-  tx.set(doc(auditCol()), {
-    action, category: 'financial', by, byUid: auth.currentUser?.uid ?? '', target, targetType: 'invoice', licenseId: licenseId || null,
-    details, meta, status: 'success', archived: false, at: serverTimestamp()
-  })
+function txAudit(tx: Transaction, action: string, _by: string, target: string, details: string, licenseId: string | null, meta: Record<string, unknown> = {}) {
+  writeActivity(tx, { action, category: 'financial', target, targetType: 'invoice', licenseId: licenseId || null, details, meta })
 }
 
 function newToken(): string {

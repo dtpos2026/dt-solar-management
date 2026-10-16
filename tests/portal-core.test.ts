@@ -13,8 +13,12 @@ import {
   planClearBatches,
   validateClearScope,
   withoutIds,
+  isActivationEvent,
+  summarizeRecentEvents,
+  type AuditRow,
   type ClearScope
 } from '../admin-panel/src/lib/auditLog'
+import { billingByClient, billingByPlan, invoicesWithPaymentsSince, isOverdue, type BillInvoice } from '../admin-panel/src/lib/billingViews'
 import { cachedFetch, invalidate, openSourceCount, resetCache, setCacheClock, subscribeShared } from '../admin-panel/src/lib/queryCache'
 
 const DAY = 86_400_000
@@ -166,5 +170,51 @@ describe('shared data cache', () => {
     expect(start).toHaveBeenCalledTimes(2)
     u()
     u2()
+  })
+})
+
+describe('dashboard recent-event summary', () => {
+  const now = T0
+  const row = (action: string, category: string, ageDays: number, status = 'success') => ({ action, category: category as AuditRow['category'], status: status as AuditRow['status'], atMs: now - ageDays * DAY })
+  it('recognises activation events only', () => {
+    for (const a of ['device_activated', 'device_reactivated', 'activation_rejected', 'offline_activation_failed']) expect(isActivationEvent({ action: a })).toBe(true)
+    for (const a of ['device_released', 'license_reactivated', 'deactivate', 'client_created']) expect(isActivationEvent({ action: a })).toBe(false)
+  })
+  it('counts within the window and flags a full page that does not reach back', () => {
+    const rows = [row('device_activated', 'device', 1), row('admin_updated', 'security', 2, 'failure'), row('device_activated', 'device', 9), row('audit_cleared', 'security', 10)]
+    expect(summarizeRecentEvents(rows, now - 7 * DAY, 100)).toEqual({ activations: 1, security: 1, failures: 1, truncated: false })
+    const recentOnly = [row('device_activated', 'device', 1), row('device_activated', 'device', 2)]
+    expect(summarizeRecentEvents(recentOnly, now - 7 * DAY, 2).truncated).toBe(true)
+    expect(summarizeRecentEvents(recentOnly, now - 7 * DAY, 3).truncated).toBe(false)
+  })
+})
+
+describe('billing overview tables', () => {
+  const now = T0
+  const inv = (p: Partial<BillInvoice>): BillInvoice => ({ id: 'i', clientId: 'c1', clientName: 'Alpha', planType: 'yearly', status: 'unpaid', total: 100, paid: 0, balance: 100, issueDateMs: now - 40 * DAY, dueDateMs: now - 10 * DAY, lastPaymentAtMs: null, ...p })
+  it('groups per client with overdue, next due, period and payment state; cancelled ignored', () => {
+    const rows = billingByClient([
+      inv({ id: 'a' }),
+      inv({ id: 'b', status: 'paid', paid: 50, balance: 0, total: 50, issueDateMs: now - 5 * DAY, dueDateMs: now + 5 * DAY, lastPaymentAtMs: now - DAY }),
+      inv({ id: 'c', status: 'cancelled', total: 999, balance: 999 }),
+      inv({ id: 'd', clientId: 'c2', clientName: 'Beta', status: 'paid', paid: 70, balance: 0, total: 70, planType: 'monthly' })
+    ], now)
+    expect(rows.map((r) => r.clientName)).toEqual(['Alpha', 'Beta'])
+    const a = rows[0]
+    expect(a).toMatchObject({ invoices: 2, total: 150, paid: 50, balance: 100, overdue: 100, nextDueMs: now - 10 * DAY, lastPaymentAtMs: now - DAY, firstIssueMs: now - 40 * DAY, lastIssueMs: now - 5 * DAY, state: 'overdue' })
+    expect(rows[1].state).toBe('paid')
+    expect(isOverdue(inv({ dueDateMs: now + DAY }), now)).toBe(false)
+  })
+  it('totals per plan type', () => {
+    const p = billingByPlan([inv({}), inv({ planType: 'monthly', total: 30, balance: 30 }), inv({ planType: 'yearly', total: 20, paid: 20, balance: 0 })])
+    expect(p).toEqual([
+      { planType: 'yearly', invoices: 2, total: 120, paid: 20, balance: 100 },
+      { planType: 'monthly', invoices: 1, total: 30, paid: 0, balance: 30 }
+    ])
+  })
+  it('reads payments only for invoices that can hold a payment on/after the date', () => {
+    const list = [inv({ id: 'none' }), inv({ id: 'old', paid: 10, lastPaymentAtMs: now - 90 * DAY }), inv({ id: 'new', paid: 10, lastPaymentAtMs: now - DAY }), inv({ id: 'legacy', paid: 10, lastPaymentAtMs: null })]
+    expect(invoicesWithPaymentsSince(list, now - 30 * DAY).map((i) => i.id)).toEqual(['new', 'legacy'])
+    expect(invoicesWithPaymentsSince(list, null).map((i) => i.id)).toEqual(['old', 'new', 'legacy'])
   })
 })

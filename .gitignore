@@ -24,3 +24,4 @@ e2e-output/
 # node_modules symlinks inside agent worktrees
 /node_modules
 admin-panel/node_modules
+pdf-check-output/

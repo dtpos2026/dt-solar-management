@@ -70,11 +70,11 @@ service cloud.firestore {
         && request.resource.data.licenseKey is string
         && request.resource.data.licenseKey.matches('^DTSP(-[A-Z0-9]{4}){4}$')
         && request.resource.data.status in ['active', 'suspended', 'revoked'];
-      // Status / terms changes need licenses.manage; device approvals only touch the device counter.
+      // Status / terms changes need licenses.manage; device approvals only touch the device counter + devicesSummary.
       allow update: if (can('licenses.manage') && request.resource.data.status in ['active', 'suspended', 'revoked']
                         && request.resource.data.licenseKey == resource.data.licenseKey)
         || (canAny(['devices.manage', 'licenses.generate'])
-            && changed().hasOnly(['activeDevices', 'updatedAt', 'lastVerifiedAt', 'activatedAt', 'clientId']));
+            && changed().hasOnly(['activeDevices', 'devicesSummary', 'updatedAt', 'lastVerifiedAt', 'activatedAt', 'clientId']));
       allow delete: if isOwner();
 
       match /devices/{deviceId} {

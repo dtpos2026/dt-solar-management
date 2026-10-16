@@ -7,7 +7,7 @@ import { clientToInput, compressLogo, createClient, updateClient } from '../../l
 import { useAdminEmail } from '../../lib/auth'
 import { logActivitySafe } from '../../lib/audit'
 import { errorMessage, toInputDate } from '../../lib/format'
-import { PLAN_PRESETS, type Client, type License, type Plan } from '../../lib/types'
+import { PAID_PLANS, PLAN_PRESETS, type Client, type License, type Plan } from '../../lib/types'
 
 export interface ClientFormProps {
   open: boolean
@@ -152,7 +152,7 @@ export function ClientForm({ open, client, prefill, linkLicense, onClose, onSave
               set({ plan: p, ...(PLAN_PRESETS[p] ? { allowedFirms: PLAN_PRESETS[p].maxFirms, allowedDevices: PLAN_PRESETS[p].maxDevices } : {}) })
             }}
           >
-            {(Object.keys(PLAN_PRESETS) as Plan[]).map((p) => (
+            {(PAID_PLANS as Plan[]).map((p) => (
               <option key={p} value={p}>
                 {PLAN_PRESETS[p].label}
               </option>

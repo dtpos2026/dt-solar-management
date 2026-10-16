@@ -14,7 +14,7 @@ import { ErrorBox } from './common'
 interface Extra { qty: number; rate: number }
 interface Other { description: string; qty: number; rate: number }
 
-const PLAN_LABEL: Record<PlanType, string> = { monthly: 'Monthly', yearly: 'Yearly', lifetime: 'Lifetime' }
+const PLAN_LABEL: Record<PlanType, string> = { monthly: 'Monthly', yearly: 'Yearly', lifetime: 'Lifetime', trial: 'Trial' }
 
 export function InvoiceForm({ open, invoice, clients, branding, onClose, onSaved }: { open: boolean; invoice?: Invoice; clients: Client[]; branding: Branding; onClose: () => void; onSaved: (id: string) => void }) {
   const by = useAdminEmail()

@@ -1,6 +1,6 @@
 import type { Timestamp } from 'firebase/firestore'
 
-export type Plan = 'standard' | 'professional' | 'enterprise'
+export type Plan = 'standard' | 'professional' | 'enterprise' | 'trial'
 export type LicenseState = 'active' | 'suspended' | 'revoked'
 
 export const FEATURES: { id: string; label: string; hint: string }[] = [
@@ -12,8 +12,12 @@ export const FEATURES: { id: string; label: string; hint: string }[] = [
 export const PLAN_PRESETS: Record<Plan, { label: string; maxDevices: number; maxFirms: number; maxUsers: number; features: string[] }> = {
   standard: { label: 'Standard', maxDevices: 1, maxFirms: 2, maxUsers: 3, features: ['projects'] },
   professional: { label: 'Professional', maxDevices: 2, maxFirms: 5, maxUsers: 10, features: ['multi_firm', 'projects'] },
-  enterprise: { label: 'Enterprise', maxDevices: 5, maxFirms: 10, maxUsers: 50, features: ['multi_firm', 'projects', 'advanced_reports'] }
+  enterprise: { label: 'Enterprise', maxDevices: 5, maxFirms: 10, maxUsers: 50, features: ['multi_firm', 'projects', 'advanced_reports'] },
+  trial: { label: 'Trial', maxDevices: 1, maxFirms: 1, maxUsers: 3, features: ['projects'] }
 }
+
+/** Plans an admin can choose when creating / changing a paid license (a trial is issued with "Issue trial"). */
+export const PAID_PLANS: Exclude<Plan, 'trial'>[] = ['standard', 'professional', 'enterprise']
 
 export const DEFAULT_CHECKIN_DAYS = 30
 export const DEFAULT_GRACE_DAYS = 15
@@ -50,6 +54,21 @@ export interface License {
   createdAt: Timestamp | null
   updatedAt: Timestamp | null
   createdBy: string
+  /**
+   * Denormalised copy of the devices sub-collection (deviceId → summary), written in the same transaction as
+   * every device change so the Devices page needs no read per license. null on licenses never touched since.
+   */
+  devicesSummary: Record<string, DeviceSummary> | null
+}
+
+export interface DeviceSummary {
+  deviceName: string
+  os: string
+  appVersion: string
+  status: 'active' | 'suspended' | 'revoked' | 'deactivated'
+  activatedAtMs: number | null
+  activationType: 'online' | 'offline'
+  statusNote: string
 }
 
 export interface Device {
@@ -132,7 +151,7 @@ export interface AdminDoc {
 
 /* ------------------------------------------------ v1.1 ------------------------------------------------ */
 
-export type PlanType = 'monthly' | 'yearly' | 'lifetime'
+export type PlanType = 'monthly' | 'yearly' | 'lifetime' | 'trial'
 
 export interface Client {
   id: string
@@ -160,7 +179,8 @@ export interface HeartbeatLocation {
   lat: number
   lng: number
   accuracyKm?: number
-  source: 'approximate' | 'manual'
+  /** device = Windows location service (accuracy in metres), approximate = internet IP (city level at best), manual = typed. */
+  source: 'device' | 'approximate' | 'manual'
   label?: string
   consent: true
   updatedAt?: string

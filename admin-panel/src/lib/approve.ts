@@ -11,18 +11,21 @@ import { signPayload, verifyCode, type LicensePayload, type LoadedKey, type Sign
 import {
   deactivateDeviceInTx,
   deviceFromSnap,
+  deviceLabel,
   deviceRef,
   devicesCol,
   findLicenseByKey,
-  isExpired,
   licenseFromSnap,
   licenseRef,
   licenseStatusPatch,
   licenseStatusRef,
   requestRef,
+  summaryEntry,
+  summaryPath,
+  writeAudit,
   writeLog
 } from './licenses'
-import { buildCertPayload, type CertTerms } from './terms'
+import { buildCertPayload, classifyActivation, replaceableError, type CertTerms } from './terms'
 import type { ActivationRequest, Device, License } from './types'
 
 export interface DeviceInfo {
@@ -68,38 +71,119 @@ export function dtlicName(l: Pick<License, 'businessName' | 'customerName'>, dev
   return `${(l.businessName || l.customerName || 'license').replace(/[^\w-]+/g, '_')}-${deviceId.slice(0, 9)}.dtlic`
 }
 
-/** Validates and registers the device, returns the signed certificate. Throws a human readable error to reject. */
-export async function issueForDevice(licenseKey: string, dev: DeviceInfo, key: LoadedKey, by: string, activationType: 'online' | 'offline'): Promise<{ license: License; cert: SignedCertificate }> {
+export interface IssueOptions {
+  /**
+   * The license's device limit is full: release this computer and give its slot to the new one in the SAME
+   * transaction (explicit admin choice "Replace device X with this one").
+   */
+  replaceDeviceId?: string
+  /** Note recorded with a reassignment. */
+  note?: string
+}
+
+/** Thrown when the limit is full and no computer to replace was chosen; the request stays pending. */
+export class NeedsReassignmentError extends Error {
+  constructor(public slotsUsed: number, public maxDevices: number) {
+    super(`Device limit reached (${slotsUsed} of ${maxDevices}). Reject the request or replace a computer with this one.`)
+    this.name = 'NeedsReassignmentError'
+  }
+}
+
+export interface IssueResult {
+  license: License
+  cert: SignedCertificate
+  kind: 'new' | 'reissue' | 'reassign'
+}
+
+/**
+ * Validates and registers the device, returns the signed certificate. Throws a human readable error to reject.
+ * Only ever called on an explicit admin action (approve / reassign / offline activation / re-issue): a valid key
+ * alone never grants a slot. The transaction re-reads the license, so two approvals racing for the last slot
+ * cannot both succeed (the loser is retried by Firestore, sees the full limit and fails).
+ */
+export async function issueForDevice(
+  licenseKey: string,
+  dev: DeviceInfo,
+  key: LoadedKey,
+  by: string,
+  activationType: 'online' | 'offline',
+  opts: IssueOptions = {}
+): Promise<IssueResult> {
   const found = await findLicenseByKey(licenseKey)
   if (!found) throw new Error('Invalid license key')
-  const license = await runTransaction(db, async (tx) => {
+  const replaceId = opts.replaceDeviceId?.trim() || ''
+  const { license, kind } = await runTransaction(db, async (tx) => {
     const licSnap = await tx.get(licenseRef(found.id))
     const devSnap = await tx.get(deviceRef(found.id, dev.deviceId))
+    const oldSnap = replaceId ? await tx.get(deviceRef(found.id, replaceId)) : null
+    const statusSnap = replaceId ? await tx.get(licenseStatusRef(found.id)) : null
     if (!licSnap.exists()) throw new Error('Invalid license key')
     const lic = licenseFromSnap(licSnap)
-    if (lic.status === 'suspended') throw new Error('License is suspended')
-    if (lic.status === 'revoked') throw new Error('License is revoked')
-    if (isExpired(lic)) throw new Error('License expired')
     const existing = devSnap.exists() ? deviceFromSnap(devSnap) : null
-    if (existing?.status === 'suspended') throw new Error('This computer is suspended. Contact Digital Target.')
-    if (existing?.status === 'revoked') throw new Error('This computer has been revoked. Contact Digital Target.')
+    const plan = classifyActivation(
+      { status: lic.status, expiresAtMs: lic.expiresAt ? lic.expiresAt.toMillis() : null, activeDevices: lic.activeDevices, maxDevices: lic.maxDevices },
+      existing ? existing.status : null
+    )
+    if (plan.kind === 'invalid') throw new Error(plan.reason)
+    const label = deviceLabel(dev.deviceName, dev.deviceId)
     const base = { deviceId: dev.deviceId, deviceName: dev.deviceName, os: dev.os, appVersion: dev.appVersion, lastIssuedAt: serverTimestamp(), activationType }
-    if (existing && existing.status === 'active') {
+    if (plan.kind === 'reissue') {
       tx.update(deviceRef(lic.id, dev.deviceId), base)
-      writeLog(tx, lic.id, 'certificate_reissued', by, `${dev.deviceName || 'Device'} (${dev.deviceId}) — ${activationType}`, 'device')
-      return lic
+      tx.update(licenseRef(lic.id), {
+        [summaryPath(dev.deviceId)]: summaryEntry({ ...existing!, ...dev, activatedAt: devSnap.data()?.activatedAt ?? null, status: 'active', activationType }),
+        updatedAt: serverTimestamp()
+      })
+      writeLog(tx, lic.id, 'certificate_reissued', by, `${label} — certificate re-issued (${activationType}); no new slot used`, 'license')
+      return { license: lic, kind: 'reissue' as const }
     }
-    if (lic.activeDevices >= lic.maxDevices) throw new Error(`Device limit reached (${lic.activeDevices} of ${lic.maxDevices})`)
+    let activeDevices = lic.activeDevices
+    const licPatch: Record<string, unknown> = {}
+    let outcome: 'new' | 'reassign' = 'new'
+    if (plan.kind === 'reassign') {
+      if (!replaceId) throw new NeedsReassignmentError(plan.slotsUsed, plan.maxDevices)
+      const old = oldSnap && oldSnap.exists() ? deviceFromSnap(oldSnap) : null
+      const err = replaceableError(old ? { deviceId: old.deviceId, status: old.status } : null, dev.deviceId)
+      if (err) throw new Error(err)
+      // Release the replaced computer (slot freed) — same transaction as the activation below.
+      tx.update(deviceRef(lic.id, replaceId), { status: 'deactivated', deactivatedAt: serverTimestamp(), statusChangedAt: serverTimestamp(), statusBy: by, statusNote: (opts.note ?? '').trim() || `Replaced by ${dev.deviceName || 'another computer'}` })
+      licPatch[summaryPath(replaceId)] = summaryEntry({ ...old!, activatedAt: oldSnap!.data()?.activatedAt ?? null, status: 'deactivated', statusNote: `Replaced by ${dev.deviceName || 'another computer'}` })
+      activeDevices -= 1
+      outcome = 'reassign'
+    }
+    // (A slot freed up meanwhile: the chosen computer is NOT released — the request simply takes the free slot.)
+    activeDevices += 1
+    if (activeDevices > lic.maxDevices) throw new Error(`Device limit reached (${lic.activeDevices} of ${lic.maxDevices})`)
     tx.set(deviceRef(lic.id, dev.deviceId), { ...base, status: 'active', activatedAt: serverTimestamp(), deactivatedAt: null, statusNote: '', statusChangedAt: serverTimestamp(), statusBy: by }, { merge: true })
-    tx.update(licenseRef(lic.id), { activeDevices: lic.activeDevices + 1, updatedAt: serverTimestamp(), ...(lic.activatedAt ? {} : { activatedAt: serverTimestamp() }) })
-    tx.set(licenseStatusRef(lic.id), licenseStatusPatch(lic, { remove: [dev.deviceId] }), { merge: true })
-    writeLog(tx, lic.id, 'device_activated', by, `${dev.deviceName || 'Device'} (${dev.deviceId}) activated — ${activationType}`, 'device')
-    return { ...lic, activeDevices: lic.activeDevices + 1 }
+    tx.update(licenseRef(lic.id), {
+      ...licPatch,
+      activeDevices,
+      [summaryPath(dev.deviceId)]: summaryEntry({ ...dev, status: 'active', activatedAt: serverTimestamp(), activationType }),
+      updatedAt: serverTimestamp(),
+      ...(lic.activatedAt ? {} : { activatedAt: serverTimestamp() })
+    })
+    if (outcome === 'reassign') {
+      // One write: the replaced computer joins deactivatedDevices, the new one leaves it, the old cert is dropped.
+      const prev = statusSnap?.data()?.deactivatedDevices
+      const deactivated = Array.from(new Set([...(Array.isArray(prev) ? prev.filter((x): x is string => typeof x === 'string') : []), replaceId])).filter((x) => x !== dev.deviceId)
+      tx.set(licenseStatusRef(lic.id), { ...licenseStatusPatch(lic, undefined, [replaceId]), deactivatedDevices: deactivated }, { merge: true })
+      writeLog(
+        tx,
+        lic.id,
+        'device_reassigned',
+        by,
+        `${deviceLabel(oldSnap!.data()?.deviceName ?? '', replaceId)} released and replaced by ${label} (${activationType}) — slots ${activeDevices} of ${lic.maxDevices}${opts.note?.trim() ? `. Note: ${opts.note.trim()}` : ''}`,
+        'license'
+      )
+    } else {
+      tx.set(licenseStatusRef(lic.id), licenseStatusPatch(lic, { remove: [dev.deviceId] }), { merge: true })
+      writeLog(tx, lic.id, 'device_activated', by, `${label} approved and activated (${activationType}) — slots ${activeDevices} of ${lic.maxDevices}`, 'license')
+    }
+    return { license: { ...lic, activeDevices }, kind: outcome }
   })
   const cert = await signFor(license, dev.deviceId, key)
   // Keep the published certificate in step with the one just handed out (a stale one would be re-installed).
   await setDoc(licenseStatusRef(license.id), { certs: { [dev.deviceId]: cert.code }, updatedAt: serverTimestamp() }, { merge: true })
-  return { license, cert }
+  return { license, cert, kind }
 }
 
 export interface PublishedCert {
@@ -146,7 +230,18 @@ export async function publishCertificates(licenseId: string, key: LoadedKey, by:
   return { license, certs }
 }
 
-export async function approveRequest(req: ActivationRequest, key: LoadedKey, by: string, opts: { clientId?: string; clientLabel?: string } = {}): Promise<'approved' | 'rejected' | 'processed'> {
+export type ApproveOutcome = 'approved' | 'reissued' | 'reassigned' | 'rejected' | 'processed' | 'needs_reassignment'
+
+/**
+ * Approves one pending request on an explicit admin action. A full device limit does NOT reject the request:
+ * it returns 'needs_reassignment' and the request stays pending until the admin rejects it or replaces a computer.
+ */
+export async function approveRequest(
+  req: ActivationRequest,
+  key: LoadedKey,
+  by: string,
+  opts: { clientId?: string; clientLabel?: string; replaceDeviceId?: string; note?: string } = {}
+): Promise<ApproveOutcome> {
   const fresh = await getDoc(requestRef(req.id))
   if (!fresh.exists() || fresh.data()?.status !== 'pending') return 'processed'
   if (req.type === 'deactivate') {
@@ -161,7 +256,7 @@ export async function approveRequest(req: ActivationRequest, key: LoadedKey, by:
     return 'processed'
   }
   try {
-    const { license, cert } = await issueForDevice(req.licenseKey ?? '', req, key, by, 'online')
+    const { license, cert, kind } = await issueForDevice(req.licenseKey ?? '', req, key, by, 'online', { replaceDeviceId: opts.replaceDeviceId, note: opts.note })
     await updateDoc(requestRef(req.id), { status: 'approved', certificate: cert.code, licenseId: license.id, processedAt: serverTimestamp(), processedBy: by })
     if (opts.clientId && !license.clientId) {
       const batch = writeBatch(db)
@@ -169,13 +264,23 @@ export async function approveRequest(req: ActivationRequest, key: LoadedKey, by:
       writeLog(batch, license.id, 'client_linked', by, `License linked to client ${opts.clientLabel ?? opts.clientId} on activation approval`, 'client')
       await batch.commit()
     }
-    return 'approved'
+    return kind === 'reissue' ? 'reissued' : kind === 'reassign' ? 'reassigned' : 'approved'
   } catch (e) {
+    if (e instanceof NeedsReassignmentError) return 'needs_reassignment'
     await rejectRequest(req, (e as Error).message, by)
     return 'rejected'
   }
 }
 
+/** Rejects a request; recorded in the license history + activity log (license category) when the license is known. */
 export async function rejectRequest(req: ActivationRequest, message: string, by: string): Promise<void> {
-  await updateDoc(requestRef(req.id), { status: 'rejected', message: message || 'Rejected by Digital Target', processedAt: serverTimestamp(), processedBy: by })
+  const text = message || 'Rejected by Digital Target'
+  let licenseId = req.licenseId || ''
+  if (!licenseId && req.licenseKey) licenseId = (await findLicenseByKey(req.licenseKey).catch(() => null))?.id ?? ''
+  const batch = writeBatch(db)
+  batch.update(requestRef(req.id), { status: 'rejected', message: text, processedAt: serverTimestamp(), processedBy: by })
+  const details = `${req.type === 'deactivate' ? 'Release' : 'Activation'} request from ${deviceLabel(req.deviceName, req.deviceId)} rejected: ${text}`
+  if (licenseId) writeLog(batch, licenseId, 'activation_rejected', by, details, 'license')
+  else writeAudit(batch, 'activation_rejected', by, null, `${details} (no license with this key)`, 'license')
+  await batch.commit()
 }

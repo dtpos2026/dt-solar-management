@@ -16,7 +16,7 @@ import { paymentStatusFromInvoices } from '../lib/stats'
 import { useAdminEmail, useCan } from '../lib/auth'
 import { useSigningKey } from '../lib/signingKey'
 import { errorMessage, fmtDate, fmtDateTime, fromInputDate, toInputDate } from '../lib/format'
-import { PLAN_PRESETS, type Device, type HistoryEntry, type License, type Plan, type PlanType } from '../lib/types'
+import { PAID_PLANS, PLAN_PRESETS, type Device, type HistoryEntry, type License, type Plan, type PlanType } from '../lib/types'
 import { ConfirmDialog, Empty, Loading, Notice, Panel, Pill, type ConfirmOptions, type NoticeMsg } from './licensing/kit'
 import { BILLING_READ_PERMS, useClients, useInvoices } from './licensing/hooks'
 import { LicenseForm } from './LicenseForm'
@@ -140,7 +140,7 @@ export function LicenseDetail() {
           body: 'Applies the plan’s firm, computer and user limits and features. The device limit cannot drop below the computers holding a slot.',
           extra: (
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Plan"><select className="input" value={fPlan} onChange={(e) => setFPlan(e.target.value as Plan)}>{(Object.keys(PLAN_PRESETS) as Plan[]).map((p) => <option key={p} value={p}>{PLAN_PRESETS[p].label}</option>)}</select></Field>
+              <Field label="Plan"><select className="input" value={fPlan} onChange={(e) => setFPlan(e.target.value as Plan)}>{(PAID_PLANS as Plan[]).map((p) => <option key={p} value={p}>{PLAN_PRESETS[p].label}</option>)}</select></Field>
               <Field label="Billing cycle"><select className="input" value={fPlanType} onChange={(e) => setFPlanType(e.target.value as PlanType)}>{PLAN_TYPES.map((p) => <option key={p} value={p}>{PLAN_TYPE_LABEL[p]}</option>)}</select></Field>
               <div className="col-span-2 text-[12px] text-[#7a6d92]">{PLAN_PRESETS[fPlan].maxFirms} firm(s) · {PLAN_PRESETS[fPlan].maxDevices} computer(s) · {PLAN_PRESETS[fPlan].maxUsers} user(s)</div>
             </div>

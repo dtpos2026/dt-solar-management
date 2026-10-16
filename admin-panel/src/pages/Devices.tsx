@@ -12,6 +12,13 @@ import { useSigningKey } from '../lib/signingKey'
 import { fmtDateTime, timeAgo } from '../lib/format'
 import { ConfirmDialog, Empty, Loading, Notice, Pager, Panel, Pill, SearchBox, Tabs, usePaged, type ConfirmOptions, type NoticeMsg } from './licensing/kit'
 import { useFleet } from './licensing/useFleet'
+import { maskDeviceId, maskLicenseKey } from '../lib/terms'
+import { copy } from '../components/ui'
+import { Copy } from 'lucide-react'
+
+function MaskedCopy({ value }: { value: string }) {
+  return <button className="rounded p-0.5 text-[#7a6d92] hover:text-[#3d096d]" title="Copy full license key" aria-label="Copy full license key" onClick={() => copy(value)}><Copy className="h-3 w-3" /></button>
+}
 import { usePendingRequests } from './Licenses'
 import { Requests } from './Requests'
 import { Offline } from './Offline'
@@ -39,7 +46,7 @@ export function Devices() {
   const counts = useMemo(() => countOnline(fleet.rows.map((r) => r.lastSeenMs), fleet.loadedAt || Date.now()), [fleet.rows, fleet.loadedAt])
 
   const opts: ConfirmOptions | null = act && {
-    title: `${ACTION_LABEL[act.a]} “${act.r.deviceName || act.r.deviceId}”`,
+    title: `${ACTION_LABEL[act.a]} “${act.r.deviceName || maskDeviceId(act.r.deviceId)}”`,
     confirmLabel: ACTION_LABEL[act.a],
     tone: act.a === 'reactivate' ? 'success' : 'danger',
     reason: true,
@@ -55,7 +62,7 @@ export function Devices() {
       await setDeviceState(r.licenseId!, r.deviceId, act.a, note, by)
       let extra = ''
       if (act.a === 'reactivate') {
-        if (key) extra = ` ${(await publishCertificates(r.licenseId!, key, by, `computer ${r.deviceId} reactivated`)).certs.length} certificate(s) published.`
+        if (key) extra = ` ${(await publishCertificates(r.licenseId!, key, by, `computer ${r.deviceName || 'Device'} (${maskDeviceId(r.deviceId)}) reactivated`)).certs.length} certificate(s) published.`
         else extra = ' Load the signing key and publish certificates on the license page so it gets a current certificate.'
       }
       setMsg({ tone: act.a === 'reactivate' && !key ? 'warn' : 'success', text: `${ACTION_LABEL[act.a]}: done.${extra}` })
@@ -123,10 +130,10 @@ export function Devices() {
                   <tbody>
                     {paged.rows.map((r) => (
                       <tr key={r.key} className="border-t border-[#f1ecf7] align-top">
-                        <td className="px-3 py-2"><div className="font-semibold">{r.deviceName || '—'}</div><code className="text-[11px] text-[#7a6d92]">{r.deviceId}</code></td>
+                        <td className="px-3 py-2"><div className="font-semibold">{r.deviceName || '—'}</div><code className="text-[11px] text-[#7a6d92]">{maskDeviceId(r.deviceId)}</code></td>
                         <td className="px-3 py-2">
                           <div>{r.company || '—'}</div>
-                          {r.licenseId ? <Link className="text-[11.5px] text-[#3d096d] underline" to={`/licenses/${r.licenseId}`}>{r.licenseKey || r.licenseId}</Link> : <span className="text-[11.5px] text-[#7a6d92]">no license</span>}
+                          {r.licenseId ? <span className="flex items-center gap-1"><Link className="text-[11.5px] text-[#3d096d] underline" to={`/licenses/${r.licenseId}`}>{r.licenseKey ? maskLicenseKey(r.licenseKey) : 'license'}</Link>{r.licenseKey && <MaskedCopy value={r.licenseKey} />}</span> : <span className="text-[11.5px] text-[#7a6d92]">no license</span>}
                         </td>
                         <td className="px-3 py-2">{r.os || '—'}<div className="text-[11.5px] text-[#7a6d92]">{r.appVersion || '—'}{r.mode ? ` · ${r.mode}` : ''}</div></td>
                         <td className="px-3 py-2">{fmtDateTime(r.registeredMs)}</td>

@@ -1,24 +1,32 @@
-/** License detail: terms, lifecycle actions (with reason + history + audit), certificates, devices, history. */
+/**
+ * License detail: key + id, client, plan, status, limits, lifecycle actions (with reason + history + audit),
+ * certificates, assigned computers with heartbeat (version, last verification, location with its source),
+ * pending activation requests and the lazily loaded, paginated history.
+ */
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { onSnapshot, orderBy, query } from 'firebase/firestore'
+import { getDocs, onSnapshot, query, where } from 'firebase/firestore'
 import { ArrowLeft, Ban, CalendarClock, Copy, Download, FileSignature, Link2, Pause, Pencil, Play, Unplug, UserPlus } from 'lucide-react'
 import { Field, PageTitle, Stat, copy, download } from '../components/ui'
 import {
-  changeTerms, detachLicense, deviceFromSnap, devicesCol, expiryLabel, historyCol, historyFromSnap, licenseFromSnap,
-  licenseRef, licenseStatusRef, linkLicenseClient, republishStatus, setDeviceState, setLicenseState, type DeviceAction, type TermsChange
+  changeTerms, detachLicense, deviceFromSnap, devicesCol, expiryLabel, licenseFromSnap,
+  licenseRef, licenseStatusRef, linkLicenseClient, republishStatus, requestFromSnap, requestsCol, setDeviceState, setLicenseState, type DeviceAction, type TermsChange
 } from '../lib/licenses'
 import { certTermsOf, issueForDevice, publishCertificates, type PublishedCert } from '../lib/approve'
 import { clientFromLicense, PLAN_TYPE_LABEL, PLAN_TYPES } from '../lib/clients'
 import { certificateFreshness, deviceLimitGuard, detachEligibility, suggestRenewal } from '../lib/terms'
-import { slotsUsed as slotsUsedOf } from '../lib/devices'
+import { latestHeartbeats, slotsUsed as slotsUsedOf } from '../lib/devices'
+import { heartbeatLike, loadHeartbeatsForLicenses } from '../lib/fleet'
+import { maskDeviceId } from '../lib/terms'
 import { paymentStatusFromInvoices } from '../lib/stats'
 import { useAdminEmail, useCan } from '../lib/auth'
 import { useSigningKey } from '../lib/signingKey'
-import { errorMessage, fmtDate, fmtDateTime, fromInputDate, toInputDate } from '../lib/format'
-import { PLAN_PRESETS, type Device, type HistoryEntry, type License, type Plan, type PlanType } from '../lib/types'
+import { errorMessage, fmtDate, fmtDateTime, fromInputDate, timeAgo, toInputDate } from '../lib/format'
+import { PAID_PLANS, PLAN_PRESETS, type ActivationRequest, type Device, type Heartbeat, type License, type Plan, type PlanType } from '../lib/types'
 import { ConfirmDialog, Empty, Loading, Notice, Panel, Pill, type ConfirmOptions, type NoticeMsg } from './licensing/kit'
-import { BILLING_READ_PERMS, useClients, useInvoices } from './licensing/hooks'
+import { BILLING_READ_PERMS, HEARTBEAT_READ_PERMS, useClients, useInvoices } from './licensing/hooks'
+import { HistoryPanel } from './licenses/HistoryPanel'
+import { LocationLine } from './licenses/parts'
 import { LicenseForm } from './LicenseForm'
 import { ClientForm } from './licensing/ClientForm'
 import { licenseDisplayStatus } from './Licenses'
@@ -43,7 +51,8 @@ export function LicenseDetail() {
   const { key } = useSigningKey()
   const [l, setL] = useState<License | null | undefined>(undefined)
   const [devices, setDevices] = useState<Device[]>([])
-  const [history, setHistory] = useState<HistoryEntry[]>([])
+  const [heartbeats, setHeartbeats] = useState<Heartbeat[] | null>(null)
+  const [requests, setRequests] = useState<ActivationRequest[]>([])
   const [published, setPublished] = useState<Record<string, unknown> | null>(null)
   const [edit, setEdit] = useState(false)
   const [clientForm, setClientForm] = useState(false)
@@ -66,10 +75,32 @@ export function LicenseDetail() {
   useEffect(() => {
     const a = onSnapshot(licenseRef(id), (s) => setL(s.exists() ? licenseFromSnap(s) : null), (e) => { setL(null); setMsg({ tone: 'error', text: errorMessage(e) }) })
     const b = onSnapshot(devicesCol(id), (s) => setDevices(s.docs.map(deviceFromSnap)), () => setDevices([]))
-    const c = onSnapshot(query(historyCol(id), orderBy('at', 'desc')), (s) => setHistory(s.docs.map(historyFromSnap)), () => setHistory([]))
     const d = onSnapshot(licenseStatusRef(id), (s) => setPublished((s.data()?.certs as Record<string, unknown>) ?? null), () => setPublished(null))
-    return () => { a(); b(); c(); d() }
+    return () => { a(); b(); d() }
   }, [id])
+  // Every change of the license or its computers bumps updatedAt: reload the per-license reads then.
+  const ver = l?.updatedAt?.toMillis() ?? 0
+
+  // Heartbeats of this license only (one query) — version, last verification, last seen, consented location.
+  const canHb = HEARTBEAT_READ_PERMS.some(can)
+  useEffect(() => {
+    if (!canHb) return setHeartbeats(null)
+    let alive = true
+    loadHeartbeatsForLicenses([id]).then((h) => alive && setHeartbeats(h), () => alive && setHeartbeats(null))
+    return () => { alive = false }
+  }, [id, canHb, ver])
+  const hbByDevice = useMemo(() => latestHeartbeats((heartbeats ?? []).map(heartbeatLike)), [heartbeats])
+
+  // Pending activation requests for this key (approval status of computers not registered yet).
+  const canReq = can('devices.manage') || can('licenses.manage')
+  const licKey = l?.licenseKey ?? ''
+  useEffect(() => {
+    if (!canReq || !licKey) return setRequests([])
+    let alive = true
+    getDocs(query(requestsCol(), where('licenseKey', '==', licKey)))
+      .then((s) => alive && setRequests(s.docs.map(requestFromSnap).filter((r) => r.status === 'pending')), () => alive && setRequests([]))
+    return () => { alive = false }
+  }, [canReq, licKey, ver])
 
   const fresh = useMemo(() => (l ? certificateFreshness(certTermsOf(l), devices.filter((d) => d.status === 'active').map((d) => d.deviceId), published) : []), [l, devices, published])
   const client = l ? clients.data.find((c) => c.id === l.clientId) ?? null : null
@@ -92,9 +123,11 @@ export function LicenseDetail() {
   }
 
   const open = (d: Dlg) => {
-    setFExpiry(toInputDate(suggestRenewal(lic.planType, lic.expiresAt?.toMillis() ?? null)))
-    setFPlanType(lic.planType)
-    setFPlan(lic.plan)
+    // A trial is converted to a paid plan by Renew / Change plan (trial is not offered there).
+    const pt: PlanType = lic.planType === 'trial' ? 'yearly' : lic.planType
+    setFExpiry(toInputDate(suggestRenewal(pt, lic.planType === 'trial' ? null : lic.expiresAt?.toMillis() ?? null)))
+    setFPlanType(pt)
+    setFPlan(lic.plan === 'trial' ? 'standard' : lic.plan)
     setFBool(!lic.poweredBy)
     setFClient(lic.clientId)
     setFNum(d.k === 'firms' ? lic.maxFirms : lic.maxDevices)
@@ -140,7 +173,7 @@ export function LicenseDetail() {
           body: 'Applies the plan’s firm, computer and user limits and features. The device limit cannot drop below the computers holding a slot.',
           extra: (
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Plan"><select className="input" value={fPlan} onChange={(e) => setFPlan(e.target.value as Plan)}>{(Object.keys(PLAN_PRESETS) as Plan[]).map((p) => <option key={p} value={p}>{PLAN_PRESETS[p].label}</option>)}</select></Field>
+              <Field label="Plan"><select className="input" value={fPlan} onChange={(e) => setFPlan(e.target.value as Plan)}>{(PAID_PLANS as Plan[]).map((p) => <option key={p} value={p}>{PLAN_PRESETS[p].label}</option>)}</select></Field>
               <Field label="Billing cycle"><select className="input" value={fPlanType} onChange={(e) => setFPlanType(e.target.value as PlanType)}>{PLAN_TYPES.map((p) => <option key={p} value={p}>{PLAN_TYPE_LABEL[p]}</option>)}</select></Field>
               <div className="col-span-2 text-[12px] text-[#7a6d92]">{PLAN_PRESETS[fPlan].maxFirms} firm(s) · {PLAN_PRESETS[fPlan].maxDevices} computer(s) · {PLAN_PRESETS[fPlan].maxUsers} user(s)</div>
             </div>
@@ -216,7 +249,7 @@ export function LicenseDetail() {
           run: async (note) => {
             await setDeviceState(lic.id, d.deviceId, action, note, by)
             if (action === 'reactivate' && key) {
-              const r = await publishCertificates(lic.id, key, by, `computer ${d.deviceId} reactivated`)
+              const r = await publishCertificates(lic.id, key, by, `computer ${d.deviceName || 'Device'} (${maskDeviceId(d.deviceId)}) reactivated`)
               setCerts(r.certs)
             }
             setMsg({ tone: action === 'reactivate' && !key ? 'warn' : 'success', text: `Computer ${label.toLowerCase()}d.${action === 'reactivate' && !key ? ' Load the signing key and publish certificates so it receives a current certificate.' : ''}` })
@@ -283,6 +316,9 @@ export function LicenseDetail() {
       >
         <div className="grid gap-x-6 gap-y-2 px-4 py-3 text-[13px] md:grid-cols-3">
           <div><span className="text-[#7a6d92]">Key: </span><code className="font-bold">{lic.licenseKey}</code></div>
+          <div className="flex items-center gap-1"><span className="text-[#7a6d92]">License id: </span><code>{lic.id}</code><button className="rounded p-0.5 text-[#7a6d92] hover:text-[#3d096d]" title="Copy license id" aria-label="Copy license id" onClick={() => copy(lic.id)}><Copy className="h-3.5 w-3.5" /></button></div>
+          <div><span className="text-[#7a6d92]">Product / plan: </span>DT Solar Pro · {PLAN_PRESETS[lic.plan]?.label ?? lic.plan} · {PLAN_TYPE_LABEL[lic.planType]}</div>
+          <div><span className="text-[#7a6d92]">Device limit: </span>{lic.maxDevices} computer(s) · new computers need approval</div>
           <div><span className="text-[#7a6d92]">Firms: </span>{lic.maxFirms} · <span className="text-[#7a6d92]">Users: </span>{lic.maxUsers}</div>
           <div><span className="text-[#7a6d92]">Check-in: </span>{lic.detached ? 'none (detached)' : `every ${lic.checkinDays} d, grace ${lic.graceDays} d`}</div>
           <div><span className="text-[#7a6d92]">Powered by line: </span>{lic.poweredBy ? 'shown' : 'hidden'}</div>
@@ -325,7 +361,7 @@ export function LicenseDetail() {
             <tbody>
               {fresh.map((f) => (
                 <tr key={f.deviceId} className="border-t border-[#f1ecf7]">
-                  <td className="px-4 py-2"><code>{f.deviceId}</code></td>
+                  <td className="px-4 py-2"><code title={f.deviceId}>{devices.find((d) => d.deviceId === f.deviceId)?.deviceName || 'Device'} · {maskDeviceId(f.deviceId)}</code></td>
                   <td className="px-4 py-2"><Pill value={f.state === 'current' ? 'active' : f.state === 'missing' ? 'pending' : 'expired'} label={f.state} /></td>
                   <td className="px-4 py-2 text-[#7a6d92]">{f.diff.length ? `differs: ${f.diff.join(', ')}` : f.issuedAt ? `issued ${fmtDateTime(f.issuedAt)}` : ''}</td>
                   <td className="px-4 py-2 text-right">
@@ -344,14 +380,18 @@ export function LicenseDetail() {
         {devices.length === 0 ? <Empty title="No computer activated yet" /> : (
           <div className="overflow-x-auto">
             <table className="w-full text-[13px]">
-              <thead className="text-left text-[12px] text-[#7a6d92]"><tr><th className="px-4 py-2">Computer</th><th className="px-4 py-2">OS / version</th><th className="px-4 py-2">Activated</th><th className="px-4 py-2">Status</th><th className="px-4 py-2" /></tr></thead>
+              <thead className="text-left text-[12px] text-[#7a6d92]"><tr><th className="px-4 py-2">Computer</th><th className="px-4 py-2">Windows · app version</th><th className="px-4 py-2">Activated</th><th className="px-4 py-2">Last verification</th><th className="px-4 py-2">Last known location</th><th className="px-4 py-2">Approval / status</th><th className="px-4 py-2" /></tr></thead>
               <tbody>
-                {devices.map((d) => (
-                  <tr key={d.deviceId} className="border-t border-[#f1ecf7]">
-                    <td className="px-4 py-2"><div className="font-semibold">{d.deviceName || '—'}</div><code className="text-[11px] text-[#7a6d92]">{d.deviceId}</code></td>
-                    <td className="px-4 py-2">{d.os || '—'} · {d.appVersion || '—'}</td>
-                    <td className="px-4 py-2">{fmtDateTime(d.activatedAt)} <span className="text-[#7a6d92]">({d.activationType})</span></td>
-                    <td className="px-4 py-2"><Pill value={d.status} />{d.statusNote && <div className="text-[11px] text-[#7a6d92]">{d.statusNote}</div>}</td>
+                {devices.map((d) => {
+                  const hb = hbByDevice.get(d.deviceId)
+                  return (
+                  <tr key={d.deviceId} className="border-t border-[#f1ecf7] align-top">
+                    <td className="px-4 py-2"><div className="font-semibold">{d.deviceName || '—'}</div><code className="text-[11px] text-[#7a6d92]" title={d.deviceId}>{maskDeviceId(d.deviceId)}</code><button className="ml-1 rounded p-0.5 text-[#7a6d92] hover:text-[#3d096d]" title="Copy device id" aria-label="Copy device id" onClick={() => copy(d.deviceId)}><Copy className="inline h-3 w-3" /></button></td>
+                    <td className="px-4 py-2">{hb?.os || d.os || '—'}<div className="text-[11.5px] text-[#7a6d92]">v{hb?.appVersion || d.appVersion || '—'}</div></td>
+                    <td className="px-4 py-2">{fmtDateTime(d.activatedAt)} <div className="text-[11.5px] text-[#7a6d92]">{d.activationType}</div></td>
+                    <td className="px-4 py-2">{hb?.lastCheckAt ? fmtDateTime(hb.lastCheckAt) : heartbeats === null ? <span className="text-[#9a8fb0]">not visible</span> : '—'}{hb?.lastSeenMs ? <div className="text-[11.5px] text-[#7a6d92]">seen {timeAgo(hb.lastSeenMs)}</div> : null}</td>
+                    <td className="px-4 py-2 text-[12.5px]"><LocationLine loc={hb?.location ?? null} /></td>
+                    <td className="px-4 py-2"><div className="text-[11.5px] text-[#7a6d92]">approved</div><Pill value={d.status} />{d.statusNote && <div className="text-[11px] text-[#7a6d92]">{d.statusNote}</div>}</td>
                     <td className="px-4 py-2 text-right">
                       <div className="flex justify-end gap-1">
                         {devManage && d.status === 'active' && <button className="btn btn-sm btn-secondary" onClick={() => issue(d)} disabled={!key}>Issue .dtlic</button>}
@@ -362,9 +402,17 @@ export function LicenseDetail() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
+          </div>
+        )}
+        {requests.length > 0 && (
+          <div className="border-t border-[#ece6f4] px-4 py-3 text-[13px]">
+            <b>Awaiting approval ({requests.length}):</b>{' '}
+            {requests.map((r) => `${r.deviceName || 'Device'} (${maskDeviceId(r.deviceId)})`).join(', ')} —{' '}
+            <Link className="font-semibold text-[#3d096d] underline" to="/licenses?tab=requests">review activation requests</Link>
           </div>
         )}
       </Panel>
@@ -384,18 +432,7 @@ export function LicenseDetail() {
         </Panel>
       )}
 
-      <Panel title="History">
-        {history.length === 0 ? <Empty title="No history yet" /> : (
-          <ul className="divide-y divide-[#f1ecf7] text-[13px]">
-            {history.map((h) => (
-              <li key={h.id} className="px-4 py-2">
-                <div className="flex justify-between gap-3"><b>{h.action.replace(/_/g, ' ')}</b><span className="text-[#7a6d92]">{fmtDateTime(h.at)} · {h.by}</span></div>
-                {h.details && <div className="text-[#5d4f78]">{h.details}</div>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Panel>
+      <HistoryPanel licenseId={lic.id} refreshKey={ver} />
 
       <ConfirmDialog opts={opts} onClose={() => setDlg(null)} />
       {edit && <LicenseForm open license={lic} onClose={() => setEdit(false)} onSaved={async (_id, info) => { setEdit(false); if (info.certChange) await afterTerms('license edited', 'License saved.').catch((e) => setMsg({ tone: 'error', text: errorMessage(e) })); else setMsg({ tone: 'success', text: 'License saved.' }) }} />}

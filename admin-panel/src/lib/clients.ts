@@ -7,7 +7,7 @@ import type { PlanType } from './types'
 export type ClientStatus = 'active' | 'suspended' | 'archived'
 export const CLIENT_STATUSES: ClientStatus[] = ['active', 'suspended', 'archived']
 export const PLAN_TYPES: PlanType[] = ['monthly', 'yearly', 'lifetime']
-export const PLAN_TYPE_LABEL: Record<PlanType, string> = { monthly: 'Monthly', yearly: 'Yearly', lifetime: 'Lifetime' }
+export const PLAN_TYPE_LABEL: Record<PlanType, string> = { monthly: 'Monthly', yearly: 'Yearly', lifetime: 'Lifetime', trial: 'Trial' }
 
 /** Logo is stored inline as a data URL (no Storage on the Spark plan). */
 export const LOGO_MAX_BYTES = 200 * 1024

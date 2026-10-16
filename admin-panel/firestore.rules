@@ -70,16 +70,18 @@ service cloud.firestore {
         && request.resource.data.licenseKey is string
         && request.resource.data.licenseKey.matches('^DTSP(-[A-Z0-9]{4}){4}$')
         && request.resource.data.status in ['active', 'suspended', 'revoked'];
-      // Status / terms changes need licenses.manage; device approvals only touch the device counter.
+      // Status / terms changes need licenses.manage; device approvals only touch the device counter + devicesSummary.
       allow update: if (can('licenses.manage') && request.resource.data.status in ['active', 'suspended', 'revoked']
                         && request.resource.data.licenseKey == resource.data.licenseKey)
         || (canAny(['devices.manage', 'licenses.generate'])
-            && changed().hasOnly(['activeDevices', 'updatedAt', 'lastVerifiedAt', 'activatedAt', 'clientId']));
+            && changed().hasOnly(['activeDevices', 'devicesSummary', 'updatedAt', 'lastVerifiedAt', 'activatedAt', 'clientId']));
       allow delete: if isOwner();
 
       match /devices/{deviceId} {
         allow read: if canAny(['licenses.view', 'licenses.manage', 'devices.view', 'devices.manage']);
-        allow create, update: if canAny(['licenses.manage', 'devices.manage']);
+        // A computer is only ever registered by an explicit approval of an admin holding devices.manage.
+        allow create: if can('devices.manage');
+        allow update: if canAny(['licenses.manage', 'devices.manage']);
         // Only released / deactivated device records can be removed (clearing device history); active ones never.
         allow delete: if canAny(['licenses.manage', 'devices.manage']) && resource.data.get('status', 'active') != 'active';
       }

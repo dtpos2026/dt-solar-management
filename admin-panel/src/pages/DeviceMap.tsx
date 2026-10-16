@@ -1,11 +1,16 @@
-/** Device map: only heartbeats that carry a consented location; colour = online status. No invented coordinates. */
+/**
+ * Device map: only heartbeats that carry a consented location; colour = online status. No invented coordinates
+ * and no geocoding. Every marker says where its point comes from: IP points are approximate (usually the ISP's
+ * city) and drawn with their accuracy circle; device-service points show their accuracy in metres.
+ */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { MapPinOff, RefreshCw } from 'lucide-react'
 import { PageTitle } from '../components/ui'
-import { DEVICE_STATUS_LABEL, filterDeviceRows, type DeviceFilter, type DeviceRow } from '../lib/devices'
+import { DEVICE_STATUS_LABEL, LOCATION_SOURCE_LABEL, accuracyMetres, accuracyText, filterDeviceRows, type DeviceFilter, type DeviceRow } from '../lib/devices'
+import { maskDeviceId } from '../lib/terms'
 import { ONLINE_THRESHOLD_LABEL } from '../lib/stats'
 import { fmtDateTime, timeAgo } from '../lib/format'
 import { Empty, Loading, Notice, Panel, Pill, SearchBox } from './licensing/kit'
@@ -20,10 +25,11 @@ function popupHtml(r: DeviceRow): string {
   const loc = r.location!
   return `<div style="font-size:12.5px;line-height:1.45">
     <b>${esc(r.company || '—')}</b><br/>
-    ${esc(r.deviceName || r.deviceId)}<br/>
+    ${esc(r.deviceName || maskDeviceId(r.deviceId))}<br/>
     Last seen: ${esc(r.lastSeenMs ? `${fmtDateTime(r.lastSeenMs)} (${timeAgo(r.lastSeenMs)})` : '—')}<br/>
     Device: ${esc(DEVICE_STATUS_LABEL[r.deviceStatus])} · License: ${esc(r.licenseStatus === 'none' ? '—' : r.licenseStatus)}<br/>
-    Location: ${loc.source === 'approximate' ? `Approximate (IP-based)${loc.accuracyKm ? ` ±${esc(String(loc.accuracyKm))} km` : ''}` : 'Set manually by the customer'}${loc.label ? ` · ${esc(loc.label)}` : ''}
+    Location: ${esc(LOCATION_SOURCE_LABEL[loc.source])}${accuracyText(loc) ? ` · ${esc(accuracyText(loc))}` : ''}${loc.label ? ` · ${esc(loc.label)}` : ''}<br/>
+    Location updated: ${esc(loc.updatedAt && Number.isFinite(Date.parse(loc.updatedAt)) ? `${fmtDateTime(Date.parse(loc.updatedAt))} (${timeAgo(Date.parse(loc.updatedAt))})` : 'unknown')}
     ${r.licenseId ? `<br/><a href="#/licenses/${esc(r.licenseId)}">Open license</a>` : ''}
   </div>`
 }
@@ -68,10 +74,14 @@ export function DeviceMap() {
     for (const r of located) {
       const loc = r.location!
       const c = COLOR[r.online] ?? COLOR.never
-      if (loc.source === 'approximate' && loc.accuracyKm && loc.accuracyKm > 0) {
-        L.circle([loc.lat, loc.lng], { radius: loc.accuracyKm * 1000, color: c, weight: 1, fillOpacity: 0.08 }).addTo(g)
-      }
-      L.circleMarker([loc.lat, loc.lng], { radius: 8, color: '#fff', weight: 2, fillColor: c, fillOpacity: 0.95 }).bindPopup(popupHtml(r)).addTo(g)
+      // Accuracy circle (IP points are kilometres wide; a device fix is usually tens of metres).
+      const m = accuracyMetres(loc)
+      if (m) L.circle([loc.lat, loc.lng], { radius: m, color: c, weight: 1, fillOpacity: loc.source === 'approximate' ? 0.06 : 0.12, dashArray: loc.source === 'approximate' ? '4 4' : undefined }).addTo(g)
+      const when = loc.updatedAt && Number.isFinite(Date.parse(loc.updatedAt)) ? timeAgo(Date.parse(loc.updatedAt)) : r.lastSeenMs ? timeAgo(r.lastSeenMs) : ''
+      L.circleMarker([loc.lat, loc.lng], { radius: 8, color: '#fff', weight: 2, fillColor: c, fillOpacity: 0.95, dashArray: loc.source === 'approximate' ? '2 2' : undefined })
+        .bindTooltip(`${esc(r.company || r.deviceName || 'Device')}${loc.source === 'approximate' ? ' · approximate' : ''}${when ? ` · ${esc(when)}` : ''}`)
+        .bindPopup(popupHtml(r))
+        .addTo(g)
       pts.push([loc.lat, loc.lng])
     }
     if (pts.length === 1) map.current.setView(pts[0], 9)
@@ -82,7 +92,7 @@ export function DeviceMap() {
     <div>
       <PageTitle
         title="Device map"
-        sub={`Only computers whose owner enabled location sharing · ${ONLINE_THRESHOLD_LABEL}`}
+        sub={`Only computers whose owner enabled location sharing · IP locations are approximate (usually the ISP’s city) · ${ONLINE_THRESHOLD_LABEL}`}
         actions={<button className="btn btn-secondary" onClick={fleet.refresh} disabled={fleet.loading}><RefreshCw className="h-4 w-4" />Refresh</button>}
       />
       {fleet.error && <Notice msg={{ tone: 'error', text: fleet.error }} className="mb-3" />}

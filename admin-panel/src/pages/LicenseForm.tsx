@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Loader2, Sparkles } from 'lucide-react'
 import { Field, Modal } from '../components/ui'
 import { createLicense, updateLicense, type LicenseInput } from '../lib/licenses'
-import { DEFAULT_CHECKIN_DAYS, DEFAULT_GRACE_DAYS, FEATURES, PLAN_PRESETS, type Client, type License, type Plan, type PlanType } from '../lib/types'
+import { DEFAULT_CHECKIN_DAYS, DEFAULT_GRACE_DAYS, FEATURES, PAID_PLANS, PLAN_PRESETS, type Client, type License, type Plan, type PlanType } from '../lib/types'
 import { errorMessage, fromInputDate, toInputDate } from '../lib/format'
 import { useAdminEmail, useCan } from '../lib/auth'
 import { suggestExpiry, planTermsError } from '../lib/terms'
@@ -195,7 +195,7 @@ export function LicenseForm({ open, license, client, onClose, onSaved }: License
         {!license && (
           <Field label="Plan">
             <select className="input" value={f.plan} onChange={(e) => { const p = e.target.value as Plan; set({ plan: p, ...PLAN_PRESETS[p] }) }}>
-              {(Object.keys(PLAN_PRESETS) as Plan[]).map((p) => (
+              {(PAID_PLANS as Plan[]).map((p) => (
                 <option key={p} value={p}>
                   {PLAN_PRESETS[p].label}
                 </option>

@@ -26,11 +26,20 @@ import {
 } from 'firebase/firestore'
 import { auth, db } from '../firebase'
 import { generateLicenseKey, normaliseLicenseKey } from './crypto'
-import type { ActivationRequest, AuditCategory, AuditEntry, Device, HistoryEntry, License, LicenseState, Plan, PlanType } from './types'
-import { DEFAULT_CHECKIN_DAYS, DEFAULT_GRACE_DAYS } from './types'
+import type { ActivationRequest, AuditCategory, AuditEntry, Device, DeviceSummary, HistoryEntry, License, LicenseState, Plan, PlanType } from './types'
+import { DEFAULT_CHECKIN_DAYS, DEFAULT_GRACE_DAYS, PLAN_PRESETS } from './types'
 import { fmtDate } from './format'
-import { detachEligibility, deviceLimitGuard, firmLimitGuard, holdsSlot, planTermsError } from './terms'
+import { detachEligibility, deviceLimitGuard, firmLimitGuard, holdsSlot, maskDeviceId, planTermsError, trialExpiryError } from './terms'
 import { licenseBucket, type LicenseBucket } from './stats'
+
+/* ------------------------------------------------ cache generation ------------------------------------------------ */
+
+let licGen = 0
+/** Bumped by every portal mutation (writeLog): cached license lists of an older generation are discarded (fleet.ts). */
+export function invalidateLicenses(): void {
+  licGen++
+}
+export const licensesGeneration = () => licGen
 
 /* ------------------------------------------------ refs ------------------------------------------------ */
 
@@ -57,7 +66,7 @@ export function licenseFromSnap(s: Snap): License {
   return {
     id: s.id,
     clientId: str(d.clientId),
-    planType: (['monthly', 'yearly', 'lifetime'].includes(d.planType) ? d.planType : d.expiresAt ? 'yearly' : 'lifetime') as License['planType'],
+    planType: (['monthly', 'yearly', 'lifetime', 'trial'].includes(d.planType) ? d.planType : d.expiresAt ? 'yearly' : 'lifetime') as License['planType'],
     // Customer documents are white-label unless "Powered by" was explicitly switched on (desktop default false).
     poweredBy: d.poweredBy === true,
     detached: d.detached === true,
@@ -72,7 +81,7 @@ export function licenseFromSnap(s: Snap): License {
     phone: str(d.phone),
     email: str(d.email),
     city: str(d.city),
-    plan: (['standard', 'professional', 'enterprise'].includes(d.plan) ? d.plan : 'standard') as Plan,
+    plan: (['standard', 'professional', 'enterprise', 'trial'].includes(d.plan) ? d.plan : 'standard') as Plan,
     status: (['active', 'suspended', 'revoked'].includes(d.status) ? d.status : 'active') as LicenseState,
     maxDevices: num(d.maxDevices, 1),
     maxFirms: num(d.maxFirms, 1),
@@ -85,8 +94,59 @@ export function licenseFromSnap(s: Snap): License {
     activeDevices: num(d.activeDevices, 0),
     createdAt: ts(d.createdAt),
     updatedAt: ts(d.updatedAt),
-    createdBy: str(d.createdBy)
+    createdBy: str(d.createdBy),
+    devicesSummary: summaryFromData(d.devicesSummary)
   }
+}
+
+/** Parses license.devicesSummary (null when the license has none yet → the caller reads the sub-collection). */
+export function summaryFromData(v: unknown): Record<string, DeviceSummary> | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null
+  const out: Record<string, DeviceSummary> = {}
+  for (const [id, raw] of Object.entries(v as Record<string, unknown>)) {
+    if (!raw || typeof raw !== 'object') continue
+    const e = raw as Record<string, unknown>
+    out[id] = {
+      deviceName: str(e.deviceName),
+      os: str(e.os),
+      appVersion: str(e.appVersion),
+      status: (['suspended', 'revoked', 'deactivated'].includes(e.status as string) ? e.status : 'active') as DeviceSummary['status'],
+      activatedAtMs: e.activatedAt instanceof Timestamp ? e.activatedAt.toMillis() : null,
+      activationType: e.activationType === 'offline' ? 'offline' : 'online',
+      statusNote: str(e.statusNote)
+    }
+  }
+  return out
+}
+
+/** Device summary entry written onto the license in the same transaction as the device document. */
+export function summaryEntry(d: { deviceName?: string; os?: string; appVersion?: string; status: string; activatedAt?: unknown; activationType?: string; statusNote?: string }): Record<string, unknown> {
+  return {
+    deviceName: (d.deviceName ?? '').slice(0, 200),
+    os: (d.os ?? '').slice(0, 200),
+    appVersion: (d.appVersion ?? '').slice(0, 40),
+    status: d.status,
+    activatedAt: d.activatedAt ?? null,
+    activationType: d.activationType === 'offline' ? 'offline' : 'online',
+    statusNote: (d.statusNote ?? '').slice(0, 300)
+  }
+}
+
+/**
+ * License patch that rewrites the whole devicesSummary map with `changes` applied (no dotted field paths, so any
+ * device id is safe). Returns {} while the license has no summary yet: a partial map would hide the devices that
+ * are not in it, so such licenses keep being read from the sub-collection until backfillSummary writes a full one.
+ */
+export function summaryPatch(lic: Pick<License, 'devicesSummary'>, changes: Record<string, Record<string, unknown>>): Record<string, unknown> {
+  if (lic.devicesSummary === null) return {}
+  const out: Record<string, unknown> = {}
+  for (const [id, e] of Object.entries(lic.devicesSummary)) out[id] = summaryEntry({ ...e, activatedAt: e.activatedAtMs === null ? null : Timestamp.fromMillis(e.activatedAtMs) })
+  return { devicesSummary: { ...out, ...changes } }
+}
+
+/** Short, log-safe label of a computer: name + masked id (full device ids are never logged). */
+export function deviceLabel(name: string, deviceId: string): string {
+  return `${name || 'Device'} (${maskDeviceId(deviceId)})`
 }
 
 export function deviceFromSnap(s: Snap): Device {
@@ -251,6 +311,7 @@ export function writeAuditEntry(
 
 /** Writes a history entry on the license AND an audit log entry. */
 export function writeLog(w: Writer, licenseId: string, action: string, by: string, details: string, category: AuditCategory = 'license'): void {
+  invalidateLicenses()
   writeHistory(w, licenseId, action, by, details)
   writeAudit(w, action, by, licenseId, details, category)
 }
@@ -321,7 +382,7 @@ function cleanInput(i: LicenseInput) {
   }
 }
 
-export async function createLicense(input: LicenseInput, by: string): Promise<{ id: string; licenseKey: string }> {
+export async function createLicense(input: LicenseInput, by: string, action = 'license_created'): Promise<{ id: string; licenseKey: string }> {
   const data = cleanInput(input)
   if (!data.businessName && !data.customerName) throw new Error('Enter the business name or customer name.')
   const planErr = planTermsError(data.planType, data.expiresAt ? data.expiresAt.toMillis() : null)
@@ -337,6 +398,7 @@ export async function createLicense(input: LicenseInput, by: string): Promise<{ 
     paymentStatus: 'none',
     activatedAt: null,
     activeDevices: 0,
+    devicesSummary: {},
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     createdBy: by
@@ -345,7 +407,7 @@ export async function createLicense(input: LicenseInput, by: string): Promise<{ 
   writeLog(
     batch,
     ref.id,
-    'license_created',
+    action,
     by,
     `${data.plan} (${data.planType}) license ${licenseKey} for ${data.businessName || data.customerName}; ${data.maxDevices} device(s), ${data.maxFirms} firm(s), ${data.maxUsers} user(s); expires ${data.expiresAt ? fmtDate(data.expiresAt) : 'never (lifetime)'}${data.clientId ? `; client ${data.clientId}` : ''}`
   )
@@ -579,9 +641,13 @@ export function deactivateDeviceInTx(
   if (!devSnap.exists() || !holdsSlot(String(devSnap.data()?.status ?? 'active'))) return false
   const dev = deviceFromSnap(devSnap)
   tx.update(deviceRef(lic.id, deviceId), { status: 'deactivated', deactivatedAt: serverTimestamp(), statusChangedAt: serverTimestamp(), statusBy: by, statusNote: note.trim() })
-  tx.update(licenseRef(lic.id), { activeDevices: Math.max(0, lic.activeDevices - 1), updatedAt: serverTimestamp() })
+  tx.update(licenseRef(lic.id), {
+    activeDevices: Math.max(0, lic.activeDevices - 1),
+    ...summaryPatch(lic, { [deviceId]: summaryEntry({ ...dev, activatedAt: devSnap.data()?.activatedAt ?? null, status: 'deactivated', statusNote: note.trim() }) }),
+    updatedAt: serverTimestamp()
+  })
   tx.set(licenseStatusRef(lic.id), licenseStatusPatch(lic, { add: [deviceId] }, [deviceId]), { merge: true })
-  writeLog(tx, lic.id, 'device_released', by, withReason(`${dev.deviceName || 'Device'} (${deviceId}) released ${how} — slot freed`, note), 'device')
+  writeLog(tx, lic.id, 'device_released', by, withReason(`${deviceLabel(dev.deviceName, deviceId)} released ${how} — slot freed`, note), 'license')
   return true
 }
 
@@ -602,8 +668,9 @@ export async function setDeviceState(licenseId: string, deviceId: string, action
     if (!devSnap.exists()) throw new Error('Device not found.')
     const lic = licenseFromSnap(licSnap)
     const dev = deviceFromSnap(devSnap)
-    const label = `${dev.deviceName || 'Device'} (${deviceId})`
+    const label = deviceLabel(dev.deviceName, deviceId)
     const meta = { statusChangedAt: serverTimestamp(), statusBy: by, statusNote: note.trim() }
+    const summary = (status: string) => summaryPatch(lic, { [deviceId]: summaryEntry({ ...dev, activatedAt: devSnap.data()?.activatedAt ?? null, status, statusNote: note.trim() }) })
     if (action === 'release') {
       if (!deactivateDeviceInTx(tx, lic, devSnap, deviceId, by, 'by admin', note)) throw new Error('This computer does not hold a slot (already released).')
       return { ...lic, activeDevices: Math.max(0, lic.activeDevices - 1) }
@@ -614,8 +681,9 @@ export async function setDeviceState(licenseId: string, deviceId: string, action
       if (action === 'revoke' && !note.trim()) throw new Error('Enter a note explaining the revocation.')
       const status = action === 'suspend' ? 'suspended' : 'revoked'
       tx.update(deviceRef(licenseId, deviceId), { status, ...meta })
+      tx.update(licenseRef(licenseId), { ...summary(status), updatedAt: serverTimestamp() })
       tx.set(licenseStatusRef(licenseId), licenseStatusPatch(lic, { add: [deviceId] }, [deviceId]), { merge: true })
-      writeLog(tx, licenseId, `device_${status}`, by, withReason(`${label} ${status} by admin (keeps its slot)`, note), 'device')
+      writeLog(tx, licenseId, `device_${status}`, by, withReason(`${label} ${status} by admin (keeps its slot)`, note), 'license')
       return lic
     }
     // reactivate
@@ -627,11 +695,11 @@ export async function setDeviceState(licenseId: string, deviceId: string, action
         throw new Error(`Computer limit reached (${lic.activeDevices} of ${lic.maxDevices}). Release another computer or raise the limit first.`)
       }
       activeDevices = lic.activeDevices + 1
-      tx.update(licenseRef(licenseId), { activeDevices, updatedAt: serverTimestamp(), ...(lic.activatedAt ? {} : { activatedAt: serverTimestamp() }) })
     }
+    tx.update(licenseRef(licenseId), { activeDevices, ...summary('active'), updatedAt: serverTimestamp(), ...(lic.activatedAt ? {} : { activatedAt: serverTimestamp() }) })
     tx.update(deviceRef(licenseId, deviceId), { status: 'active', deactivatedAt: null, ...meta })
     tx.set(licenseStatusRef(licenseId), licenseStatusPatch(lic, { remove: [deviceId] }), { merge: true })
-    writeLog(tx, licenseId, 'device_reactivated', by, withReason(`${label} reactivated by admin (was ${dev.status === 'deactivated' ? 'released' : dev.status})`, note), 'device')
+    writeLog(tx, licenseId, 'device_reactivated', by, withReason(`${label} reactivated by admin (was ${dev.status === 'deactivated' ? 'released' : dev.status})`, note), 'license')
     return { ...lic, activeDevices }
   })
 }
@@ -648,12 +716,87 @@ export async function adminReactivateDevice(licenseId: string, deviceId: string,
 export async function recountActiveDevices(licenseId: string, by: string): Promise<number> {
   const snap = await getDocs(devicesCol(licenseId))
   const n = snap.docs.filter((d) => holdsSlot(String(d.data().status ?? 'active'))).length
+  const summary = buildSummary(snap.docs)
   await runTransaction(db, async (tx) => {
     const licSnap = await tx.get(licenseRef(licenseId))
     if (!licSnap.exists()) throw new Error('License not found.')
     const before = num(licSnap.data()?.activeDevices, 0)
-    tx.update(licenseRef(licenseId), { activeDevices: n, updatedAt: serverTimestamp() })
+    tx.update(licenseRef(licenseId), { activeDevices: n, devicesSummary: summary, updatedAt: serverTimestamp() })
     writeLog(tx, licenseId, 'devices_recounted', by, `Computers holding a slot recounted: ${before} → ${n}`, 'device')
   })
   return n
+}
+
+/** devicesSummary map built from device documents (backfill of licenses created before the summary existed). */
+export function buildSummary(docs: Array<QueryDocumentSnapshot<DocumentData>>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const s of docs) {
+    const raw = s.data()
+    const d = deviceFromSnap(s)
+    out[d.deviceId] = summaryEntry({ ...d, activatedAt: raw.activatedAt ?? null })
+  }
+  return out
+}
+
+/**
+ * Writes devicesSummary on a license that has none (one-time backfill by an admin who may manage devices).
+ * `docs` were read after the license version whose updatedAt is `seenUpdatedAtMs`; every device change bumps
+ * updatedAt, so the transaction skips the write when anything changed in between (no stale or partial summary).
+ */
+export async function backfillSummary(licenseId: string, docs: Array<QueryDocumentSnapshot<DocumentData>>, seenUpdatedAtMs: number | null): Promise<boolean> {
+  const summary = buildSummary(docs)
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(licenseRef(licenseId))
+    if (!snap.exists() || snap.data()?.devicesSummary) return false
+    const u = snap.data()?.updatedAt
+    if ((u instanceof Timestamp ? u.toMillis() : null) !== seenUpdatedAtMs) return false
+    tx.update(licenseRef(licenseId), { devicesSummary: summary, updatedAt: serverTimestamp() })
+    return true
+  })
+}
+
+/* --------------------------------------------- trial license --------------------------------------------- */
+
+export interface TrialInput {
+  customerName: string
+  businessName: string
+  phone: string
+  email: string
+  city: string
+  clientId?: string
+  expiresAt: Date
+  notes?: string
+}
+
+/**
+ * Issues a trial license (plan 'trial', planType 'trial', one computer, default 15 days). The computer that
+ * activates it still needs an explicit device approval like any other license.
+ */
+export async function issueTrial(t: TrialInput, by: string): Promise<{ id: string; licenseKey: string }> {
+  const err = trialExpiryError(t.expiresAt.getTime())
+  if (err) throw new Error(err)
+  const p = PLAN_PRESETS.trial
+  return createLicense(
+    {
+      customerName: t.customerName,
+      businessName: t.businessName,
+      phone: t.phone,
+      email: t.email,
+      city: t.city,
+      clientId: t.clientId,
+      plan: 'trial',
+      planType: 'trial',
+      maxDevices: 1,
+      maxFirms: p.maxFirms,
+      maxUsers: p.maxUsers,
+      features: p.features,
+      expiresAt: t.expiresAt,
+      checkinDays: DEFAULT_CHECKIN_DAYS,
+      graceDays: 0,
+      notes: (t.notes ?? '').trim() || 'Trial license',
+      poweredBy: false
+    },
+    by,
+    'trial_issued'
+  )
 }

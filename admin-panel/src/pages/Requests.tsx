@@ -1,26 +1,50 @@
 /**
  * Activation requests sent by the desktop (online activation / release). Reachable as a tab of Licenses and
- * Devices and at /requests. Approving signs the certificate in this browser (no server) and can create or link
- * the client from the registration details the desktop wizard sent (companyName, ownerName, phone, address).
+ * Devices and at /requests. Nothing is approved automatically: every computer needs an explicit approval by an
+ * admin with devices.manage (a valid key alone never grants a slot). A computer that already holds an active slot
+ * is re-issued its certificate; a new computer on a full license "needs reassignment": reject it or replace one
+ * computer with it in one transaction. Approving signs the certificate in this browser (no server) and can create
+ * or link the client from the registration details the desktop wizard sent.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { limit, onSnapshot, orderBy, query, where } from 'firebase/firestore'
-import { Building2, Check, Inbox, KeyRound, Loader2, X } from 'lucide-react'
-import { Modal, PageTitle } from '../components/ui'
-import { findLicenseByKey, requestFromSnap, requestsCol } from '../lib/licenses'
-import { approveRequest, rejectRequest } from '../lib/approve'
+import { getDocs, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore'
+import { Building2, Check, Inbox, KeyRound, Loader2, Repeat, X } from 'lucide-react'
+import { Field, Modal, PageTitle } from '../components/ui'
+import { deviceFromSnap, devicesCol, findLicenseByKey, requestFromSnap, requestsCol } from '../lib/licenses'
+import { approveRequest, rejectRequest, type ApproveOutcome } from '../lib/approve'
+import { loadLicenses } from '../lib/fleet'
+import { classifyActivation, holdsSlot, maskDeviceId, type ActivationPlan } from '../lib/terms'
+import { normaliseLicenseKey } from '../lib/crypto'
 import { useSigningKey } from '../lib/signingKey'
 import { useAdminEmail, useCan } from '../lib/auth'
-import { logActivitySafe } from '../lib/audit'
 import { fmtDateTime, errorMessage } from '../lib/format'
 import { clientFromRegistration, matchClient } from '../lib/clients'
 import { createClient } from '../lib/clientsDb'
-import type { ActivationRequest, License } from '../lib/types'
+import type { ActivationRequest, Device, License } from '../lib/types'
 import { ConfirmDialog, Empty, Loading, Notice, Pager, Panel, Pill, shortId, usePaged, type ConfirmOptions, type NoticeMsg } from './licensing/kit'
 import { useClients } from './licensing/hooks'
+import { MaskedKey, ShortDevice } from './licenses/parts'
 
-const AUTO_KEY = 'dtsp-admin.autoApprove'
+/** Pill shown for a pending activation (computed from the cached license list; the approval re-checks in a transaction). */
+const PLAN_PILL: Record<ActivationPlan['kind'], { value: string; label: string }> = {
+  reissue: { value: 'active', label: 're-issue (already active)' },
+  new: { value: 'pending', label: 'new computer' },
+  reassign: { value: 'suspended', label: 'needs reassignment' },
+  invalid: { value: 'revoked', label: 'cannot approve' }
+}
+
+export function planForRequest(r: ActivationRequest, licenses: License[] | null, devices?: Device[]): ActivationPlan | null {
+  if (r.type !== 'activate' || !licenses) return null
+  const key = normaliseLicenseKey(r.licenseKey ?? '')
+  const l = licenses.find((x) => x.licenseKey === key)
+  if (!l) return { kind: 'invalid', reason: 'No license with this key' }
+  let existing: string | null = null
+  if (devices) existing = devices.find((d) => d.deviceId === r.deviceId)?.status ?? null
+  else if (l.devicesSummary) existing = l.devicesSummary[r.deviceId]?.status ?? null
+  else return null
+  return classifyActivation({ status: l.status, expiresAtMs: l.expiresAt ? l.expiresAt.toMillis() : null, activeDevices: l.activeDevices, maxDevices: l.maxDevices }, existing)
+}
 
 function hasRegistration(r: ActivationRequest): boolean {
   return !!(r.companyName || r.ownerName || r.phone || r.address)
@@ -29,6 +53,8 @@ function hasRegistration(r: ActivationRequest): boolean {
 export function Requests({ embedded = false }: { embedded?: boolean }) {
   const can = useCan()
   const allowed = can('devices.manage') || can('licenses.manage')
+  // Registering a computer needs devices.manage (also enforced by the Firestore rules).
+  const canApprove = can('devices.manage')
   const [pending, setPending] = useState<ActivationRequest[]>([])
   const [done, setDone] = useState<ActivationRequest[]>([])
   const [loading, setLoading] = useState(allowed)
@@ -36,16 +62,9 @@ export function Requests({ embedded = false }: { embedded?: boolean }) {
   const [msg, setMsg] = useState<NoticeMsg | null>(null)
   const [approving, setApproving] = useState<ActivationRequest | null>(null)
   const [confirm, setConfirm] = useState<ConfirmOptions | null>(null)
-  const [auto, setAuto] = useState(() => {
-    try {
-      return localStorage.getItem(AUTO_KEY) === '1'
-    } catch {
-      return false
-    }
-  })
+  const [licenses, setLicenses] = useState<License[] | null>(null)
   const { key } = useSigningKey()
   const by = useAdminEmail()
-  const handled = useRef(new Set<string>())
 
   useEffect(() => {
     if (!allowed) return
@@ -72,6 +91,17 @@ export function Requests({ embedded = false }: { embedded?: boolean }) {
     }
   }, [allowed])
 
+  // Licenses for the per-request outcome pill (cached list; reloaded when the pending list changes).
+  const pendingKey = pending.map((r) => r.id).join(',')
+  useEffect(() => {
+    if (!allowed || !pending.some((r) => r.type === 'activate')) return
+    let alive = true
+    loadLicenses().then((l) => alive && setLicenses(l), () => alive && setLicenses(null))
+    return () => {
+      alive = false
+    }
+  }, [allowed, pendingKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const quickApprove = async (r: ActivationRequest) => {
     if (!key) return setMsg({ tone: 'warn', text: 'Load the signing key first (Settings → Signing key).' })
     setBusy(r.id)
@@ -85,25 +115,16 @@ export function Requests({ embedded = false }: { embedded?: boolean }) {
     }
   }
 
-  useEffect(() => {
-    if (!auto || !key) return
-    for (const r of pending) {
-      if (handled.current.has(r.id)) continue
-      handled.current.add(r.id)
-      void quickApprove(r)
-    }
-  }, [auto, key, pending]) // eslint-disable-line react-hooks/exhaustive-deps
-
   const reject = (r: ActivationRequest) =>
     setConfirm({
       title: 'Reject activation request',
       body: (
         <div>
-          The customer’s DT Solar Pro shows this message and stops waiting. Computer <b>{r.deviceName || r.deviceId}</b>
+          The customer’s DT Solar Pro shows this message and stops waiting. Computer <b>{r.deviceName || maskDeviceId(r.deviceId)}</b>
           {r.licenseKey ? (
             <>
               {' '}
-              · key <span className="font-mono">{r.licenseKey}</span>
+              · key <MaskedKey value={r.licenseKey} />
             </>
           ) : null}
           .
@@ -115,22 +136,13 @@ export function Requests({ embedded = false }: { embedded?: boolean }) {
       reasonRequired: true,
       reasonLabel: 'Message to the customer',
       run: async (reason) => {
+        // Recorded in the license history + activity log (license category) by rejectRequest.
         await rejectRequest(r, reason, by)
-        logActivitySafe({ action: 'activation_rejected', category: 'device', target: r.id, targetType: 'activationRequest', licenseId: r.licenseId ?? null, details: `${r.deviceName || r.deviceId}: ${reason}` })
         setMsg({ tone: 'info', text: 'Request rejected.' })
       }
     })
 
   const paged = usePaged(done, 10)
-
-  const toggleAuto = (v: boolean) => {
-    setAuto(v)
-    try {
-      localStorage.setItem(AUTO_KEY, v ? '1' : '0')
-    } catch {
-      /* storage blocked */
-    }
-  }
 
   if (!allowed) {
     return (
@@ -148,13 +160,10 @@ export function Requests({ embedded = false }: { embedded?: boolean }) {
   return (
     <div>
       {!embedded && <PageTitle title="Activation requests" sub="Customers’ DT Solar Pro sends a request when they activate online. Approve to issue a signed license." />}
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <label className="flex items-center gap-2 rounded-lg border border-[#ddd5ea] bg-white px-3 py-2 text-[13px] font-semibold">
-          <input type="checkbox" checked={auto} onChange={(e) => toggleAuto(e.target.checked)} />
-          Auto-approve valid requests while this page is open
-        </label>
-        <span className="text-[12px] text-[#7a6d92]">Auto-approval never creates or links clients — use “Review” for new registrations.</span>
-      </div>
+      <p className="mb-3 text-[12.5px] text-[#6b5d85]">
+        Every new computer needs your explicit approval — a valid license key alone never grants access. A computer that already holds an active slot is re-issued its certificate (no new slot); a new computer on a full license needs a reassignment.
+        {!canApprove && <b> Approving needs the “devices.manage” permission.</b>}
+      </p>
       {!key && (
         <Notice
           msg={{
@@ -189,16 +198,19 @@ export function Requests({ embedded = false }: { embedded?: boolean }) {
                 </tr>
               </thead>
               <tbody>
-                {pending.map((r) => (
+                {pending.map((r) => {
+                  const plan = planForRequest(r, licenses)
+                  return (
                   <tr key={r.id}>
                     <td className="whitespace-nowrap text-[12.5px]">{fmtDateTime(r.createdAt)}</td>
                     <td>
                       <Pill value={r.type === 'activate' ? 'active' : 'suspended'} label={r.type === 'activate' ? 'activate' : 'release'} />
+                      {plan && <div className="mt-1"><Pill value={PLAN_PILL[plan.kind].value} label={PLAN_PILL[plan.kind].label} title={plan.kind === 'invalid' ? plan.reason : undefined} /></div>}
                     </td>
-                    <td className="font-mono text-[12px]">{r.licenseKey || (r.licenseId ? shortId(r.licenseId) : '—')}</td>
+                    <td>{r.licenseKey ? <MaskedKey value={r.licenseKey} /> : <span className="font-mono text-[12px]">{r.licenseId ? shortId(r.licenseId) : '—'}</span>}</td>
                     <td>
                       <div className="font-semibold">{r.deviceName || '—'}</div>
-                      <div className="font-mono text-[11.5px] text-[#7a6d92]">{r.deviceId}</div>
+                      <ShortDevice id={r.deviceId} />
                       <div className="text-[11.5px] text-[#7a6d92]">
                         {r.appVersion} · {r.os}
                       </div>
@@ -219,9 +231,14 @@ export function Requests({ embedded = false }: { embedded?: boolean }) {
                         <Loader2 className="inline h-4 w-4 animate-spin" />
                       ) : (
                         <div className="flex justify-end gap-2">
-                          <button className="btn btn-success btn-sm" disabled={!key} title={key ? '' : 'Load the signing key first'} onClick={() => (r.type === 'activate' ? setApproving(r) : quickApprove(r))}>
-                            <Check className="h-4 w-4" />
-                            {r.type === 'activate' ? 'Review & approve' : 'Process'}
+                          <button
+                            className="btn btn-success btn-sm"
+                            disabled={!key || (r.type === 'activate' && !canApprove)}
+                            title={!key ? 'Load the signing key first' : r.type === 'activate' && !canApprove ? 'Needs devices.manage' : ''}
+                            onClick={() => (r.type === 'activate' ? setApproving(r) : quickApprove(r))}
+                          >
+                            {plan?.kind === 'reassign' ? <Repeat className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+                            {r.type === 'activate' ? (plan?.kind === 'reassign' ? 'Review reassignment' : 'Review & approve') : 'Process'}
                           </button>
                           <button className="btn btn-secondary btn-sm" onClick={() => reject(r)}>
                             <X className="h-4 w-4" />
@@ -231,7 +248,8 @@ export function Requests({ embedded = false }: { embedded?: boolean }) {
                       )}
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -261,7 +279,7 @@ export function Requests({ embedded = false }: { embedded?: boolean }) {
                     <tr key={r.id}>
                       <td className="whitespace-nowrap text-[12.5px]">{fmtDateTime(r.createdAt)}</td>
                       <td className="text-[12.5px]">{r.type === 'activate' ? 'activate' : 'release'}</td>
-                      <td className="font-mono text-[12px]">{r.licenseKey || (r.licenseId ? shortId(r.licenseId) : '')}</td>
+                      <td>{r.licenseKey ? <MaskedKey value={r.licenseKey} /> : <span className="font-mono text-[12px]">{r.licenseId ? shortId(r.licenseId) : ''}</span>}</td>
                       <td className="text-[12.5px]">{r.deviceName}</td>
                       <td className="text-[12.5px]">{r.companyName ?? ''}</td>
                       <td>
@@ -294,23 +312,45 @@ function ApproveDialog({ req, onClose, onDone }: { req: ActivationRequest | null
   const canClients = can('clients.view')
   const clients = useClients(!!req && canClients)
   const [license, setLicense] = useState<License | null | undefined>(undefined)
+  const [devices, setDevices] = useState<Device[]>([])
   const [choice, setChoice] = useState<ClientChoice>('none')
   const [linkId, setLinkId] = useState('')
+  const [replaceId, setReplaceId] = useState('')
+  const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [reload, setReload] = useState(0)
 
+  // Fresh license (by key) + its computers: the outcome shown here is what the approval transaction re-checks.
   useEffect(() => {
     setErr(null)
     setBusy(false)
     setLicense(undefined)
+    setDevices([])
     if (!req) return
-    findLicenseByKey(req.licenseKey ?? '')
-      .then((l) => setLicense(l))
-      .catch((e) => {
-        setLicense(null)
-        setErr(errorMessage(e))
-      })
+    let alive = true
+    ;(async () => {
+      const l = await findLicenseByKey(req.licenseKey ?? '')
+      const devs = l ? (await getDocs(devicesCol(l.id))).docs.map(deviceFromSnap) : []
+      if (!alive) return
+      setDevices(devs)
+      setLicense(l)
+    })().catch((e) => {
+      if (!alive) return
+      setLicense(null)
+      setErr(errorMessage(e))
+    })
+    return () => {
+      alive = false
+    }
+  }, [req, reload])
+  useEffect(() => {
+    setReplaceId('')
+    setNote('')
   }, [req])
+
+  const plan = useMemo(() => (req && license ? planForRequest(req, [license], devices) : license === null ? ({ kind: 'invalid', reason: 'No license with this key' } as ActivationPlan) : null), [req, license, devices])
+  const replaceable = useMemo(() => devices.filter((d) => holdsSlot(d.status) && d.deviceId !== req?.deviceId), [devices, req])
 
   const match = useMemo(() => (req ? matchClient(clients.data, req) : null), [clients.data, req])
   const linkedClient = license?.clientId ? clients.data.find((c) => c.id === license.clientId) : undefined
@@ -332,11 +372,22 @@ function ApproveDialog({ req, onClose, onDone }: { req: ActivationRequest | null
     if (!key) return setErr('Load the signing key first.')
     setBusy(true)
     setErr(null)
+    if (plan?.kind === 'reassign' && !replaceId) return setErr('Choose the computer this one replaces, or reject the request.')
     try {
       const linkTo = choice === 'link' && linkId ? clients.data.find((c) => c.id === linkId) : undefined
-      const res = await approveRequest(req, key, by, linkTo ? { clientId: linkTo.id, clientLabel: `${linkTo.code} ${linkTo.company}` } : {})
+      const res: ApproveOutcome = await approveRequest(req, key, by, {
+        ...(linkTo ? { clientId: linkTo.id, clientLabel: `${linkTo.code} ${linkTo.company}` } : {}),
+        ...(plan?.kind === 'reassign' ? { replaceDeviceId: replaceId, note } : {})
+      })
+      if (res === 'needs_reassignment') {
+        // Another approval took the last slot meanwhile: show the computers again and let the admin decide.
+        setErr('The device limit is full now (another computer was approved meanwhile). Choose a computer to replace or reject the request.')
+        setReload((n) => n + 1)
+        return
+      }
+      const ok = res === 'approved' || res === 'reassigned' || res === 'reissued'
       let extra = ''
-      if (res === 'approved' && choice === 'create' && license && !license.clientId) {
+      if (ok && choice === 'create' && license && !license.clientId) {
         const input = {
           ...reg,
           company: reg.company || license.businessName || license.customerName || 'New client',
@@ -351,10 +402,16 @@ function ApproveDialog({ req, onClose, onDone }: { req: ActivationRequest | null
         }
         const c = await createClient(input, by, { license, reason: 'from the desktop registration on activation approval' })
         extra = ` Client ${c.code} created and linked.`
-      } else if (res === 'approved' && linkTo) extra = ` Linked to ${linkTo.code} ${linkTo.company}.`
+      } else if (ok && linkTo) extra = ` Linked to ${linkTo.code} ${linkTo.company}.`
+      const name = req.deviceName || 'the computer'
       onDone({
-        tone: res === 'approved' ? 'success' : res === 'rejected' ? 'warn' : 'info',
-        text: res === 'approved' ? `Activation approved — the certificate was sent to ${req.deviceName || 'the computer'}.${extra}` : res === 'rejected' ? 'The request could not be approved and was rejected (see the message in the list).' : 'This request was already processed.'
+        tone: ok ? 'success' : res === 'rejected' ? 'warn' : 'info',
+        text:
+          res === 'approved' ? `Activation approved — the certificate was sent to ${name}.${extra}`
+            : res === 'reissued' ? `Certificate re-issued to ${name} (it already held an active slot; no new slot used).${extra}`
+              : res === 'reassigned' ? `Computer replaced — ${name} took the released slot and received its certificate.${extra}`
+                : res === 'rejected' ? 'The request could not be approved and was rejected (see the message in the list).'
+                  : 'This request was already processed.'
       })
       onClose()
     } catch (e) {
@@ -375,9 +432,9 @@ function ApproveDialog({ req, onClose, onDone }: { req: ActivationRequest | null
           <button className="btn btn-secondary" disabled={busy} onClick={onClose}>
             Cancel
           </button>
-          <button className="btn btn-success" disabled={busy || !key || license === undefined} onClick={go}>
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
-            Approve & sign certificate
+          <button className="btn btn-success" disabled={busy || !key || license === undefined || plan?.kind === 'invalid' || (plan?.kind === 'reassign' && !replaceId)} onClick={go}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : plan?.kind === 'reassign' ? <Repeat className="h-4 w-4" /> : <KeyRound className="h-4 w-4" />}
+            {plan?.kind === 'reissue' ? 'Re-issue certificate' : plan?.kind === 'reassign' ? 'Replace & approve' : 'Approve & sign certificate'}
           </button>
         </>
       }
@@ -386,7 +443,7 @@ function ApproveDialog({ req, onClose, onDone }: { req: ActivationRequest | null
         <div className="rounded-xl border border-[#ece6f4] bg-[#faf8fd] p-3">
           <div className="label">Computer</div>
           <div className="font-semibold">{req.deviceName || '—'}</div>
-          <div className="font-mono text-[11.5px] text-[#6b5d85]">{req.deviceId}</div>
+          <div className="font-mono text-[11.5px] text-[#6b5d85]" title="Device id">{req.deviceId}</div>
           <div className="text-[12px] text-[#7a6d92]">
             {req.appVersion} · {req.os}
           </div>
@@ -394,7 +451,7 @@ function ApproveDialog({ req, onClose, onDone }: { req: ActivationRequest | null
         </div>
         <div className="rounded-xl border border-[#ece6f4] bg-[#faf8fd] p-3">
           <div className="label">License</div>
-          <div className="font-mono text-[12.5px]">{req.licenseKey}</div>
+          <MaskedKey value={req.licenseKey ?? ''} />
           {license === undefined ? (
             <div className="mt-1 flex items-center gap-1 text-[12px] text-[#7a6d92]">
               <Loader2 className="h-3.5 w-3.5 animate-spin" /> Looking up…
@@ -409,9 +466,37 @@ function ApproveDialog({ req, onClose, onDone }: { req: ActivationRequest | null
               </div>
             </>
           ) : (
-            <div className="mt-1 text-[12.5px] text-red-700">No license with this key — approving will reject the request.</div>
+            <div className="mt-1 text-[12.5px] text-red-700">No license with this key — reject the request.</div>
           )}
         </div>
+        {plan && (
+          <div className={`col-span-2 rounded-xl border p-3 ${plan.kind === 'invalid' ? 'border-red-200 bg-red-50 text-red-800' : plan.kind === 'reassign' ? 'border-amber-200 bg-amber-50' : 'border-[#ece6f4] bg-[#faf8fd]'}`}>
+            <div className="mb-1 flex items-center gap-2 font-semibold">
+              <Pill value={PLAN_PILL[plan.kind].value} label={PLAN_PILL[plan.kind].label} />
+              {plan.kind === 'reissue' && 'This computer already holds an active slot on this license — its certificate is re-issued, no new slot is used.'}
+              {plan.kind === 'new' && `Takes a free slot (${plan.slotsUsed + 1} of ${plan.maxDevices} after approval).`}
+              {plan.kind === 'reassign' && `Device limit full (${plan.slotsUsed} of ${plan.maxDevices}).`}
+              {plan.kind === 'invalid' && plan.reason}
+            </div>
+            {plan.kind === 'reassign' && (
+              <>
+                <div className="mb-2 text-[12.5px] text-[#6b5d85]">Reject the request, or replace one computer with this one: the chosen computer is released and this one approved in one transaction.</div>
+                <div className="space-y-1">
+                  {replaceable.map((d) => (
+                    <label key={d.deviceId} className="flex items-center gap-2 text-[13px]">
+                      <input type="radio" name="replace" checked={replaceId === d.deviceId} onChange={() => setReplaceId(d.deviceId)} />
+                      Replace <b>{d.deviceName || 'Device'}</b> <ShortDevice id={d.deviceId} /> <Pill value={d.status} /> <span className="text-[12px] text-[#7a6d92]">activated {fmtDateTime(d.activatedAt)} · {d.os || '—'}</span>
+                    </label>
+                  ))}
+                  {replaceable.length === 0 && <div className="text-[12.5px] text-[#7a6d92]">No computer can be replaced.</div>}
+                </div>
+                <Field label="Note (recorded in the license history)" className="mt-2">
+                  <input className="input" value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder="e.g. customer replaced the old laptop" />
+                </Field>
+              </>
+            )}
+          </div>
+        )}
         <div className="col-span-2 rounded-xl border border-[#ece6f4] p-3">
           <div className="mb-1 flex items-center gap-2 font-semibold">
             <Building2 className="h-4 w-4 text-[#7c3aed]" /> Registration details sent by the customer

@@ -42,6 +42,12 @@ Existing fields (`licenseKey, customerName, businessName, phone, email, city, pl
 maxUsers, features, expiresAt, checkinDays, graceDays, notes, activeDevices, createdAt, updatedAt, createdBy`) plus
 v1.1: `clientId, planType ('monthly'|'yearly'|'lifetime'), poweredBy (bool), detached (bool), detachedAt, detachedBy,
 paymentStatus ('paid'|'partial'|'unpaid'|'none'), activatedAt, lastVerifiedAt`.
+v1.2: `plan` and `planType` may be `'trial'` (portal "Issue trial": 1 computer, expiry +15 days editable, ≤ 90 days);
+`devicesSummary: { [deviceId]: { deviceName, os, appVersion, status, activatedAt, activationType, statusNote } }` — a
+denormalised copy of `devices/*` rewritten in the same transaction as every device change (absent on older licenses until
+an admin with devices.manage backfills it), so the Devices page needs no read per license. Device approval is always an
+explicit action of an admin with `devices.manage` (rules: `devices/{id}` create needs devices.manage); an already active
+computer is re-issued (no new slot); a full license needs "replace computer X" (release + approve in one transaction).
 
 `status`: `active` | `suspended` | `revoked`. Pending = license with `activeDevices == 0` and no device ever activated.
 Expired = `expiresAt` in the past (derived).

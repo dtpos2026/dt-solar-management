@@ -190,13 +190,25 @@ export function docReturned(db: DB, documentId: number): number {
  * - Returns against an invoice: the part of the return that reduced that invoice's unpaid balance is already
  *   settled ("absorbed"); only the remainder is a refund owed, less refunds already allocated.
  */
+/** Party adjustments that settle part of this invoice / bill (credit for sales, debit for purchases), e.g. payment discounts. */
+export function docAdjusted(db: DB, documentId: number): number {
+  const r = db
+    .prepare(
+      `SELECT COALESCE(SUM(a.amount), 0) AS v FROM party_adjustments a JOIN documents d ON d.id = a.document_id
+        WHERE a.document_id = ? AND a.status <> 'cancelled'
+          AND ((d.doc_type = 'sale_invoice' AND a.direction = 'credit') OR (d.doc_type = 'purchase_invoice' AND a.direction = 'debit'))`
+    )
+    .get(documentId) as { v: number }
+  return round2(r.v)
+}
+
 export function docDue(db: DB, documentId: number): number {
   const d = db.prepare('SELECT id, grand_total, doc_type, status, ref_doc_id FROM documents WHERE id = ?').get(documentId) as
     | { id: number; grand_total: number; doc_type: string; status: string; ref_doc_id: number | null }
     | undefined
   if (!d || d.status === 'cancelled') return 0
   if (d.doc_type === 'sale_invoice' || d.doc_type === 'purchase_invoice') {
-    return round2(d.grand_total - docAllocated(db, documentId) - docReturned(db, documentId))
+    return round2(d.grand_total - docAllocated(db, documentId) - docReturned(db, documentId) - docAdjusted(db, documentId))
   }
   let absorbed = 0
   if ((d.doc_type === 'sale_return' || d.doc_type === 'purchase_return') && d.ref_doc_id) {

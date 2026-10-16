@@ -10,7 +10,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { onSnapshot, type DocumentData, type Query, type QueryDocumentSnapshot } from 'firebase/firestore'
-import { cachedFetch, invalidate, subscribeShared, type SourceState } from './queryCache'
+import { cachedFetch, invalidate, peekCached, peekShared, subscribeShared, type SourceState } from './queryCache'
 import { loadBranding } from './brandingStore'
 import { errorMessage } from './format'
 import { DEFAULT_BRANDING, type Branding, type Client, type License } from './types'
@@ -26,33 +26,49 @@ export interface SharedDocs {
 }
 const EMPTY: Snap[] = []
 
-/** Live documents of `makeQuery()` shared under `key`. Disabled → empty, not loading. */
+/**
+ * Live documents of `makeQuery()` shared under `key`. Disabled → empty, not loading.
+ * When the listener is already open (another page uses it, or it is lingering) the cached documents are rendered on
+ * the first paint — no skeleton flash — and live updates continue.
+ */
 export function useSharedDocs(key: string, makeQuery: () => Query<DocumentData>, enabled = true): SharedDocs {
-  const [state, setState] = useState<SourceState<Snap[]>>({ data: undefined, error: null, loading: enabled })
+  const initialState = (): SourceState<Snap[]> => {
+    const data = enabled ? peekShared<Snap[]>(key) : undefined
+    return { data, error: null, loading: enabled && data === undefined }
+  }
+  const [state, setState] = useState<SourceState<Snap[]> & { key: string; on: boolean }>(() => ({ ...initialState(), key, on: enabled }))
   const [tick, setTick] = useState(0)
   useEffect(() => {
     if (!enabled) {
-      setState({ data: undefined, error: null, loading: false })
+      setState({ key, on: false, data: undefined, error: null, loading: false })
       return
     }
     return subscribeShared<Snap[]>(
       key,
       (emit, fail) => onSnapshot(makeQuery(), (s) => emit(s.docs), (e) => fail(errorMessage(e))),
-      setState
+      (s) => setState({ ...s, key, on: true })
     )
     // makeQuery is identified by key
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, enabled, tick])
   const retry = useCallback(() => setTick((t) => t + 1), [])
-  return { docs: state.data ?? EMPTY, loading: enabled && state.loading && state.data === undefined, error: state.error, retry }
+  // Until the effect re-subscribes after a key / enabled change, show the new key's cached data (never the previous key's).
+  const cur: SourceState<Snap[]> = state.key === key && state.on === enabled ? state : initialState()
+  return { docs: cur.data ?? EMPTY, loading: enabled && cur.loading && cur.data === undefined, error: cur.error, retry }
 }
 
 /** One-shot cached value (short TTL). */
 export function useCachedValue<T>(key: string, load: () => Promise<T>, initial: T, enabled = true, ttlMs?: number): { value: T; loading: boolean; error: string | null; reload: () => void } {
-  const [s, set] = useState<{ value: T; loading: boolean; error: string | null }>({ value: initial, loading: enabled, error: null })
+  // A cached value is shown at once (no spinner); otherwise `initial` while loading.
+  const [s, set] = useState<{ value: T; loading: boolean; error: string | null }>(() => {
+    const hit = enabled ? peekCached<T>(key, ttlMs) : undefined
+    return hit !== undefined ? { value: hit, loading: false, error: null } : { value: initial, loading: enabled, error: null }
+  })
   const [tick, setTick] = useState(0)
   useEffect(() => {
     if (!enabled) return set({ value: initial, loading: false, error: null })
+    const hit = peekCached<T>(key, ttlMs)
+    if (hit !== undefined) return set({ value: hit, loading: false, error: null })
     let alive = true
     set((p) => ({ ...p, loading: true, error: null }))
     cachedFetch(key, load, ttlMs).then(

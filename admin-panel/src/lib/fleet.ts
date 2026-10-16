@@ -5,14 +5,16 @@
  * plus one heartbeats query; only licenses without a summary yet (created before it existed) are read
  * license by license, and are backfilled once by an admin with devices.manage.
  */
-import { Timestamp, collection, doc, getDoc, getDocs, query, where, type DocumentData, type QueryDocumentSnapshot } from 'firebase/firestore'
+import { Timestamp, collection, getDocs, query, where, type DocumentData, type QueryDocumentSnapshot } from 'firebase/firestore'
 import { db } from '../firebase'
 import { backfillSummary, deviceFromSnap, invalidateLicenses, licensesGeneration, devicesCol, licenseFromSnap, licensesCol } from './licenses'
 import type { DeviceInfoLike, HeartbeatLike, LicenseInfo } from './devices'
 import { normaliseDeviceStatus } from './devices'
 import { validLocation } from './devices'
 import type { InvoiceLike, PaymentLike } from './stats'
-import { DEFAULT_BRANDING, type Branding, type Device, type Heartbeat, type License } from './types'
+import type { Branding, Device, Heartbeat, License } from './types'
+import { cachedBranding } from './liveData'
+import { isSharedLive, peekShared } from './queryCache'
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
@@ -98,6 +100,11 @@ let licInflight: { gen: number; p: Promise<License[]> } | null = null
 export { invalidateLicenses }
 
 export async function loadLicenses(opts: { fresh?: boolean } = {}): Promise<License[]> {
+  // The shared live listener (Dashboard / Clients / Licenses pages) is current — use it instead of re-reading.
+  if (isSharedLive('licenses')) {
+    const docs = peekShared<QueryDocumentSnapshot<DocumentData>[]>('licenses')
+    if (docs) return docs.map(licenseFromSnap).sort((a, b) => (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0))
+  }
   const gen = licensesGeneration()
   if (!opts.fresh && licCache && licCache.gen === gen && Date.now() - licCache.at < LICENSES_CACHE_MS) return licCache.data
   if (!opts.fresh && licInflight && licInflight.gen === gen) return licInflight.p
@@ -174,14 +181,9 @@ export async function loadHeartbeatsForLicenses(licenseIds: string[]): Promise<H
   return out
 }
 
-/** settings/branding merged over the defaults (any admin may read it). */
-export async function loadBranding(): Promise<Branding> {
-  try {
-    const s = await getDoc(doc(db, 'settings', 'branding'))
-    return { ...DEFAULT_BRANDING, ...((s.exists() ? s.data() : {}) as Partial<Branding>) }
-  } catch {
-    return { ...DEFAULT_BRANDING }
-  }
+/** settings/branding merged over the defaults (any admin may read it). Shared 60 s cache — one read for every page. */
+export function loadBranding(): Promise<Branding> {
+  return cachedBranding()
 }
 
 /* -------------------------------------------- billing (read-only) -------------------------------------------- */

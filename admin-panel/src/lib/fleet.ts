@@ -119,6 +119,8 @@ export async function loadLicenses(opts: { fresh?: boolean } = {}): Promise<Lice
  * devices sub-collection (8 in parallel). With `backfill` (admin holds devices.manage) a license read that way
  * gets its summary written once, guarded by its updatedAt.
  */
+const backfilled = new Set<string>()
+
 export async function loadDeviceInfos(licenses: License[], opts: { backfill?: boolean } = {}): Promise<Record<string, DeviceInfoLike[]>> {
   const out: Record<string, DeviceInfoLike[]> = {}
   const missing: License[] = []
@@ -141,7 +143,11 @@ export async function loadDeviceInfos(licenses: License[], opts: { backfill?: bo
   await mapLimit(missing, 8, async (l) => {
     const snap = await getDocs(devicesCol(l.id))
     out[l.id] = snap.docs.map(deviceFromSnap).map(deviceInfo)
-    if (opts.backfill) await backfillSummary(l.id, snap.docs, l.updatedAt ? l.updatedAt.toMillis() : null).catch(() => false)
+    // Once per license per session (concurrent page loads would otherwise race the same transaction).
+    if (opts.backfill && !backfilled.has(l.id)) {
+      backfilled.add(l.id)
+      await backfillSummary(l.id, snap.docs, l.updatedAt ? l.updatedAt.toMillis() : null).catch(() => false)
+    }
   })
   return out
 }

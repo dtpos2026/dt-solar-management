@@ -46,11 +46,11 @@ export function ProjectsPage(): JSX.Element {
     </span>
   )
   const cols: Array<Column<any>> = [
-    { key: 'code', header: 'Project', render: (r) => <div><div className="font-semibold">{r.name}</div><div className="text-[11.5px] text-muted">{r.code} · {r.customer_name ?? '—'}</div></div>, value: (r) => `${r.code} ${r.name}` },
+    { key: 'code', header: 'Project', render: (r) => <div><div className="font-semibold">{r.name}</div><div className="text-[12px] text-muted">{r.code} · {r.customer_name ?? '—'}</div></div>, value: (r) => `${r.code} ${r.name}` },
     { key: 'capacity_kw', header: 'Size', align: 'right', render: (r) => `${qty(r.capacity_kw)} kW` },
     { key: 'system_type', header: 'System', render: (r) => SYSTEM_TYPE_LABELS[r.system_type] },
     { key: 'status', header: 'Status', render: statusBadges },
-    { key: 'progress', header: 'Progress', render: (r) => <div className="flex w-28 items-center gap-2"><Progress value={r.progress} /><span className="text-[11.5px] text-muted">{r.progress}%</span></div> },
+    { key: 'progress', header: 'Progress', render: (r) => <div className="flex w-28 items-center gap-2"><Progress value={r.progress} /><span className="text-[12px] text-muted">{r.progress}%</span></div> },
     { key: 'contract', header: 'Contract', align: 'right', value: (r) => r.financials.contractValue, render: (r) => money(r.financials.contractValue) },
     { key: 'revenue', header: 'Revenue', align: 'right', hidden: !showFin, value: (r) => r.financials.revenue, render: (r) => money(r.financials.revenue) },
     { key: 'cost', header: 'Direct cost', align: 'right', hidden: !showFin, value: (r) => r.financials.totalDirectCost, render: (r) => money(r.financials.totalDirectCost) },
@@ -106,7 +106,7 @@ export function ProjectsPage(): JSX.Element {
             <div key={r.id} role="link" tabIndex={0} onClick={() => nav(`/projects/${r.id}`)} onKeyDown={(e) => e.key === 'Enter' && nav(`/projects/${r.id}`)} className={cx('card fade-in p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md cursor-pointer', !!r.is_archived && 'opacity-75')}>
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <div className="text-[11.5px] font-semibold text-muted">{r.code}</div>
+                  <div className="text-[12px] font-semibold text-muted">{r.code}</div>
                   <div className="text-[15px] font-semibold">{r.name}</div>
                   <div className="text-[12.5px] text-muted">{r.customer_name ?? 'No customer'}</div>
                 </div>

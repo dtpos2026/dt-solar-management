@@ -25,7 +25,7 @@ export function PartiesPage({ type }: { type: 'customer' | 'supplier' }): JSX.El
   const isCust = type === 'customer'
   const total = rows.reduce((a, r) => a + r.balance, 0)
   const cols: Array<Column<any>> = [
-    { key: 'name', header: isCust ? 'Customer' : 'Supplier / contractor', render: (r) => <div><div className="font-medium">{r.name}</div>{r.contact_person && <div className="text-[11.5px] text-muted">{r.contact_person}</div>}</div> },
+    { key: 'name', header: isCust ? 'Customer' : 'Supplier / contractor', render: (r) => <div><div className="font-medium">{r.name}</div>{r.contact_person && <div className="text-[12px] text-muted">{r.contact_person}</div>}</div> },
     { key: 'phone', header: 'Phone' },
     { key: 'city', header: 'City' },
     { key: 'type', header: 'Type', render: (r) => (r.type === 'both' ? <Badge tone="info">Customer & supplier</Badge> : null), csv: false },
@@ -36,7 +36,7 @@ export function PartiesPage({ type }: { type: 'customer' | 'supplier' }): JSX.El
       align: 'right',
       render: (r) => {
         const owed = isCust ? r.balance : -r.balance
-        return <span className={owed > 0.5 ? 'font-semibold text-bad' : owed < -0.5 ? 'font-semibold text-ok' : 'text-muted'}>{money(owed)}{owed < -0.5 && <span className="ml-1 text-[11px]">{isCust ? 'advance' : 'advance paid'}</span>}</span>
+        return <span className={owed > 0.5 ? 'font-semibold text-bad' : owed < -0.5 ? 'font-semibold text-ok' : 'text-muted'}>{money(owed)}{owed < -0.5 && <span className="ml-1 text-[12px]">{isCust ? 'advance' : 'advance paid'}</span>}</span>
       },
       value: (r) => (isCust ? r.balance : -r.balance)
     },

@@ -35,6 +35,14 @@ interface Props<T> {
   rowClassName?: (row: T) => string | undefined
 }
 
+/** Date / timestamp columns are right-aligned like amounts so they line up (tabular figures). */
+const DATE_KEY = /^(date|due_date|last_date|created_at|updated_at|last_login_at|modified|closed_at|valid_until|expiry_date|start_date|end_date)$/
+/** Short identifiers (document numbers, SKUs, codes) must not break across lines. */
+const ID_KEY = /^(number|code|sku|doc_number|ref|reference)$/
+function alignOf<T>(c: Column<T>): 'left' | 'right' | 'center' {
+  return c.align ?? (DATE_KEY.test(c.key) ? 'right' : 'left')
+}
+
 function rawValue<T>(c: Column<T>, row: T): string | number | null | undefined {
   if (c.value) return c.value(row)
   const v = (row as Record<string, unknown>)[c.key]
@@ -94,7 +102,7 @@ export function DataTable<T>({ rows, columns, loading, onRowClick, searchable = 
       {(searchable || toolbar || exportName) && (
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2.5">
           {searchable && (
-            <div className="relative w-72 max-w-full">
+            <div className="relative w-64 max-w-full min-w-[180px] shrink">
               <Search className="pointer-events-none absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-muted" />
               <Input sm className="pl-8" placeholder={searchPlaceholder} value={q} onChange={(e) => setQ(e.target.value)} />
             </div>
@@ -119,11 +127,11 @@ export function DataTable<T>({ rows, columns, loading, onRowClick, searchable = 
                 {cols.map((c) => (
                   <th
                     key={c.key}
-                    style={{ width: c.width, textAlign: c.align ?? 'left' }}
+                    style={{ width: c.width, textAlign: alignOf(c) }}
                     className={cx(c.sortable !== false && 'cursor-pointer select-none hover:text-ink')}
                     onClick={() => c.sortable !== false && setSort((s) => (s?.key === c.key ? (s.dir === 1 ? { key: c.key, dir: -1 } : null) : { key: c.key, dir: 1 }))}
                   >
-                    <span className="inline-flex items-center gap-1">
+                    <span className={cx('inline-flex items-center gap-1', alignOf(c) === 'right' && 'flex-row-reverse')}>
                       {c.header}
                       {sort?.key === c.key && (sort.dir === 1 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
                     </span>
@@ -135,7 +143,7 @@ export function DataTable<T>({ rows, columns, loading, onRowClick, searchable = 
               {visible.map((row, i) => (
                 <tr key={rowKey ? rowKey(row, i) : ((row as { id?: number }).id ?? i)} className={cx(onRowClick && 'clickable', rowClassName?.(row))} onClick={() => onRowClick?.(row)}>
                   {cols.map((c) => (
-                    <td key={c.key} className={cx(dense && '!py-1.5', c.align === 'right' && 'num text-right', c.align === 'center' && 'text-center', c.className)}>
+                    <td key={c.key} className={cx(dense && '!py-1.5', alignOf(c) === 'right' && 'num text-right', alignOf(c) === 'center' && 'text-center', ID_KEY.test(c.key) && 'nowrap', c.className)}>
                       {c.render ? c.render(row) : ((rawValue(c, row) as ReactNode) ?? '—')}
                     </td>
                   ))}
@@ -147,7 +155,7 @@ export function DataTable<T>({ rows, columns, loading, onRowClick, searchable = 
         )}
       </div>
       {!loading && filtered.length > size && (
-        <div className="flex items-center justify-between gap-3 border-t border-line px-3 py-2 text-[12.5px] text-muted">
+        <div className="num flex flex-wrap items-center justify-between gap-3 border-t border-line px-3 py-2 text-[12.5px] text-muted">
           <span>
             {page * size + 1}–{Math.min(filtered.length, (page + 1) * size)} of {filtered.length}
           </span>

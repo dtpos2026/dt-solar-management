@@ -306,7 +306,7 @@ function MaterialMoveForm({ open, direction, projectId, onClose, onSaved }: { op
               <tr key={l.k}>
                 <td>
                   <Combobox sm options={goods} value={l.productId} onChange={(v) => setLines(lines.map((x, j) => (j === i ? { ...x, productId: v } : x)))} />
-                  {p && <div className={cx('mt-1 text-[11.5px]', direction === 'issue' && l.qty > p.stock ? 'font-semibold text-bad' : 'text-muted')}>In stock: {qty(p.stock)} {p.unit}{p.avg_cost !== null && ` · avg cost ${money(p.avg_cost)}`}</div>}
+                  {p && <div className={cx('mt-1 text-[12px]', direction === 'issue' && l.qty > p.stock ? 'font-semibold text-bad' : 'text-muted')}>In stock: {qty(p.stock)} {p.unit}{p.avg_cost !== null && ` · avg cost ${money(p.avg_cost)}`}</div>}
                   {p?.track_serial ? <Input sm className="mt-1" placeholder="Serial numbers (comma separated)" value={l.serials} onChange={(e) => setLines(lines.map((x, j) => (j === i ? { ...x, serials: e.target.value } : x)))} /> : null}
                 </td>
                 <td><NumberInput sm value={l.qty} onChange={(v) => setLines(lines.map((x, j) => (j === i ? { ...x, qty: v } : x)))} /></td>

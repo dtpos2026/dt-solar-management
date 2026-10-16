@@ -186,7 +186,7 @@ export function Dashboard(): JSX.Element {
                         <tbody>
                           {d.recentProjects.map((p: any) => (
                             <tr key={p.id} className="clickable" onClick={() => nav(`/projects/${p.id}`)}>
-                              <td><div className="font-medium">{p.name}</div><div className="text-[11.5px] text-muted">{p.code} · {p.customer_name ?? '—'}</div></td>
+                              <td><div className="font-medium">{p.name}</div><div className="text-[12px] text-muted">{p.code} · {p.customer_name ?? '—'}</div></td>
                               <td className="num">{qty(p.capacity_kw)} kW</td>
                               <td><Badge tone={statusTone(p.status)}>{label(p.status)}</Badge></td>
                               <td><div className="flex items-center gap-2"><Progress value={p.progress} tone={p.progress >= 100 ? 'ok' : 'brand'} /><span className="num w-9 text-right text-[12px] text-muted">{p.progress}%</span></div></td>

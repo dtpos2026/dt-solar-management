@@ -446,7 +446,7 @@ export function DocumentEditor(): JSX.Element {
                           <Input sm value={l.warranty} onChange={(e) => setLine(l.key, { warranty: e.target.value })} placeholder="Warranty (e.g. 12 Years)" />
                         ) : null}
                         {p && (
-                          <div className="flex flex-wrap gap-3 text-[11.5px] text-muted">
+                          <div className="flex flex-wrap gap-3 text-[12px] text-muted">
                             {p.type === 'goods' && <span className={short ? 'font-semibold text-bad' : ''}>In stock: {fmtQty(p.stock)} {p.unit}{short && ' — not enough stock'}</span>}
                             {p.avg_cost !== null && p.type === 'goods' && <span>Avg cost: {money(p.avg_cost)}</span>}
                             {belowCost && <span className="font-semibold text-warn"><AlertTriangle className="inline h-3 w-3" /> Below cost</span>}
@@ -469,7 +469,7 @@ export function DocumentEditor(): JSX.Element {
                     )}
                     <td className="num pt-3 text-right font-semibold">
                       {money(c?.total ?? 0)}
-                      {c && c.discount > 0 && <div className="text-[11px] font-normal text-muted">disc {money(c.discount)}</div>}
+                      {c && c.discount > 0 && <div className="text-[12px] font-normal text-muted">disc {money(c.discount)}</div>}
                     </td>
                     <td className="pt-2">
                       <IconButton title="Remove line" tone="bad" onClick={() => setLines((ls) => (ls.length > 1 ? ls.filter((x) => x.key !== l.key) : [newLine()]))}>
@@ -561,7 +561,7 @@ export function DocumentEditor(): JSX.Element {
               <span className="font-semibold">Grand total</span>
               <span className="num text-[22px] font-bold text-brand">{money(t.grandTotal)}</span>
             </div>
-            <div className="text-[11.5px] text-muted">{amountInWords(t.grandTotal, settings.currency_word ?? 'Rupees')}</div>
+            <div className="text-[12px] text-muted">{amountInWords(t.grandTotal, settings.currency_word ?? 'Rupees')}</div>
             {meta.financial && payment.amount > 0 && (
               <>
                 <Row label="Paid now" value={money(payment.amount)} />

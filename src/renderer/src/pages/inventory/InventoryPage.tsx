@@ -129,7 +129,7 @@ function ProductsTab({ onEdit, tick }: { onEdit: (p: any) => void; tick: number 
         </span>
       )
     },
-    { key: 'name', header: 'Product', render: (r) => <div><div className="font-medium">{r.name}</div><div className="text-[11.5px] text-muted">{[r.sku, r.brand, r.model].filter(Boolean).join(' · ')}</div></div>, value: (r) => `${r.name} ${r.sku ?? ''} ${r.brand ?? ''} ${r.model ?? ''}` },
+    { key: 'name', header: 'Product', render: (r) => <div><div className="font-medium">{r.name}</div><div className="text-[12px] text-muted">{[r.sku, r.brand, r.model].filter(Boolean).join(' · ')}</div></div>, value: (r) => `${r.name} ${r.sku ?? ''} ${r.brand ?? ''} ${r.model ?? ''}` },
     { key: 'category_name', header: 'Category', render: (r) => r.category_name ?? <span className="text-muted">—</span> },
     { key: 'type', header: 'Type', render: (r) => <Badge tone={r.type === 'service' ? 'info' : 'muted'}>{r.type === 'service' ? 'Service' : 'Goods'}</Badge> },
     { key: 'stock', header: 'In stock', align: 'right', render: (r) => (r.type === 'service' ? '—' : <span className={r.stock <= 0 ? 'font-semibold text-bad' : r.reorder_level > 0 && r.stock <= r.reorder_level ? 'font-semibold text-warn' : ''}>{qty(r.stock)} {r.unit}</span>) },
@@ -372,7 +372,7 @@ function StockTab(): JSX.Element {
   const { data, loading } = useLoad(() => api<any>('stock.report', { warehouseId: wh ? Number(wh) : undefined, includeZero: zero }), [wh, zero])
   const rows = data?.rows ?? []
   const cols: Array<Column<any>> = [
-    { key: 'name', header: 'Product', render: (r) => <div><div className="font-medium">{r.name}</div><div className="text-[11.5px] text-muted">{r.sku}</div></div> },
+    { key: 'name', header: 'Product', render: (r) => <div><div className="font-medium">{r.name}</div><div className="text-[12px] text-muted">{r.sku}</div></div> },
     { key: 'category_name', header: 'Category' },
     { key: 'qty', header: 'Quantity', align: 'right', render: (r) => <span className={r.qty <= 0 ? 'text-bad' : r.reorder_level > 0 && r.qty <= r.reorder_level ? 'text-warn' : ''}>{qty(r.qty)} {r.unit}</span> },
     { key: 'avg_cost', header: 'Avg cost', align: 'right', hidden: data?.totalValue === null, render: (r) => money(r.avg_cost) },
@@ -516,7 +516,7 @@ function AdjustmentForm({ open, kind, onClose, onSaved }: { open: boolean; kind:
               <tr key={l.k}>
                 <td>
                   <Combobox sm options={options} value={l.productId} onChange={(v) => setLines(lines.map((x, j) => (j === i ? { ...x, productId: v, unitCost: products.find((pp) => pp.id === v)?.avg_cost || products.find((pp) => pp.id === v)?.purchase_price || 0 } : x)))} />
-                  {p && <div className="mt-1 text-[11.5px] text-muted">Current stock: {qty(p.stock)} {p.unit}</div>}
+                  {p && <div className="mt-1 text-[12px] text-muted">Current stock: {qty(p.stock)} {p.unit}</div>}
                   {p?.track_serial ? <Input sm className="mt-1" placeholder="Serial numbers (comma separated)" value={l.serials} onChange={(e) => setLines(lines.map((x, j) => (j === i ? { ...x, serials: e.target.value } : x)))} /> : null}
                 </td>
                 {kind === 'adjustment' && (

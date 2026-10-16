@@ -161,7 +161,7 @@ export function PaymentModal({ open, onClose, onSaved, preset }: { open: boolean
                   const key = `${it.kind}-${it.id}`
                   return (
                     <tr key={key}>
-                      <td><div className="font-medium">{it.number}</div><div className="text-[11.5px] text-muted">{label(it.doc_type)}{it.project_name ? ` · ${it.project_name}` : ''}</div></td>
+                      <td><div className="font-medium">{it.number}</div><div className="text-[12px] text-muted">{label(it.doc_type)}{it.project_name ? ` · ${it.project_name}` : ''}</div></td>
                       <td>{date(it.date)}</td>
                       <td className="num text-right">{money(it.grand_total)}</td>
                       <td className="num text-right font-semibold">{money(it.due)}</td>

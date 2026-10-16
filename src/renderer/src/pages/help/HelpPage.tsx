@@ -238,7 +238,7 @@ export function HelpPage(): JSX.Element {
                 <button type="button" className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-start text-[13px] font-medium hover:bg-surface-2 cursor-pointer" style={rtl ? { fontFamily: URDU_FONT } : undefined} onClick={() => setOpenCat(openCat === cat ? null : cat)}>
                   {openCat === cat ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className={cx('h-4 w-4 shrink-0', rtl && 'rotate-180')} />}
                   <span className="flex-1">{CATEGORY_LABELS[cat][lang]}</span>
-                  <span className="text-[11.5px] text-muted">{list.length}</span>
+                  <span className="text-[12px] text-muted">{list.length}</span>
                 </button>
                 {openCat === cat && (
                   <div className="mb-1 ps-7">
@@ -288,7 +288,7 @@ function AnswerCard({ a, lang, onOpen, onRelated, byId, extra }: { a: HelpArticl
       <ol className="mt-1 space-y-1.5">
         {a.steps[lang].map((s, i) => (
           <li key={i} className="flex gap-2 text-[13.5px]">
-            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-soft text-[11px] font-bold text-brand">{i + 1}</span>
+            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-soft text-[12px] font-bold text-brand">{i + 1}</span>
             <span className="min-w-0 flex-1">{s}</span>
           </li>
         ))}

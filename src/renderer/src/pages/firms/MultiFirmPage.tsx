@@ -809,7 +809,7 @@ function FirmEditor({ open, firmId, onClose, onSaved }: { open: boolean; firmId?
                             <tr key={s.doc_type}>
                               <td className="font-medium">
                                 {s.label}
-                                {changed && <span className="ml-2 text-[11px] font-semibold text-warn">edited</span>}
+                                {changed && <span className="ml-2 text-[12px] font-semibold text-warn">edited</span>}
                               </td>
                               <td>
                                 <Input sm className={cx('font-mono', bad && '!border-bad')} value={s.prefix} maxLength={20} onChange={(e) => upd({ prefix: e.target.value })} title={bad ? 'Letters, numbers and - / _ . # only' : undefined} />
@@ -909,7 +909,7 @@ function FirmEditor({ open, firmId, onClose, onSaved }: { open: boolean; firmId?
                 </div>
                 <div className="lg:sticky lg:top-0">
                   <InvoicePreview f={f} invoiceNo={invoiceNo} />
-                  <div className="mt-2 text-[11.5px] text-muted">A simplified preview of the invoice layout. Open any invoice and use Print / PDF to see the full A4 document.</div>
+                  <div className="mt-2 text-[12px] text-muted">A simplified preview of the invoice layout. Open any invoice and use Print / PDF to see the full A4 document.</div>
                 </div>
               </div>
             </div>
@@ -993,7 +993,7 @@ function ImageSlot({ title, icon, value, onChange, maxSize, bg, hint }: { title:
           </div>
         )}
       </div>
-      <div className="mt-2 min-h-[32px] text-[11.5px] text-muted">{hint}</div>
+      <div className="mt-2 min-h-[32px] text-[12px] text-muted">{hint}</div>
       <div className="mt-2 flex gap-2">
         <Button size="sm" variant={value ? 'secondary' : 'soft'} icon={<Upload className="h-4 w-4" />} onClick={() => ref.current?.click()}>
           {value ? 'Replace' : 'Upload'}

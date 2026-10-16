@@ -285,7 +285,7 @@ export function ReportsPage(): JSX.Element {
             if (!items.length) return null
             return (
               <div key={g} className="mb-1.5 last:mb-0">
-                <div className="px-2.5 pt-2 pb-1 text-[11px] font-semibold tracking-wider text-muted uppercase">{g}</div>
+                <div className="px-2.5 pt-2 pb-1 text-[12px] font-semibold tracking-wider text-muted uppercase">{g}</div>
                 {items.map((r) => (
                   <button
                     key={r.key}
@@ -427,7 +427,7 @@ export function ReportsPage(): JSX.Element {
           ) : model ? (
             <div className={cx('space-y-4 transition-opacity', busy && 'opacity-60')}>
               <ReportBody k={key} model={model} data={res?.data} opts={opts} gb={gb} nav={nav} />
-              <div className="text-right text-[11.5px] text-muted">{periodText(key, opts, date)}</div>
+              <div className="text-right text-[12px] text-muted">{periodText(key, opts, date)}</div>
             </div>
           ) : (
             <Card>
@@ -559,7 +559,7 @@ function toColumns(t: RTable): Array<Column<any>> {
       return sub ? (
         <div className="min-w-0">
           {main}
-          <div className="text-[11.5px] text-muted">{sub}</div>
+          <div className="text-[12px] text-muted">{sub}</div>
         </div>
       ) : (
         main
@@ -706,7 +706,7 @@ function PlRow({ l }: { l: PlLine }): JSX.Element {
   if (l.kind === 'section') {
     return (
       <tr>
-        <td colSpan={3} className="px-4 pt-4 pb-1.5 text-[11.5px] font-bold tracking-wider text-brand uppercase">
+        <td colSpan={3} className="px-4 pt-4 pb-1.5 text-[12px] font-bold tracking-wider text-brand uppercase">
           {l.label}
         </td>
       </tr>

@@ -147,6 +147,14 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Native date / time pickers: keep the value and the calendar icon on one line at any zoom. */
+input[type='date'].input,
+input[type='datetime-local'].input,
+input[type='month'].input {
+  min-width: 0;
+  white-space: nowrap;
+}
+
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
@@ -227,6 +235,15 @@ textarea.input {
   padding: 9px 12px;
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+}
+/* Amounts, quantities, dates and document numbers never wrap mid-value ("Rs." on one line, digits on the next). */
+.tbl td.num,
+.tbl td.nowrap {
+  white-space: nowrap;
+}
+.tbl tfoot td.text-right {
+  white-space: nowrap;
 }
 .tbl tbody tr:hover td {
   background: var(--surface-2);

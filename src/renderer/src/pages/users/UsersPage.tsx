@@ -271,7 +271,7 @@ function UsersTab({ tick, onEdit }: { tick: number; onEdit: (u: UserRow) => void
                 </Badge>
               )}
             </div>
-            <div className="truncate text-[11.5px] text-muted">{[u.email, u.phone].filter(Boolean).join(' · ') || '—'}</div>
+            <div className="truncate text-[12px] text-muted">{[u.email, u.phone].filter(Boolean).join(' · ') || '—'}</div>
           </div>
         </div>
       )
@@ -832,7 +832,7 @@ function RolesTab(): JSX.Element {
               </div>
               <div className="min-w-0 flex-1">
                 <div className={cx('truncate font-semibold', draft?.id === r.id && 'text-brand')}>{r.name}</div>
-                <div className="truncate text-[11.5px] text-muted">{r.description || 'No description'}</div>
+                <div className="truncate text-[12px] text-muted">{r.description || 'No description'}</div>
                 <div className="mt-1 flex flex-wrap gap-1">
                   <Badge tone="muted">
                     {r.user_count} user{r.user_count === 1 ? '' : 's'}
@@ -953,7 +953,7 @@ function RolesTab(): JSX.Element {
                           />
                           {g.group}
                         </label>
-                        <span className={cx('text-[11.5px] font-semibold', all ? 'text-ok' : n ? 'text-warn' : 'text-muted')}>
+                        <span className={cx('text-[12px] font-semibold', all ? 'text-ok' : n ? 'text-warn' : 'text-muted')}>
                           {n}/{keys.length}
                         </span>
                       </div>
@@ -961,7 +961,7 @@ function RolesTab(): JSX.Element {
                         {g.items.map((it) => (
                           <div key={it.key} className="flex items-start justify-between gap-3">
                             <Checkbox checked={has(it.key)} disabled={readOnly} onChange={(v) => setPerm([it.key], v)} label={<span className="text-[13px]">{it.label}</span>} />
-                            <code className="shrink-0 pt-0.5 text-[10.5px] text-muted">{it.key}</code>
+                            <code className="shrink-0 pt-0.5 text-[12px] text-muted">{it.key}</code>
                           </div>
                         ))}
                       </div>

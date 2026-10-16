@@ -140,9 +140,9 @@ export function SupportSection(): JSX.Element {
             return (
               <div key={m.uid} className={cx('flex', out ? 'justify-end' : 'justify-start')}>
                 <div className={cx('max-w-[78%] rounded-2xl px-3 py-2 text-[13.5px] shadow-sm', out ? 'bg-brand-soft' : 'border border-line bg-surface')}>
-                  <div className="mb-0.5 text-[11.5px] font-semibold text-muted">{out ? m.author || 'You' : 'Digital Target'}</div>
+                  <div className="mb-0.5 text-[12px] font-semibold text-muted">{out ? m.author || 'You' : 'Digital Target'}</div>
                   <div className="break-words whitespace-pre-wrap">{m.body}</div>
-                  <div className="mt-1 flex flex-wrap items-center justify-end gap-2 text-[11px] text-muted">
+                  <div className="mt-1 flex flex-wrap items-center justify-end gap-2 text-[12px] text-muted">
                     <span>{when(m.remote_at || m.sent_at || m.created_at)}</span>
                     {out && <Badge tone={st.tone}>{st.label}</Badge>}
                     {out && m.status === 'failed' && (
@@ -151,7 +151,7 @@ export function SupportSection(): JSX.Element {
                       </button>
                     )}
                   </div>
-                  {out && m.error && m.status !== 'sent' && <div className="mt-0.5 text-right text-[11px] text-muted">{m.error}</div>}
+                  {out && m.error && m.status !== 'sent' && <div className="mt-0.5 text-right text-[12px] text-muted">{m.error}</div>}
                 </div>
               </div>
             )
@@ -176,7 +176,7 @@ export function SupportSection(): JSX.Element {
           Send
         </Button>
       </div>
-      <div className="mt-1 text-right text-[11px] text-muted">
+      <div className="mt-1 text-right text-[12px] text-muted">
         {text.length}/{MAX} · Ctrl+Enter to send
       </div>
     </Card>

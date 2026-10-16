@@ -154,7 +154,7 @@ export function Combobox({ options, value, onChange, placeholder = 'Select…', 
                   className={cx('cursor-pointer px-3 py-1.5', i === hi && 'bg-brand-soft', String(o.value) === String(value) && 'font-semibold', o.disabled && 'opacity-50')}
                 >
                   <div className="truncate text-[13.5px]">{o.label}</div>
-                  {o.sub && <div className="truncate text-[11.5px] text-muted">{o.sub}</div>}
+                  {o.sub && <div className="truncate text-[12px] text-muted">{o.sub}</div>}
                 </div>
               ))}
             </div>

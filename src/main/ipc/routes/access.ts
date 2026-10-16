@@ -2,8 +2,9 @@
  * IPC routes — Login, PIN, users, lock screen, printers (owner: access area).
  * Owns: auth.login, auth.unlock, auth.changePassword, auth.users, auth.pin*, users.*, printers.*, print.run, print.pdf.
  */
-import { shell } from 'electron'
-import { writeFileSync } from 'fs'
+import { BrowserWindow, shell } from 'electron'
+import { mkdirSync, writeFileSync } from 'fs'
+import { join } from 'path'
 import type { RouteMap } from '../common'
 import { saveDialog } from '../common'
 import { runtime, getDb } from '../../runtime'
@@ -12,8 +13,8 @@ import { AppError, SessionUser, audit, getSetting, setSetting } from '../../serv
 import * as auth from '../../services/auth'
 import * as firms from '../../services/firms'
 import { getAllSettings, updateSettings } from '../../services/settings'
-import { PAPER_SIZES, isPaperSize, parsePrintUrl, printFailureText, resolvePrintJob, type PaperSize } from '../../services/printers'
-import { listOsPrinters, printTestPage, printWebContents } from '../../printing'
+import { PAPER_SIZES, countPdfPages, isPaperSize, parsePrintUrl, pdfOptionsFor, printFailureText, resolvePrintJob, type PaperSize } from '../../services/printers'
+import { listOsPrinters, openPdfPageView, printTestPage, printWebContents } from '../../printing'
 
 /* ------------------------------------------------ session gates ------------------------------------------------ */
 
@@ -199,30 +200,35 @@ export const accessRoutes: RouteMap = {
       const kind = String(a.kind ?? target?.kind ?? 'doc')
       const id = Number(a.id ?? target?.id ?? 0) || 0
       const available = (await c.sender.getPrintersAsync()).map((p) => p.name)
-      const job = resolvePrintJob({ kind, docType: kind === 'doc' ? docTypeOf(db, id) : null, paper: a.paper, settings: getAllSettings(db), available })
-      const r = await printWebContents(c.sender, { silent: job.silent, deviceName: job.printer, pageSize: job.pageSize, marginType: job.marginType })
+      const job = resolvePrintJob({ kind, docType: kind === 'doc' ? docTypeOf(db, id) : null, paper: a.paper, orientation: a.orientation, settings: getAllSettings(db), available })
+      const r = await printWebContents(c.sender, { silent: job.silent, deviceName: job.printer, pageSize: job.pageSize, marginType: job.marginType, landscape: job.landscape })
       if (r.ok || /cancel/i.test(r.reason)) {
         return { ok: r.ok, cancelled: !r.ok, printer: job.printer, silent: job.silent, paper: job.paper, missingPrinter: job.missing }
       }
       throw new AppError(`Printing failed: ${printFailureText(r.reason)}`, 'PRINT')
     }
   },
+  /** Save PDF; with view: true the same PDF is shown in the in-app page view instead (exact pages, no save dialog). */
   'print.pdf': {
     handler: async (c, a) => {
       const db = c.ctx.db
       const target = parsePrintUrl(c.sender.getURL())
       const kind = String(a.kind ?? target?.kind ?? 'doc')
       const id = Number(a.id ?? target?.id ?? 0) || 0
-      const job = resolvePrintJob({ kind, docType: kind === 'doc' ? docTypeOf(db, id) : null, paper: a.paper, settings: getAllSettings(db) })
-      const file = await saveDialog(c.sender, `${String(a.filename || 'document').replace(/[^\w\- .]+/g, '')}.pdf`, [{ name: 'PDF', extensions: ['pdf'] }])
+      const job = resolvePrintJob({ kind, docType: kind === 'doc' ? docTypeOf(db, id) : null, paper: a.paper, orientation: a.orientation, settings: getAllSettings(db) })
+      const name = String(a.filename || 'document').replace(/[^\w\- .]+/g, '').trim() || 'document'
+      if (a.view === true) {
+        const data = await c.sender.printToPDF(pdfOptionsFor(job))
+        const dir = join(runtime.paths.userData, 'print-preview')
+        mkdirSync(dir, { recursive: true })
+        const file = join(dir, 'page-view.pdf')
+        writeFileSync(file, data)
+        await openPdfPageView(file, `${name} — page view`, BrowserWindow.fromWebContents(c.sender))
+        return { pages: countPdfPages(data) }
+      }
+      const file = await saveDialog(c.sender, `${name}.pdf`, [{ name: 'PDF', extensions: ['pdf'] }])
       if (!file) return null
-      const thermal = job.marginType === 'none'
-      const data = await c.sender.printToPDF({
-        pageSize: job.pdfPageSize,
-        printBackground: true,
-        preferCSSPageSize: true,
-        ...(thermal ? { margins: { top: 0.08, bottom: 0.08, left: 0.08, right: 0.08 } } : {})
-      })
+      const data = await c.sender.printToPDF(pdfOptionsFor(job))
       writeFileSync(file, data)
       shell.openPath(file)
       return file

@@ -1,0 +1,110 @@
+{
+  "results": [
+    {
+      "name": "invoice-demo",
+      "ok": true,
+      "pages": 1,
+      "sizes": "595x842",
+      "expect": "one"
+    },
+    {
+      "name": "invoice-120-lines",
+      "ok": true,
+      "pages": 11,
+      "sizes": "595x842",
+      "expect": "many"
+    },
+    {
+      "name": "quotation-demo",
+      "ok": true,
+      "pages": 1,
+      "sizes": "595x842",
+      "expect": "one"
+    },
+    {
+      "name": "quotation-60-lines",
+      "ok": true,
+      "pages": 6,
+      "sizes": "595x842",
+      "expect": "many"
+    },
+    {
+      "name": "receipt-demo",
+      "ok": true,
+      "pages": 1,
+      "sizes": "595x842",
+      "expect": "one"
+    },
+    {
+      "name": "statement-demo",
+      "ok": true,
+      "pages": 1,
+      "sizes": "595x842",
+      "expect": "any"
+    },
+    {
+      "name": "statement-200-rows",
+      "ok": true,
+      "pages": 7,
+      "sizes": "595x842",
+      "expect": "many"
+    },
+    {
+      "name": "project-statement",
+      "ok": true,
+      "pages": 3,
+      "sizes": "595x842",
+      "expect": "any"
+    },
+    {
+      "name": "stock-report",
+      "ok": true,
+      "pages": 2,
+      "sizes": "595x842",
+      "expect": "any"
+    },
+    {
+      "name": "profit-loss",
+      "ok": true,
+      "pages": 2,
+      "sizes": "595x842",
+      "expect": "any"
+    },
+    {
+      "name": "sales-by-invoice",
+      "ok": true,
+      "pages": 8,
+      "sizes": "595x842",
+      "expect": "many"
+    },
+    {
+      "name": "invoice-120-after-thermal",
+      "ok": true,
+      "pages": 11,
+      "sizes": "595x842",
+      "expect": "many"
+    },
+    {
+      "name": "whatsapp-invoice-120",
+      "ok": true,
+      "pages": 11,
+      "sizes": "595x842",
+      "expect": "many"
+    },
+    {
+      "name": "whatsapp-statement-200",
+      "ok": true,
+      "pages": 7,
+      "sizes": "595x842",
+      "expect": "many"
+    },
+    {
+      "name": "whatsapp-receipt",
+      "ok": true,
+      "pages": 1,
+      "sizes": "595x842",
+      "expect": "one"
+    }
+  ],
+  "errors": []
+}

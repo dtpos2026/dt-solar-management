@@ -1,6 +1,7 @@
 import { BrowserWindow, app, shell } from 'electron'
 import { join } from 'path'
 import { runtime } from './runtime'
+import { pdfOptionsFor, type PrintPageSize } from './services/printers'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -128,7 +129,7 @@ export async function renderToPdf(
   kind: string,
   id: number,
   params: Record<string, unknown> = {},
-  opts: { pageSize?: Electron.PrintToPDFOptions['pageSize']; timeoutMs?: number } = {}
+  opts: { pageSize?: PrintPageSize; timeoutMs?: number } = {}
 ): Promise<Buffer> {
   const win = new BrowserWindow({ show: false, width: 1000, height: 1400, webPreferences: secureWebPreferences() })
   harden(win)
@@ -145,7 +146,9 @@ export async function renderToPdf(
       if (ready) break
     }
     await new Promise((r) => setTimeout(r, 400)) // let images (logo, signature, stamp) paint
-    return await win.webContents.printToPDF({ pageSize: opts.pageSize ?? 'A4', printBackground: true, preferCSSPageSize: true })
+    // Same options as Save PDF: page size, orientation and margins come from the print CSS (A4 pages with
+    // "Page x of y"; an 80 mm receipt sets its own continuous page), so the attachment equals the printed document.
+    return await win.webContents.printToPDF(pdfOptionsFor({ paper: 'A4', pdfPageSize: opts.pageSize ?? 'A4', landscape: false }))
   } finally {
     if (!win.isDestroyed()) win.destroy()
   }

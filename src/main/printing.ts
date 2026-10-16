@@ -74,7 +74,7 @@ export interface PrintOutcome {
 /** Prints a WebContents and resolves with the OS callback result (never rejects). */
 export function printWebContents(
   wc: WebContents,
-  opts: { silent: boolean; deviceName?: string | null; pageSize: PrintPageSize; marginType: 'default' | 'none'; timeoutMs?: number }
+  opts: { silent: boolean; deviceName?: string | null; pageSize: PrintPageSize; marginType: 'default' | 'none'; landscape?: boolean; timeoutMs?: number }
 ): Promise<PrintOutcome> {
   return new Promise((resolve) => {
     let done = false
@@ -92,6 +92,8 @@ export function printWebContents(
           printBackground: true,
           ...(opts.deviceName ? { deviceName: opts.deviceName } : {}),
           pageSize: opts.pageSize,
+          landscape: !!opts.landscape,
+          // 'default' keeps the print CSS margins (@page), so the paper matches Save PDF and the page view
           margins: { marginType: opts.marginType }
         },
         (success, failureReason) => finish({ ok: !!success, reason: success ? '' : String(failureReason ?? '') })
@@ -100,6 +102,38 @@ export function printWebContents(
       finish({ ok: false, reason: (e as Error).message })
     }
   })
+}
+
+let pageViewWin: BrowserWindow | null = null
+
+/**
+ * Page view: shows a generated PDF (the exact pages Save PDF / Print produce) in Chromium's built-in PDF viewer.
+ * The window has no preload, no Node and cannot navigate away or open other windows. One window is reused.
+ */
+export async function openPdfPageView(file: string, title: string, parent?: BrowserWindow | null): Promise<void> {
+  if (!pageViewWin || pageViewWin.isDestroyed()) {
+    pageViewWin = new BrowserWindow({
+      width: 1000,
+      height: 1000,
+      minWidth: 600,
+      minHeight: 500,
+      title,
+      autoHideMenuBar: true,
+      backgroundColor: '#525659',
+      ...(parent && !parent.isDestroyed() ? { parent } : {}),
+      webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, devTools: false }
+    })
+    pageViewWin.setMenuBarVisibility(false)
+    pageViewWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    pageViewWin.webContents.on('will-navigate', (e) => e.preventDefault())
+    pageViewWin.on('closed', () => {
+      pageViewWin = null
+    })
+  }
+  pageViewWin.setTitle(title)
+  await pageViewWin.loadFile(file)
+  pageViewWin.show()
+  pageViewWin.focus()
 }
 
 const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)

@@ -103,7 +103,7 @@ export function parsePrivateKeyPem(text: string): Uint8Array {
   const input = (text ?? '').trim()
   if (!input) throw new Error('The key is empty. Choose keys/license-private.pem or paste its contents.')
   if (/BEGIN (ENCRYPTED PRIVATE KEY|OPENSSH PRIVATE KEY|EC PRIVATE KEY|RSA PRIVATE KEY)/.test(input)) {
-    throw new Error('Unsupported key type. Use the unencrypted Ed25519 PKCS#8 key created by "npm run license:keygen".')
+    throw new Error('Unsupported key type. Use the unencrypted Ed25519 PKCS#8 key created automatically by "npm run build" in the DT Solar Pro folder.')
   }
   if (input.includes('BEGIN PUBLIC KEY')) {
     throw new Error('This is the PUBLIC key. Load keys/license-private.pem (the private key) instead.')
@@ -118,7 +118,7 @@ export function parsePrivateKeyPem(text: string): Uint8Array {
     }
   }
   if (der.length !== 48 || !equalBytes(der.subarray(0, 16), PKCS8_ED25519_PREFIX)) {
-    throw new Error('This is not an Ed25519 PKCS#8 private key. Use keys/license-private.pem created by "npm run license:keygen".')
+    throw new Error('This is not an Ed25519 PKCS#8 private key. Use keys/license-private.pem created automatically by "npm run build" in the DT Solar Pro folder.')
   }
   return der.slice(16)
 }

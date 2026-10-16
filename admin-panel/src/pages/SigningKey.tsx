@@ -36,9 +36,9 @@ export function SigningKeyPanel() {
       <div className="card flex gap-3 border-amber-200 bg-amber-50 p-4 text-[13px] text-amber-900">
         <ShieldAlert className="h-5 w-5 shrink-0" />
         <div>
-          Licenses are signed here, in your browser — the private key is never uploaded anywhere. Create the key once on your computer with{' '}
-          <code className="rounded bg-white px-1">npm run license:keygen</code> (in the DT Solar Pro folder). It creates <b>keys/license-private.pem</b> (secret — keep a USB
-          backup) and <b>resources/license-public.pem</b> (built into the app). Load the private key file below on this computer.
+          Licenses are signed here, in your browser — the private key is never uploaded anywhere. The key was created automatically the first time you ran{' '}
+          <code className="rounded bg-white px-1">npm run build</code> in the DT Solar Pro (desktop) folder: select the file <b>keys\license-private.pem</b> from that
+          folder below. Keep a USB backup of it and never share it. Do not create a new key — installers already given to customers only accept licenses signed with this one.
         </div>
       </div>
       {restoring ? (

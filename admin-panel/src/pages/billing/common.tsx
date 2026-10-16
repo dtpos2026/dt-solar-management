@@ -1,45 +1,60 @@
 /** Shared billing hooks + small components. */
-import { ReactNode, useEffect, useState } from 'react'
+import { ReactNode, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { getDocs, onSnapshot, orderBy, query, collection } from 'firebase/firestore'
+import { collection, getDocs } from 'firebase/firestore'
 import { db } from '../../firebase'
-import { clientFromSnap, invoiceFromSnap, invoicesCol, loadBranding } from '../../lib/invoices'
+import { clientFromSnap, invoiceFromSnap, paymentFromSnap, paymentsCol } from '../../lib/invoices'
+import { useSharedBranding, useSharedDocs } from '../../lib/liveData'
+import { cachedFetch } from '../../lib/queryCache'
 import { displayStatus, type DisplayStatus } from '../../lib/billing'
-import { errorMessage, toDate } from '../../lib/format'
-import { DEFAULT_BRANDING, type Branding, type Client, type Invoice } from '../../lib/types'
+import { toDate } from '../../lib/format'
+import type { Branding, Client, Invoice, InvoicePayment } from '../../lib/types'
 import { cx } from '../../components/ui'
 
-export function useInvoices(): { invoices: Invoice[]; loading: boolean; error: string | null } {
-  const [invoices, setInvoices] = useState<Invoice[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  useEffect(
-    () =>
-      onSnapshot(
-        query(invoicesCol(), orderBy('createdAt', 'desc')),
-        (r) => { setInvoices(r.docs.map(invoiceFromSnap)); setLoading(false) },
-        (e) => { setError(errorMessage(e)); setLoading(false) }
-      ),
-    []
-  )
-  return { invoices, loading, error }
+/** All invoices, newest first — one shared live listener (also used by the Dashboard), so nothing is re-read on navigation. */
+export function useInvoices(): { invoices: Invoice[]; loading: boolean; error: string | null; retry: () => void } {
+  const s = useSharedDocs('invoices', () => collection(db, 'invoices'))
+  const invoices = useMemo(() => s.docs.map(invoiceFromSnap).sort((a, b) => (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0)), [s.docs])
+  return { invoices, loading: s.loading, error: s.error, retry: s.retry }
 }
 
+/** Clients sorted by company (shared live listener). */
 export function useClients(enabled: boolean): Client[] {
-  const [clients, setClients] = useState<Client[]>([])
-  useEffect(() => {
-    if (!enabled) return
-    getDocs(collection(db, 'clients'))
-      .then((r) => setClients(r.docs.map(clientFromSnap).sort((a, b) => (a.company || '').localeCompare(b.company || ''))))
-      .catch(() => setClients([]))
-  }, [enabled])
-  return clients
+  const s = useSharedDocs('clients', () => collection(db, 'clients'), enabled)
+  return useMemo(() => s.docs.map(clientFromSnap).sort((a, b) => (a.company || '').localeCompare(b.company || '')), [s.docs])
 }
 
 export function useBranding(): Branding {
-  const [b, setB] = useState<Branding>(DEFAULT_BRANDING)
-  useEffect(() => { loadBranding().then(setB) }, [])
-  return b
+  return useSharedBranding()
+}
+
+export interface PaymentRow extends InvoicePayment { invoiceId: string; invoiceNumber: string; clientName: string; currency: string }
+
+/**
+ * Payments of the given invoices (payments are sub-collections; the rules have no collection-group read), 6 in flight,
+ * cached for 2 minutes under a key that changes whenever an invoice's paid amount or last payment changes.
+ */
+export function loadInvoicePayments(list: Invoice[]): Promise<PaymentRow[]> {
+  const withPay = list.filter((i) => i.lastPaymentAt || i.paid > 0)
+  const key = `payments:all:${withPay.map((i) => `${i.id}:${i.paid}:${i.lastPaymentAt?.toMillis() ?? 0}`).join(',')}`
+  return cachedFetch(
+    key,
+    async () => {
+      const out: PaymentRow[][] = new Array(withPay.length)
+      let k = 0
+      const worker = async () => {
+        while (k < withPay.length) {
+          const idx = k++
+          const i = withPay[idx]
+          const snap = await getDocs(paymentsCol(i.id))
+          out[idx] = snap.docs.map((d) => ({ ...paymentFromSnap(d), invoiceId: i.id, invoiceNumber: i.number, clientName: i.clientName, currency: i.currency }))
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(6, withPay.length) }, worker))
+      return out.flat().sort((a, b) => (b.date?.toMillis() ?? 0) - (a.date?.toMillis() ?? 0))
+    },
+    120_000
+  )
 }
 
 export function invStatus(i: Invoice): DisplayStatus {

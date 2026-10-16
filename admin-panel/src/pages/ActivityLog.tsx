@@ -289,6 +289,7 @@ export function ActivityLog() {
   return (
     <div>
       <PageTitle
+        icon={<Activity />}
         title="Activity Log"
         sub={loading ? 'Loading…' : `${rows.length} entr${rows.length === 1 ? 'y' : 'ies'} loaded${hasMore ? ' (more available)' : ''} · newest first`}
         actions={

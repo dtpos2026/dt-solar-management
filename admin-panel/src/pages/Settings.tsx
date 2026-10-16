@@ -196,6 +196,7 @@ export function Settings() {
   return (
     <div className="max-w-6xl pb-20">
       <PageTitle
+        icon={<MonitorCog />}
         title="Settings"
         sub={
           st.loading

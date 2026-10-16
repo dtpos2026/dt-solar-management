@@ -109,6 +109,7 @@ export function Admins() {
   return (
     <div>
       <PageTitle
+        icon={<Users />}
         title="Admins"
         sub={loading ? 'Loading…' : `${rows.length} admin user(s) · ${activeCount} active`}
         actions={

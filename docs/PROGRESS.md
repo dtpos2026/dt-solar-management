@@ -17,6 +17,8 @@ Status keys: [x] done & tested · [~] partial · [ ] not started · [!] blocked 
 - [ ] catalog — product delete/archive + category change, project delete/archive, firm activate/deactivate, firm isolation + limit tests
 - [ ] data — day/month closing + closing backup, backup history/export/import/validation, CSV import + reconciliation
 - [x] access — user selection + PIN login (lockout 5/5min), PIN lock screen, forced password change gate, printers page + per-document printer + paper size + direct print, test print (unit-tested; consolidated e2e pending)
+- [x] data — day/month closing + closing backup + reopen + print/CSV, backup history (kind/integrity/firm/user) + verify/export/restore + firm JSON export + in-app daily schedule, CSV import + mapping + validation + reconciliation (unit-tested; UI e2e pending integrator run)
+- [ ] access — user selection + PIN login, PIN lock screen, forced password change, printers page + per-document printer, test print
 - [ ] cloud — registration in setup wizard, heartbeat + consented location, support messages with offline queue, certificate refresh, License & About in Settings
 - [ ] access — user selection + PIN login, PIN lock screen, forced password change, printers page + per-document printer, test print
 - [x] cloud — registration in setup wizard (key + registration / trial / offline), heartbeat + consented location (off/approximate/manual), support messages with offline queue, certificate refresh + detached lifetime, License & About in Settings (unit tests: tests/cloud.test.ts; emulator REST check vs real rules: scripts/cloud-emulator-check.mjs — 32/32; Playwright e2e left to integrator)

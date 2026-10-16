@@ -10,6 +10,7 @@ import type { DB } from '../db'
 import { EPS, num, round2 } from '../../shared/money'
 import { PAYMENT_METHODS } from '../../shared/docTypes'
 import { AppError, Ctx, audit, optId, optText, requireDate, requirePerm, requireText } from './context'
+import { assertPeriodOpen } from './closing'
 import { nextNumber } from './firms'
 import { partyBalance } from './parties'
 
@@ -305,6 +306,7 @@ export interface PaymentInput {
 export function insertPayment(ctx: Ctx, input: PaymentInput): number {
   const db = ctx.db
   const date = requireDate(input.date)
+  assertPeriodOpen(db, ctx.firmId, date)
   const amount = round2(num(input.amount))
   if (amount <= 0) throw new AppError('Payment amount must be greater than zero.', 'VALIDATION')
   const accountId = assertAccount(ctx, input.accountId)
@@ -421,10 +423,11 @@ export function cancelPayment(ctx: Ctx, id: number, reason?: string): void {
   requirePerm(ctx, 'accounts.manage')
   const db = ctx.db
   const p = db.prepare('SELECT * FROM payments WHERE id = ? AND firm_id = ?').get(id, ctx.firmId) as
-    | { number: string; status: string; amount: number }
+    | { number: string; status: string; amount: number; date: string }
     | undefined
   if (!p) throw new AppError('Payment not found.', 'NOT_FOUND')
   if (p.status === 'cancelled') throw new AppError('Payment is already cancelled.', 'VALIDATION')
+  assertPeriodOpen(db, ctx.firmId, p.date)
   db.transaction(() => {
     const allocs = db.prepare('SELECT * FROM payment_allocations WHERE payment_id = ?').all(id)
     db.prepare(
@@ -532,6 +535,7 @@ export function createTransfer(
 ): number {
   requirePerm(ctx, 'accounts.manage')
   const date = requireDate(input.date)
+  assertPeriodOpen(ctx.db, ctx.firmId, date)
   const from = assertAccount(ctx, input.fromAccountId)
   const to = assertAccount(ctx, input.toAccountId)
   if (from === to) throw new AppError('Select two different accounts.', 'VALIDATION')
@@ -566,6 +570,8 @@ export function listTransfers(ctx: Ctx, f: { from?: string; to?: string } = {}):
 
 export function cancelTransfer(ctx: Ctx, id: number): void {
   requirePerm(ctx, 'accounts.manage')
+  const tr = ctx.db.prepare('SELECT date FROM account_transfers WHERE id = ? AND firm_id = ?').get(id, ctx.firmId) as { date: string } | undefined
+  if (tr) assertPeriodOpen(ctx.db, ctx.firmId, tr.date)
   const r = ctx.db
     .prepare(
       "UPDATE account_transfers SET status = 'cancelled', cancelled_by = ?, cancelled_at = datetime('now','localtime') WHERE id = ? AND firm_id = ? AND status <> 'cancelled'"

@@ -14,6 +14,7 @@ import { StockPrint } from './StockPrint'
 import { ReportPrint } from './ReportPrint'
 import { DesignControls, DesignValue } from './DesignControls'
 import { KIND_LABELS, LAYOUT_LABEL, PrintDesign, SavedTemplate, TemplateKind, THERMAL_KINDS, builtinLayouts, resolveDesign, sameOptions } from './design'
+import { ClosingPrint } from './ClosingPrint'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const TEMPLATES: Record<string, ComponentType<TemplateProps>> = {
@@ -23,7 +24,8 @@ const TEMPLATES: Record<string, ComponentType<TemplateProps>> = {
   project: ProjectPrint,
   material: MaterialPrint,
   stock: StockPrint,
-  report: ReportPrint
+  report: ReportPrint,
+  closing: ClosingPrint
 }
 
 /** Print routes whose look comes from a print template (customer documents and payment receipts). */

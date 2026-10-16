@@ -1,7 +1,7 @@
 /** Licenses: list (search / filters / pagination) with tabs for activation requests and offline activation. */
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { BadgeCheck, Inbox, KeyRound, Sparkles, WifiOff } from 'lucide-react'
+import { BadgeCheck, Inbox, KeyRound, Sparkles, TimerReset, WifiOff } from 'lucide-react'
 import { onSnapshot, query, where } from 'firebase/firestore'
 import { PageTitle, copy } from '../components/ui'
 import { expiryLabel, licenseBucketOf, requestsCol } from '../lib/licenses'
@@ -16,9 +16,11 @@ import { BILLING_READ_PERMS, useClients, useInvoices, useLicenses } from './lice
 import { LicenseForm } from './LicenseForm'
 import { Requests } from './Requests'
 import { Offline } from './Offline'
+import { MaskedKey } from './licenses/parts'
+import { TrialDialog } from './licenses/TrialDialog'
 
 type Tab = 'list' | 'requests' | 'offline'
-type StatusFilter = '' | 'active' | 'pending' | 'suspended' | 'revoked' | 'expired' | 'detached' | 'expiring'
+type StatusFilter = '' | 'active' | 'pending' | 'suspended' | 'revoked' | 'expired' | 'detached' | 'expiring' | 'trial'
 
 /** Number of pending activation requests (live) for the tab badge; 0 when the admin may not list them. */
 export function usePendingRequests(enabled: boolean): number {
@@ -52,6 +54,7 @@ export function Licenses() {
   const [planType, setPlanType] = useState<'' | PlanType>('')
   const [clientId, setClientId] = useState('')
   const [form, setForm] = useState(false)
+  const [trial, setTrial] = useState(false)
   const [created, setCreated] = useState<{ id: string; key: string } | null>(null)
 
   const clientById = useMemo(() => new Map(clients.data.map((c) => [c.id, c])), [clients.data])
@@ -65,7 +68,9 @@ export function Licenses() {
     const qq = q.trim().toLowerCase()
     return licenses.data.filter((l) => {
       const st = licenseDisplayStatus(l)
-      if (status === 'expiring') {
+      if (status === 'trial') {
+        if (l.planType !== 'trial' && l.plan !== 'trial') return false
+      } else if (status === 'expiring') {
         const d = daysUntil(l.expiresAt)
         if (!(d !== null && d >= 0 && d <= 30 && l.status === 'active')) return false
       } else if (status && st !== status) return false
@@ -88,10 +93,16 @@ export function Licenses() {
         sub={licenses.loading ? 'Loading…' : `${licenses.data.length} license(s) · keys are generated with a cryptographically secure random source`}
         actions={
           canCreate && (
-            <button className="btn btn-primary" onClick={() => setForm(true)}>
-              <Sparkles className="h-4 w-4" />
-              Generate key / new license
-            </button>
+            <>
+              <button className="btn btn-secondary" onClick={() => setTrial(true)}>
+                <TimerReset className="h-4 w-4" />
+                Issue trial
+              </button>
+              <button className="btn btn-primary" onClick={() => setForm(true)}>
+                <Sparkles className="h-4 w-4" />
+                Generate key / new license
+              </button>
+            </>
           )
         }
       />
@@ -146,6 +157,7 @@ export function Licenses() {
               <option value="revoked">Revoked</option>
               <option value="expired">Expired</option>
               <option value="detached">Detached (lifetime)</option>
+              <option value="trial">Trial</option>
             </select>
             <select className="input w-40" value={planType} onChange={(e) => setPlanType(e.target.value as PlanType | '')} aria-label="Billing cycle filter">
               <option value="">All billing cycles</option>
@@ -208,7 +220,9 @@ export function Licenses() {
                                 {[l.customerName, l.phone, l.city].filter(Boolean).join(' · ')}
                               </div>
                             </td>
-                            <td className="font-mono text-[12.5px]">{l.licenseKey}</td>
+                            <td>
+                              <MaskedKey value={l.licenseKey} />
+                            </td>
                             <td>
                               <div className="capitalize">{l.plan}</div>
                               <Pill value={l.planType} />
@@ -243,6 +257,7 @@ export function Licenses() {
           </Panel>
         </>
       )}
+      <TrialDialog open={trial} clients={clients.data} onClose={() => setTrial(false)} onIssued={(id, key) => setCreated({ id, key })} />
       <LicenseForm
         open={form}
         onClose={() => setForm(false)}

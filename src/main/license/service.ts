@@ -16,15 +16,22 @@
  *  - A detached lifetime license performs no license check-ins at all (heartbeats continue).
  *  - A license problem NEVER deletes or modifies business data. At worst the app becomes read-only
  *    (view, print, export and backup still work).
+ *  - There is NO local trial (v1.2): without a certificate the app is "not activated" (read-only). A trial is a
+ *    certificate issued by the Super Admin with plan 'trial' and a short expiry.
+ *  - Enforcement: background check at start-up, at sign-in (non-blocking) and before protected writes (router) when the
+ *    last successful verification is older than 5 minutes (<= 4 s wait, concurrent checks share one request). A remote
+ *    block (suspended / revoked / expired / this device deactivated) is persisted in the license folder AND in the business
+ *    DB (settings.license_remote); network failures never clear it. A computer that stays offline can only be blocked
+ *    when its check-in deadline + grace period runs out.
  */
 import { createHash, randomBytes } from 'crypto'
 import { execFileSync } from 'child_process'
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'fs'
 import { hostname, networkInterfaces, platform, release } from 'os'
 import { join } from 'path'
-import type { ActivationNotice, ActivationResult, LicenseCertificate, LicensePayload, LicenseStatus, Registration } from './types'
+import type { ActivationNotice, ActivationResult, LicenseCertificate, LicensePayload, LicenseStatus, Registration, RemoteBlock, RemoteRecord } from './types'
 import { TRIAL_LIMITS } from './types'
-import { WRITE_MODES, evaluate, parseCertificate, verifyCertificate } from './verify'
+import { WRITE_MODES, blockReasonOf, evaluate, parseCertificate, verifyCertificate } from './verify'
 import { AppError } from '../services/context'
 import { FirestoreError, FirestoreRest, resolveFirestoreConfig, type FirestoreConfig, type RestOptions, type Write } from '../cloud/firestore'
 import { loadInstallToken, maskToken } from '../cloud/install'
@@ -32,9 +39,13 @@ import { decideCertUpdate, isDetached } from '../cloud/certRefresh'
 import { log as appLog } from '../log'
 
 interface State {
-  trialStartedAt: number
+  /** Legacy (v1.0/v1.1 local trial). Never created any more; kept when present so old installations are recognised. */
+  trialStartedAt?: number
   lastSeenAt: number
   remoteStatus: string | null
+  /** License the remote decision belongs to, and when this computer learned about it (v1.2). */
+  remoteLicenseId?: string | null
+  remoteAt?: string | null
   lastCheckAt: string | null
   lastCheckError: string | null
   pendingRequest: { id: string; licenseKey: string; createdAt: string } | null
@@ -44,6 +55,8 @@ interface State {
   registration?: Registration | null
   certUpdate?: { at: string; summary: string } | null
   activationNotice?: ActivationNotice | null
+  /** Key of the request that activated this computer (re-entering it must not create a second approval). */
+  activatedKey?: string | null
 }
 
 function readMachineId(): string {
@@ -114,15 +127,54 @@ export function activationRequestWrite(id: string, fields: Record<string, unknow
   return { path: `activationRequests/${id}`, fields, serverTime: ['createdAt'], exists: false }
 }
 
+/** A successful verification is trusted for this long before a protected write checks again. */
+export const FRESH_MS = 5 * 60_000
+/** After a failed (network) check, writes do not wait for another check for this long. */
+export const RETRY_AFTER_FAILURE_MS = 60_000
+/** Longest a protected write waits for a check-in. */
+export const WRITE_CHECK_WAIT_MS = 4_000
+
+const REMOTE_BLOCKS: RemoteBlock[] = ['suspended', 'revoked', 'deactivated']
+const SEVERITY: Record<RemoteBlock, number> = { revoked: 3, suspended: 2, deactivated: 1 }
+const isRemoteBlock = (v: unknown): v is RemoteBlock => typeof v === 'string' && (REMOTE_BLOCKS as string[]).includes(v)
+
+/** Validates a remote record read from the business DB. */
+export function cleanRemoteRecord(v: unknown): RemoteRecord | null {
+  const o = v && typeof v === 'object' ? (v as Record<string, unknown>) : null
+  if (!o || typeof o.licenseId !== 'string' || !o.licenseId || !isRemoteBlock(o.status)) return null
+  return { licenseId: o.licenseId, status: o.status, at: typeof o.at === 'string' && Number.isFinite(Date.parse(o.at)) ? o.at : new Date(0).toISOString() }
+}
+
+/**
+ * The remote decision in a licenseStatus document for this device (null = no block). Expiry is not taken from here:
+ * the signed certificate's expiresAt decides (renewals arrive as re-signed certificates). Exported for tests.
+ */
+export function remoteDecision(d: Record<string, unknown>, deviceId: string): RemoteBlock | null {
+  const status = typeof d.status === 'string' ? d.status : 'active'
+  if (status === 'revoked' || status === 'suspended') return status
+  const deactivated = Array.isArray(d.deactivatedDevices) ? (d.deactivatedDevices as unknown[]).map(String) : []
+  if (deactivated.includes(deviceId)) return 'deactivated'
+  return null
+}
+
 export interface LicenseServiceOptions {
   dir: string
   publicKeyPem: string
   /** Production Firestore project (overridable for tests with DTSP_FIRESTORE_EMULATOR). null = offline-only build. */
   firestore: { projectId: string; apiKey: string } | null
   appVersion: string
-  /** Earliest known trial start persisted in the business DB (survives deleting the license folder). */
-  getDbTrialStart?: () => number | null
-  setDbTrialStart?: (ts: number) => void
+  /**
+   * Copy of the remote decision in the business DB (settings.license_remote), so deleting the license folder state does
+   * not silently restore access. Optional (tests / no DB).
+   */
+  getDbRemote?: () => unknown
+  setDbRemote?: (r: RemoteRecord | null) => void
+  /** True when the business DB shows the former local trial was used (app_meta.trial_started_at). Wording only. */
+  hasLegacyTrial?: () => boolean
+  /** Tests: clock. */
+  now?: () => number
+  /** Tests: fixed machine id (device id derivation). */
+  machineId?: string
   onChange?: (s: LicenseStatus) => void
   /** Tests: custom fetch / headers / environment. */
   rest?: RestOptions
@@ -140,12 +192,15 @@ export class LicenseService {
   private certFile: string
   private stateFile: string
   private cached: LicenseStatus | null = null
+  /** The running check-in (concurrent callers share it). */
+  private inflight: Promise<{ status: LicenseStatus; error: AppError | null }> | null = null
+  private lastFailureAt = 0
 
   constructor(private opts: LicenseServiceOptions) {
     mkdirSync(opts.dir, { recursive: true })
     this.certFile = join(opts.dir, 'license.json')
     this.stateFile = join(opts.dir, 'state.json')
-    this.deviceId = computeDeviceId()
+    this.deviceId = computeDeviceId(opts.machineId ?? readMachineId())
     this.deviceName = hostname()
     this.installToken = loadInstallToken(opts.dir).token
     this.firestoreConfig = resolveFirestoreConfig(opts.firestore, opts.env ?? process.env)
@@ -165,6 +220,14 @@ export class LicenseService {
     return this.opts.appVersion
   }
 
+  private now(): number {
+    return this.opts.now?.() ?? Date.now()
+  }
+
+  private iso(): string {
+    return new Date(this.now()).toISOString()
+  }
+
   private readState(): State {
     let s: Partial<State> = {}
     try {
@@ -172,22 +235,73 @@ export class LicenseService {
     } catch {
       s = {}
     }
-    const now = Date.now()
-    const dbStart = this.opts.getDbTrialStart?.() ?? null
-    const candidates = [s.trialStartedAt, dbStart].filter((x): x is number => typeof x === 'number' && x > 0)
-    const trialStartedAt = candidates.length ? Math.min(...candidates) : now
-    if (!dbStart) this.opts.setDbTrialStart?.(trialStartedAt)
+    const now = this.now()
     return {
-      trialStartedAt,
+      ...(typeof s.trialStartedAt === 'number' && s.trialStartedAt > 0 ? { trialStartedAt: s.trialStartedAt } : {}),
       lastSeenAt: typeof s.lastSeenAt === 'number' ? s.lastSeenAt : now,
       remoteStatus: s.remoteStatus ?? null,
+      remoteLicenseId: s.remoteLicenseId ?? null,
+      remoteAt: s.remoteAt ?? null,
       lastCheckAt: s.lastCheckAt ?? null,
       lastCheckError: s.lastCheckError ?? null,
       pendingRequest: s.pendingRequest ?? null,
       remotePoweredBy: typeof s.remotePoweredBy === 'boolean' ? s.remotePoweredBy : null,
       registration: s.registration ?? null,
       certUpdate: s.certUpdate ?? null,
-      activationNotice: s.activationNotice ?? null
+      activationNotice: s.activationNotice ?? null,
+      activatedKey: s.activatedKey ?? null
+    }
+  }
+
+  private readDbRemote(): RemoteRecord | null {
+    try {
+      return cleanRemoteRecord(this.opts.getDbRemote?.())
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * The remote decision that applies to `licenseId`: the most severe of the license-folder state and the business DB
+   * copy (either one alone is enough to block). Legacy state (no license id) applies to the installed license.
+   */
+  private effectiveRemote(s: State, licenseId: string): RemoteRecord | null {
+    const recs: RemoteRecord[] = []
+    if (isRemoteBlock(s.remoteStatus) && (!s.remoteLicenseId || s.remoteLicenseId === licenseId)) {
+      recs.push({ licenseId, status: s.remoteStatus, at: s.remoteAt || s.lastCheckAt || new Date(0).toISOString() })
+    }
+    const db = this.readDbRemote()
+    if (db && db.licenseId === licenseId) recs.push(db)
+    if (!recs.length) return null
+    recs.sort((a, b) => SEVERITY[b.status] - SEVERITY[a.status] || Date.parse(b.at) - Date.parse(a.at))
+    return recs[0]
+  }
+
+  /** Records (or clears, with null) the remote decision for `licenseId` in the state AND the business DB. */
+  private setRemote(s: State, licenseId: string, status: RemoteBlock | null): void {
+    if (status) {
+      const prev = this.effectiveRemote(s, licenseId)
+      const at = prev && prev.status === status ? prev.at : this.iso()
+      s.remoteStatus = status
+      s.remoteLicenseId = licenseId
+      s.remoteAt = at
+      try {
+        this.opts.setDbRemote?.({ licenseId, status, at })
+      } catch (e) {
+        this.log('warn', `Could not store the license decision in the database: ${(e as Error).message}`)
+      }
+    } else {
+      s.remoteStatus = null
+      s.remoteLicenseId = null
+      s.remoteAt = null
+      const db = this.readDbRemote()
+      if (db && db.licenseId === licenseId) {
+        try {
+          this.opts.setDbRemote?.(null)
+        } catch (e) {
+          this.log('warn', `Could not clear the license decision in the database: ${(e as Error).message}`)
+        }
+      }
     }
   }
 
@@ -234,7 +348,7 @@ export class LicenseService {
   /** Records that the app was used now (clock-rollback protection). */
   touch(): void {
     const s = this.readState()
-    const now = Date.now()
+    const now = this.now()
     if (now > s.lastSeenAt) {
       s.lastSeenAt = now
       this.writeState(s)
@@ -252,18 +366,28 @@ export class LicenseService {
       if (r.ok) payload = r.payload
       else certError = r.reason
     }
+    let legacyTrial = typeof s.trialStartedAt === 'number'
+    if (!legacyTrial) {
+      try {
+        legacyTrial = !!this.opts.hasLegacyTrial?.()
+      } catch {
+        legacyTrial = false
+      }
+    }
     const ev = evaluate({
-      now: Date.now(),
+      now: this.now(),
       payload,
       certError,
-      trialStartedAt: s.trialStartedAt,
+      legacyTrial,
       lastSeenAt: s.lastSeenAt,
-      remoteStatus: s.remoteStatus,
+      remoteStatus: payload ? (this.effectiveRemote(s, payload.licenseId)?.status ?? null) : null,
       lastCheckAt: s.lastCheckAt ? Date.parse(s.lastCheckAt) : null
     })
     const detached = isDetached(payload)
     const st: LicenseStatus = {
       mode: ev.mode,
+      blockReason: blockReasonOf(ev.mode),
+      legacyTrial,
       canWrite: WRITE_MODES.includes(ev.mode),
       message: ev.message,
       deviceId: this.deviceId,
@@ -297,7 +421,7 @@ export class LicenseService {
   requestCode(licenseKey: string): string {
     const key = String(licenseKey ?? '').trim().toUpperCase()
     if (!key) throw new AppError('Enter your license key first.', 'VALIDATION')
-    return b64url(JSON.stringify({ k: key, d: this.deviceId, n: this.deviceName, a: this.opts.appVersion, o: this.os, t: new Date().toISOString() }))
+    return b64url(JSON.stringify({ k: key, d: this.deviceId, n: this.deviceName, a: this.opts.appVersion, o: this.os, t: this.iso() }))
   }
 
   /** Installs a certificate (from file contents or a pasted activation code). */
@@ -311,9 +435,17 @@ export class LicenseService {
     const r = verifyCertificate(cert, this.opts.publicKeyPem, this.deviceId)
     if (!r.ok) throw new AppError(r.reason, 'LICENSE')
     const before = this.status(true).payload
-    this.writeCert(cert)
     const s = this.readState()
-    s.remoteStatus = null
+    // A stored remote block (suspended / revoked / device deactivated) can only be lifted by a certificate that Digital
+    // Target issued AFTER that decision (re-approval) or by an online check-in, never by re-installing an older one.
+    const remote = this.effectiveRemote(s, r.payload.licenseId)
+    if (remote && !((Date.parse(r.payload.issuedAt) || 0) > Date.parse(remote.at))) {
+      const what = remote.status === 'deactivated' ? 'This computer was deactivated for this license by Digital Target' : `This license was ${remote.status} by Digital Target`
+      throw new AppError(`${what}. This certificate was issued before that decision and cannot restore access. Contact Digital Target.`, remote.status === 'deactivated' ? 'LICENSE_DEVICE' : 'LICENSE')
+    }
+    this.writeCert(cert)
+    if (remote) this.setRemote(s, r.payload.licenseId, null)
+    else if (!s.remoteLicenseId) s.remoteStatus = null
     if (!before || before.licenseId !== r.payload.licenseId) {
       s.remotePoweredBy = null
       s.certUpdate = null
@@ -367,8 +499,16 @@ export class LicenseService {
     const client = this.requireClient()
     const s = this.readState()
     if (s.pendingRequest && s.pendingRequest.licenseKey === key) return this.pollActivation()
+    // One device = one approval: this computer is already activated with this key -> verify instead of asking again.
+    const cur = this.status(true)
+    if (cur.payload && s.activatedKey === key && cur.mode !== 'device_deactivated') {
+      const st = await this.checkIn(true)
+      if (!st.canWrite) throw new AppError(st.message, st.blockReason === 'device' ? 'LICENSE_DEVICE' : 'LICENSE')
+      if (reg) this.saveRegistration(reg)
+      return this.result('approved', 'This computer is already activated with this license key. No new approval is needed.')
+    }
     const id = LicenseService.randomId()
-    const now = new Date().toISOString()
+    const now = this.iso()
     const fields: Record<string, unknown> = {
       type: 'activate',
       licenseKey: key,
@@ -418,7 +558,8 @@ export class LicenseService {
       const st = this.readState()
       const key = st.pendingRequest?.licenseKey
       st.pendingRequest = null
-      st.lastCheckAt = new Date().toISOString()
+      st.activatedKey = key ?? null
+      st.lastCheckAt = this.iso()
       st.lastCheckError = null
       const p = this.status(true).payload
       st.activationNotice = { kind: 'approved', message: p ? `Licensed to ${p.businessName}.` : 'License activated.', at: st.lastCheckAt, licenseKey: key }
@@ -442,31 +583,79 @@ export class LicenseService {
     return this.status(true)
   }
 
+  /** True when a protected write should verify online first (last success older than 5 min, no recent failure). */
+  needsCheck(): boolean {
+    if (!this.client) return false
+    const st = this.status(true)
+    if (!st.payload || isDetached(st.payload)) return false
+    const now = this.now()
+    const last = st.lastCheckAt ? Date.parse(st.lastCheckAt) : 0
+    if (Number.isFinite(last) && now - last < FRESH_MS && now >= last) return false
+    if (this.lastFailureAt && now - this.lastFailureAt < RETRY_AFTER_FAILURE_MS && now >= this.lastFailureAt) return false
+    return true
+  }
+
+  /**
+   * Before a protected write: when online is configured and the last successful verification is older than 5 minutes,
+   * runs a check-in first and waits at most `maxWaitMs` (default 4 s). A slow network never blocks longer; the check
+   * keeps running and its result applies when it arrives. Returns the current status.
+   */
+  async ensureFresh(maxWaitMs = WRITE_CHECK_WAIT_MS): Promise<LicenseStatus> {
+    if (this.needsCheck()) {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      await Promise.race([this.runCheck().catch(() => undefined), new Promise<void>((r) => (timer = setTimeout(r, maxWaitMs)))])
+      if (timer) clearTimeout(timer)
+    }
+    return this.status(true)
+  }
+
+  /** Start-up / sign-in: starts a check when one is due, never waits, never throws. */
+  refreshInBackground(): void {
+    try {
+      if (this.needsCheck()) void this.runCheck().catch(() => undefined)
+    } catch {
+      /* never break start-up or sign-in */
+    }
+  }
+
   /**
    * Online check-in: reads licenseStatus/{licenseId} — status, deactivated devices, the "Powered by" flag and a
-   * re-signed certificate for this device. Network problems never change the license when silent.
-   * A detached lifetime license is not checked at all.
+   * re-signed certificate for this device. Network problems never change (or clear) the stored decision.
+   * A detached lifetime license is not checked at all. Concurrent calls share one request.
    */
   async checkIn(silent = true): Promise<LicenseStatus> {
+    const r = await this.runCheck()
+    if (!silent && r.error) throw r.error
+    return r.status
+  }
+
+  private runCheck(): Promise<{ status: LicenseStatus; error: AppError | null }> {
+    if (this.inflight) return this.inflight
+    this.inflight = this.doCheck().finally(() => {
+      this.inflight = null
+    })
+    return this.inflight
+  }
+
+  private async doCheck(): Promise<{ status: LicenseStatus; error: AppError | null }> {
+    let pollError: AppError | null = null
     if (this.readState().pendingRequest && this.client) {
       try {
         await this.pollActivation()
       } catch (e) {
-        if (!silent) throw e
+        pollError = LicenseService.netError(e, 'status check')
       }
     }
     const now = this.status(true)
-    if (!now.payload || !this.client) {
-      if (!silent && !this.client) throw new AppError('Online license checking is not configured in this build.', 'OFFLINE')
-      return now
-    }
+    if (!this.client) return { status: now, error: new AppError('Online license checking is not configured in this build.', 'OFFLINE') }
+    if (!now.payload) return { status: now, error: pollError }
     if (isDetached(now.payload)) {
       const s = this.readState()
       if (s.lastCheckError) {
         s.lastCheckError = null
         this.writeState(s)
       }
-      return this.status(true)
+      return { status: this.status(true), error: null }
     }
     const payload = now.payload
     const s = this.readState()
@@ -474,32 +663,39 @@ export class LicenseService {
       const doc = await this.client.get(`licenseStatus/${payload.licenseId}`)
       if (!doc) throw new AppError('License status is not published yet. Contact Digital Target.', 'LICENSE')
       const d = doc.data
-      // 1. A re-signed certificate for this computer (renewal, plan / limit change, detachment).
+      // 1. Status of the license and of this device.
+      const block = remoteDecision(d, this.deviceId)
+      // 2. A re-signed certificate for this computer (renewal, plan / limit change, detachment) — never while the
+      //    license is suspended / revoked or this device is deactivated.
       const certs = d.certs && typeof d.certs === 'object' ? (d.certs as Record<string, unknown>) : {}
-      const decision = decideCertUpdate({ code: certs[this.deviceId], publicKeyPem: this.opts.publicKeyPem, deviceId: this.deviceId, current: { cert: this.readCert(), payload } })
-      if (decision.install) {
-        this.writeCert(decision.cert)
-        s.certUpdate = { at: new Date().toISOString(), summary: decision.summary }
-        this.log('info', `License certificate updated from Digital Target: ${decision.summary}`)
-      } else if (decision.reason !== 'none' && decision.reason !== 'same') {
-        this.log('warn', `Published license certificate ignored: ${decision.message}`)
+      if (!block) {
+        const decision = decideCertUpdate({ code: certs[this.deviceId], publicKeyPem: this.opts.publicKeyPem, deviceId: this.deviceId, current: { cert: this.readCert(), payload } })
+        if (decision.install) {
+          this.writeCert(decision.cert)
+          s.certUpdate = { at: this.iso(), summary: decision.summary }
+          this.log('info', `License certificate updated from Digital Target: ${decision.summary}`)
+        } else if (decision.reason !== 'none' && decision.reason !== 'same') {
+          this.log('warn', `Published license certificate ignored: ${decision.message}`)
+        }
+      } else if (certs[this.deviceId]) {
+        this.log('warn', `Published license certificate not installed: the license is ${block === 'deactivated' ? 'deactivated for this computer' : block}.`)
       }
-      // 2. Status of the license and of this device.
-      const status = typeof d.status === 'string' ? d.status : 'active'
-      const deactivated = Array.isArray(d.deactivatedDevices) ? (d.deactivatedDevices as unknown[]).map(String) : []
-      s.lastCheckAt = new Date().toISOString()
+      s.lastCheckAt = this.iso()
       s.lastCheckError = null
-      s.remoteStatus = status === 'suspended' || status === 'revoked' ? status : deactivated.includes(this.deviceId) ? 'revoked' : null
+      this.setRemote(s, payload.licenseId, block)
+      if (block) this.log('warn', `License check: blocked by Digital Target (${block}).`)
       // 3. "Powered by Digital Target" on customer documents.
       if (typeof d.poweredBy === 'boolean') s.remotePoweredBy = d.poweredBy
       this.writeState(s)
+      this.lastFailureAt = 0
     } catch (e) {
       const err = LicenseService.netError(e, 'license check')
       s.lastCheckError = err.message
       this.writeState(s)
-      if (!silent) throw err
+      this.lastFailureAt = this.now()
+      return { status: this.status(true), error: err }
     }
-    return this.status(true)
+    return { status: this.status(true), error: pollError }
   }
 
   /**
@@ -517,6 +713,16 @@ export class LicenseService {
     } catch (e) {
       throw LicenseService.netError(e, 'certificate check')
     }
+    const block = doc ? remoteDecision(doc.data, this.deviceId) : null
+    if (block) {
+      const s = this.readState()
+      this.setRemote(s, st.payload.licenseId, block)
+      s.lastCheckAt = this.iso()
+      s.lastCheckError = null
+      this.writeState(s)
+      const status = this.status(true)
+      return { installed: false, message: status.message, status }
+    }
     const certs = doc && doc.data.certs && typeof doc.data.certs === 'object' ? (doc.data.certs as Record<string, unknown>) : {}
     const decision = decideCertUpdate({ code: certs[this.deviceId], publicKeyPem: this.opts.publicKeyPem, deviceId: this.deviceId, current: { cert: this.readCert(), payload: st.payload } })
     if (!decision.install) {
@@ -528,7 +734,7 @@ export class LicenseService {
     }
     this.writeCert(decision.cert)
     const s = this.readState()
-    s.certUpdate = { at: new Date().toISOString(), summary: decision.summary }
+    s.certUpdate = { at: this.iso(), summary: decision.summary }
     this.writeState(s)
     this.log('info', `License certificate installed on request: ${decision.summary}`)
     // Reconnected: the license is centrally managed again — apply the published status right away.
@@ -558,8 +764,9 @@ export class LicenseService {
     if (existsSync(this.certFile)) unlinkSync(this.certFile)
     const s = this.readState()
     s.remotePoweredBy = null
-    s.remoteStatus = null
+    // A stored remote block is kept: removing and re-installing the certificate must not lift a suspension.
     s.certUpdate = null
+    s.activatedKey = null
     this.writeState(s)
     return this.status(true)
   }

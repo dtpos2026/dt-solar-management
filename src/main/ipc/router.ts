@@ -454,6 +454,7 @@ export const routes: Record<string, Route> = {
 
 /* ------------------------------------------------------------------------------------------ */
 
+const SIGN_IN_ROUTES = new Set(['auth.login', 'auth.pinLogin'])
 const PUBLIC_WHILE_LOCKED = new Set(['app.info', 'auth.unlock', 'auth.logout', 'license.status'])
 
 export async function dispatch(method: string, args: unknown, sender: WebContents): Promise<unknown> {
@@ -461,6 +462,8 @@ export async function dispatch(method: string, args: unknown, sender: WebContent
   if (!route) throw new AppError(`Unknown action: ${method}`, 'NOT_FOUND')
   const a = (args && typeof args === 'object' ? args : {}) as Args
   if (route.public) {
+    // Sign-in: verify the license in the background (never delays signing in).
+    if (SIGN_IN_ROUTES.has(method)) runtime.license?.refreshInBackground()
     return route.handler({ ctx: runtime.db ? publicCtx() : (null as unknown as Ctx), sender }, a)
   }
   const s = runtime.session
@@ -480,8 +483,10 @@ export async function dispatch(method: string, args: unknown, sender: WebContent
     }
   }
   if (route.write) {
-    const st = runtime.license!.status()
-    if (!st.canWrite) throw new AppError(`${st.message}`, 'LICENSE')
+    // Protected write: re-verify online when the last successful check is older than 5 minutes (waits <= 4 s; offline
+    // falls back to the signed offline policy). License, device and connectivity problems have distinct messages.
+    const st = await runtime.license!.ensureFresh()
+    if (!st.canWrite) throw new AppError(st.message, st.blockReason === 'device' ? 'LICENSE_DEVICE' : 'LICENSE')
   }
   return route.handler({ ctx, sender }, a)
 }

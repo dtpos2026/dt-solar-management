@@ -46,7 +46,15 @@ export interface LicenseCertificate {
   signature: string
 }
 
+/**
+ * - not_activated: no certificate installed (fresh install, or an old installation that used the former local trial).
+ *   Read-only: data can be viewed, printed, exported and backed up; nothing can be created until a license is installed.
+ * - trial: a Super Admin-issued trial license (plan 'trial', short expiry) — there is no local trial any more.
+ * - trial_expired: that trial license has passed its expiry date.
+ * - device_deactivated: Digital Target suspended / released THIS computer on the license (the license itself may be fine).
+ */
 export type LicenseMode =
+  | 'not_activated'
   | 'trial'
   | 'active'
   | 'grace'
@@ -54,12 +62,31 @@ export type LicenseMode =
   | 'expired'
   | 'suspended'
   | 'revoked'
+  | 'device_deactivated'
   | 'lease_expired'
   | 'clock_error'
   | 'invalid'
 
+/** Remote decision published by Digital Target (licenseStatus) that blocks this installation. */
+export type RemoteBlock = 'suspended' | 'revoked' | 'deactivated'
+
+/** Remote decision as persisted in BOTH the license folder state and the business DB (settings.license_remote). */
+export interface RemoteRecord {
+  licenseId: string
+  status: RemoteBlock
+  /** When this computer learned about the decision (ISO). Only a certificate issued after it can lift it offline. */
+  at: string
+}
+
+/** Why writes are blocked: the license, this device, connectivity (overdue check-in), missing activation, or the clock. */
+export type BlockReason = 'license' | 'device' | 'connectivity' | 'activation' | 'clock'
+
 export interface LicenseStatus {
   mode: LicenseMode
+  /** null when writes are allowed. */
+  blockReason: BlockReason | null
+  /** An old installation that used the former local 15-day trial (data kept, read-only until activated). */
+  legacyTrial: boolean
   canWrite: boolean
   message: string
   deviceId: string
@@ -111,5 +138,7 @@ export interface ActivationResult {
   status: LicenseStatus
 }
 
+/** Default length of a Super Admin-issued trial license (the portal sets the real expiry in the certificate). */
 export const TRIAL_DAYS = 15
+/** Display-only limits while no certificate is installed (writes are blocked anyway). */
 export const TRIAL_LIMITS = { maxFirms: 5, maxUsers: 5 }

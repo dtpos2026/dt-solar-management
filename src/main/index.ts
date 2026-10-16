@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
-import publicKeyPem from '../../resources/license-public.pem?raw'
+import builtInPublicKeyPem from '../../resources/license-public.pem?raw'
 import { runtime } from './runtime'
 import { openAppDatabase, closeDatabase } from './database'
 import { LicenseService } from './license/service'
@@ -11,6 +11,8 @@ import { initLog, log } from './log'
 import { AppError } from './services/context'
 import { startCloudJobs, stopCloudJobs } from './cloud/worker'
 import { registerDragHandler } from './whatsapp/outbox'
+import { readFileSync } from 'fs'
+import { getSetting, setSetting } from './services/context'
 
 const SPLASH_MIN_MS = 3200
 /**
@@ -67,19 +69,41 @@ function setupPaths(): void {
   initLog(join(userData, 'logs'))
 }
 
+/**
+ * License verification key. Packaged builds ALWAYS use the built-in key. Only an unpackaged (development / automated
+ * test) run may point at a throwaway test key with DTSP_LICENSE_PUBLIC_KEY_FILE (used by scripts/e2e-smoke.mjs).
+ */
+function licensePublicKey(): string {
+  const file = process.env.DTSP_LICENSE_PUBLIC_KEY_FILE
+  if (file && !app.isPackaged) {
+    try {
+      const pem = readFileSync(file, 'utf8')
+      if (pem.includes('BEGIN PUBLIC KEY')) {
+        log('warn', 'Development run: using a TEST license verification key (DTSP_LICENSE_PUBLIC_KEY_FILE).')
+        return pem
+      }
+    } catch {
+      /* fall back to the built-in key */
+    }
+  }
+  return builtInPublicKeyPem
+}
+
 function setupLicense(): void {
   runtime.license = new LicenseService({
     dir: runtime.paths.licenseDir,
-    publicKeyPem,
+    publicKeyPem: licensePublicKey(),
     firestore: LICENSE_FIRESTORE,
     appVersion: runtime.appVersion,
-    getDbTrialStart: () => {
-      const r = runtime.db?.prepare("SELECT value FROM app_meta WHERE key = 'trial_started_at'").get() as { value: string } | undefined
-      return r ? Number(r.value) : null
+    // Copy of Digital Target's last blocking decision in the business DB (deleting license/state.json does not lift it).
+    getDbRemote: () => (runtime.db ? getSetting<unknown>(runtime.db, 'license_remote', null) : null),
+    setDbRemote: (r) => {
+      if (!runtime.db) return
+      if (r) setSetting(runtime.db, 'license_remote', r)
+      else runtime.db.prepare("DELETE FROM settings WHERE key = 'license_remote'").run()
     },
-    setDbTrialStart: (ts) => {
-      runtime.db?.prepare("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('trial_started_at', ?)").run(String(ts))
-    },
+    // Old installations that used the former local trial (wording only — there is no local trial any more).
+    hasLegacyTrial: () => !!runtime.db?.prepare("SELECT 1 FROM app_meta WHERE key = 'trial_started_at'").get(),
     onChange: (s) => broadcast('dt:license', s)
   })
   runtime.license.touch()
@@ -121,11 +145,11 @@ function startBackgroundJobs(): void {
   setTimeout(backup, 45_000)
   setInterval(backup, 60 * 60 * 1000)
 
-  const check = (): void => {
-    runtime.license?.checkIn(true).catch(() => undefined)
-  }
-  setTimeout(check, 20_000)
-  setInterval(check, 6 * 60 * 60 * 1000)
+  // License check at start-up (in the background, never delays the window) and hourly; protected writes and sign-in
+  // re-check when the last verification is older than 5 minutes.
+  const check = (): void => runtime.license?.refreshInBackground()
+  setTimeout(check, 2_000)
+  setInterval(check, 60 * 60 * 1000)
   setInterval(() => {
     try {
       runtime.license?.touch()

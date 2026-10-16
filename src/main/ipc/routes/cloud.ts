@@ -64,9 +64,13 @@ export const cloudRoutes: RouteMap = {
   /* ------------------------------------------------ first-run setup ------------------------------------------------ */
   'auth.setup': {
     public: true,
-    handler: (_c, a) => {
+    handler: async (_c, a) => {
       const db = getDb()
-      if (a.demoData && !runtime.license?.status(true).canWrite) throw new AppError('Activate a license first.', 'LICENSE')
+      // No local trial: the business (firm, owner, data) can only be created once a valid certificate is installed.
+      const lic = runtime.license ? await runtime.license.ensureFresh() : null
+      if (!lic || !lic.canWrite) {
+        throw new AppError(lic && lic.mode !== 'not_activated' ? lic.message : 'Activate your license first (online or offline activation) to finish the setup.', 'LICENSE')
+      }
       const r = runSetup(db, a as never)
       const user = auth.buildSessionUser(db, r.userId)
       runtime.session = { user, firmId: r.firmId, locked: false, lastActivity: Date.now() }

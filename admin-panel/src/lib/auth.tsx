@@ -7,7 +7,7 @@ import type { AdminDoc } from './types'
 import { errorMessage } from './format'
 import { hasPerm, isOwnerRole } from './perm'
 import { logActivity } from './audit'
-import { clampSessionTimeout, DEFAULT_SESSION_TIMEOUT_MIN } from './branding'
+import { clampSessionTimeout, DEFAULT_SESSION_TIMEOUT_MIN, MIN_SESSION_TIMEOUT_MIN } from './branding'
 
 export type AuthPhase =
   | { phase: 'loading' }
@@ -59,13 +59,11 @@ export function isBootstrapOwner(user: User | null | undefined): boolean {
   return !!user?.email && user.email.toLowerCase() === BOOTSTRAP_OWNER_EMAIL
 }
 
-async function loadTimeoutMin(): Promise<number> {
-  try {
-    const s = await getDoc(doc(db, 'settings', 'portal'))
-    return s.exists() ? clampSessionTimeout(s.data().sessionTimeoutMin) : DEFAULT_SESSION_TIMEOUT_MIN
-  } catch {
-    return DEFAULT_SESSION_TIMEOUT_MIN
-  }
+/** Last known settings/portal.sessionTimeoutMin on this browser (the live value replaces it within a moment). */
+const TIMEOUT_CACHE_KEY = 'dtsp-admin.sessionTimeoutMin'
+function cachedTimeoutMin(): number {
+  const v = readStoredMs(TIMEOUT_CACHE_KEY)
+  return v === null ? DEFAULT_SESSION_TIMEOUT_MIN : clampSessionTimeout(v)
 }
 
 /** Writes a security entry but never blocks sign-out for more than ~3 s. */
@@ -79,98 +77,167 @@ async function logSecurity(action: string, details: string): Promise<void> {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthPhase>({ phase: 'loading' })
   const [notice, setNotice] = useState<string | null>(null)
-  const [timeoutMin, setTimeoutMin] = useState(DEFAULT_SESSION_TIMEOUT_MIN)
+  const [timeoutMin, setTimeoutMin] = useState(cachedTimeoutMin)
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null)
   /** Set by signIn(): the next admin evaluation is a fresh sign-in (logged, no stale-session check). */
   const explicitSignIn = useRef(false)
   const lastActivity = useRef(Date.now())
+  /** Re-runs the admin check of the current session (after the owner record is created). */
+  const recheck = useRef<(() => Promise<void>) | null>(null)
 
-  const evaluateUser = useCallback(async (user: User) => {
+  /**
+   * One session per Firebase user. The shell opens after ONE read (admins/{uid}); the live record listener and the
+   * settings/portal (inactivity limit) listener start afterwards. The limit is only awaited when a remembered session
+   * was idle longer than the shortest possible limit and the real limit decides whether it ended.
+   */
+  const startSession = useCallback((user: User): (() => void) => {
+    let stopped = false
+    let resolved = false
+    let evaluating = false
+    let latest: { data: AdminDoc | null; error: unknown } | null = null
     setState({ phase: 'checking', user })
-    let adminDoc: AdminDoc | null = null
-    let readError: unknown = null
-    try {
-      const snap = await getDoc(doc(db, 'admins', user.uid))
-      if (snap.exists()) adminDoc = snap.data() as AdminDoc
-    } catch (e) {
-      readError = e
+
+    let portalStop: (() => void) | null = null
+    let portalValue: Promise<number> = Promise.resolve(cachedTimeoutMin())
+    const startPortal = () => {
+      if (portalStop || stopped) return
+      portalValue = new Promise<number>((resolve) => {
+        portalStop = onSnapshot(
+          doc(db, 'settings', 'portal'),
+          (s) => {
+            const v = s.exists() ? clampSessionTimeout(s.data().sessionTimeoutMin) : DEFAULT_SESSION_TIMEOUT_MIN
+            writeStored(TIMEOUT_CACHE_KEY, v)
+            setTimeoutMin(v)
+            resolve(v)
+          },
+          () => {
+            // Not an admin yet (bootstrap) or offline: keep the last known value; restarted once the admin is confirmed.
+            portalStop = null
+            resolve(cachedTimeoutMin())
+          }
+        )
+      })
     }
-    const fresh = explicitSignIn.current
-    explicitSignIn.current = false
-    if (adminDoc && adminDoc.active === false) {
-      setNotice(`Your admin account (${user.email ?? ''}) has been disabled. Contact the owner.`)
-      await fbSignOut(auth)
-      return
-    }
-    if (adminDoc) {
-      const limitMin = await loadTimeoutMin()
-      setTimeoutMin(limitMin)
-      const last = readStoredMs(ACTIVITY_KEY)
-      if (!fresh && last !== null && Date.now() - last > limitMin * 60_000) {
-        // A remembered Firebase session restored after the inactivity limit: end it.
-        await logSecurity('session_expired', `Remembered session ended: no activity for more than ${limitMin} minutes`)
-        writeStored(ACTIVITY_KEY, null)
-        setNotice(`Your session ended after ${limitMin} minutes of inactivity. Please sign in again.`)
+
+    const evaluate = async () => {
+      evaluating = true
+      try {
+        const first = latest
+        if (!first) return
+        const fresh = explicitSignIn.current
+        explicitSignIn.current = false
+        const adminDoc = first.data
+        if (adminDoc && adminDoc.active === false) {
+          setNotice(`Your admin account (${user.email ?? ''}) has been disabled. Contact the owner.`)
+          await fbSignOut(auth)
+          return
+        }
+        if (adminDoc) {
+          const last = readStoredMs(ACTIVITY_KEY)
+          if (!fresh && last !== null && Date.now() - last > MIN_SESSION_TIMEOUT_MIN * 60_000) {
+            // A remembered Firebase session idle longer than the shortest limit: the configured limit decides.
+            startPortal()
+            const limitMin = await portalValue
+            if (stopped) return
+            if (Date.now() - last > limitMin * 60_000) {
+              await logSecurity('session_expired', `Remembered session ended: no activity for more than ${limitMin} minutes`)
+              writeStored(ACTIVITY_KEY, null)
+              setNotice(`Your session ended after ${limitMin} minutes of inactivity. Please sign in again.`)
+              await fbSignOut(auth)
+              return
+            }
+          }
+          if (stopped) return
+          // The record may have changed while the limit was read.
+          const now = latest?.error ? adminDoc : latest?.data ?? null
+          if (!now || now.active === false) {
+            setNotice(now ? 'Your admin account has been disabled. Contact the owner.' : 'Your admin record was removed. Contact the owner.')
+            await fbSignOut(auth)
+            return
+          }
+          resolved = true
+          lastActivity.current = Date.now()
+          writeStored(ACTIVITY_KEY, lastActivity.current)
+          setNotice(null)
+          setState({ phase: 'admin', user, admin: now })
+          startPortal()
+          if (fresh) void logSecurity('admin_signed_in', `Signed in (${navigator.userAgent.match(/(Edg|Chrome|Firefox|Safari)\/[\d.]+/)?.[0] ?? 'browser'})`)
+          return
+        }
+        if (isBootstrapOwner(user) && !first.error) {
+          // initialiseSuperAdmin creates the owner record and re-runs the check.
+          setState({ phase: 'bootstrap', user })
+          return
+        }
+        const why =
+          first.error && (first.error as { code?: string }).code !== 'permission-denied'
+            ? `Could not verify your access: ${errorMessage(first.error)}`
+            : `Not authorised: ${user.email ?? 'this account'} is not a Super Admin of DT Solar Pro License Control.`
+        setNotice(why)
         await fbSignOut(auth)
-        return
+      } finally {
+        evaluating = false
       }
-      lastActivity.current = Date.now()
-      writeStored(ACTIVITY_KEY, lastActivity.current)
-      setNotice(null)
-      setState({ phase: 'admin', user, admin: adminDoc })
-      if (fresh) void logSecurity('admin_signed_in', `Signed in (${navigator.userAgent.match(/(Edg|Chrome|Firefox|Safari)\/[\d.]+/)?.[0] ?? 'browser'})`)
-      return
     }
-    if (isBootstrapOwner(user)) {
-      setState({ phase: 'bootstrap', user })
-      return
+
+    // Live record once the admin is confirmed: permission changes apply at once; disabling / deleting signs out.
+    let liveStop: (() => void) | null = null
+    const startLive = () => {
+      if (liveStop || stopped) return
+      liveStop = onSnapshot(
+        doc(db, 'admins', user.uid),
+        (s) => {
+          if (stopped || !resolved || (!s.exists() && s.metadata.fromCache)) return
+          const data = s.exists() ? (s.data() as AdminDoc) : null
+          latest = { data, error: null }
+          if (!data || data.active === false) {
+            setNotice(data ? 'Your admin account has been disabled. Contact the owner.' : 'Your admin record was removed. Contact the owner.')
+            void fbSignOut(auth)
+            return
+          }
+          setState((st) => (st.phase === 'admin' && JSON.stringify(st.admin) !== JSON.stringify(data) ? { ...st, admin: data } : st))
+        },
+        () => undefined
+      )
     }
-    const why =
-      readError && (readError as { code?: string }).code !== 'permission-denied'
-        ? `Could not verify your access: ${errorMessage(readError)}`
-        : `Not authorised: ${user.email ?? 'this account'} is not a Super Admin of DT Solar Pro License Control.`
-    setNotice(why)
-    await fbSignOut(auth)
+    // First check: one read of admins/{uid}; nothing else is awaited before the shell opens.
+    const check = () =>
+      getDoc(doc(db, 'admins', user.uid)).then(
+        (s) => { latest = { data: s.exists() ? (s.data() as AdminDoc) : null, error: null } },
+        (e) => { latest = { data: null, error: e } }
+      ).then(async () => {
+        if (stopped || evaluating) return
+        await evaluate()
+        if (resolved) startLive()
+      })
+    recheck.current = check
+    void check()
+    return () => {
+      stopped = true
+      if (recheck.current === check) recheck.current = null
+      liveStop?.()
+      portalStop?.()
+      portalStop = null
+    }
   }, [])
 
   useEffect(() => {
-    return onAuthStateChanged(auth, (user) => {
+    let stop: (() => void) | null = null
+    const unsub = onAuthStateChanged(auth, (user) => {
+      stop?.()
+      stop = null
       if (!user) {
         setSecondsLeft(null)
         setState({ phase: 'signedOut' })
-      } else void evaluateUser(user)
+      } else stop = startSession(user)
     })
-  }, [evaluateUser])
+    return () => {
+      unsub()
+      stop?.()
+    }
+  }, [startSession])
 
   const uid = state.phase === 'admin' ? state.user.uid : null
-
-  // Live admin record: permission changes apply at once; disabling or deleting the record signs the admin out.
-  useEffect(() => {
-    if (!uid) return
-    return onSnapshot(
-      doc(db, 'admins', uid),
-      (s) => {
-        if (!s.exists() || s.data()?.active === false) {
-          setNotice(s.exists() ? 'Your admin account has been disabled. Contact the owner.' : 'Your admin record was removed. Contact the owner.')
-          void fbSignOut(auth)
-          return
-        }
-        const next = s.data() as AdminDoc
-        setState((st) => (st.phase === 'admin' && JSON.stringify(st.admin) !== JSON.stringify(next) ? { ...st, admin: next } : st))
-      },
-      () => undefined
-    )
-  }, [uid])
-
-  // Live session timeout setting.
-  useEffect(() => {
-    if (!uid) return
-    return onSnapshot(
-      doc(db, 'settings', 'portal'),
-      (s) => setTimeoutMin(s.exists() ? clampSessionTimeout(s.data().sessionTimeoutMin) : DEFAULT_SESSION_TIMEOUT_MIN),
-      () => undefined
-    )
-  }, [uid])
 
   // Inactivity tracking + automatic sign-out.
   useEffect(() => {
@@ -238,20 +305,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (name: string) => {
       const user = auth.currentUser
       if (!user || !isBootstrapOwner(user)) throw new Error('Only the owner account can initialise the Super Admin.')
-      await setDoc(doc(db, 'admins', user.uid), {
-        email: user.email,
-        name: name.trim() || 'Digital Target',
-        role: 'owner',
-        permissions: [],
-        active: true,
-        createdAt: serverTimestamp(),
-        createdBy: user.email
-      })
       explicitSignIn.current = true
-      await evaluateUser(user)
+      try {
+        await setDoc(doc(db, 'admins', user.uid), {
+          email: user.email,
+          name: name.trim() || 'Digital Target',
+          role: 'owner',
+          permissions: [],
+          active: true,
+          createdAt: serverTimestamp(),
+          createdBy: user.email
+        })
+      } catch (e) {
+        explicitSignIn.current = false
+        throw e
+      }
+      await recheck.current?.()
       void logActivity({ action: 'owner_initialised', category: 'security', target: user.email ?? '', targetType: 'admin', details: 'Owner (Super Admin) record created' }).catch(() => undefined)
     },
-    [evaluateUser]
+    []
   )
 
   const stayActive = useCallback(() => {

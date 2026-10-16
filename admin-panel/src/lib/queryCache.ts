@@ -79,6 +79,20 @@ export function subscribeShared<T>(key: string, start: Start<T>, onState: Listen
   }
 }
 
+/**
+ * Current data of a shared source without subscribing (undefined when nothing is cached). Lets a page that mounts
+ * while the listener is open (or lingering) render the cached data on its first paint instead of a loading state.
+ */
+export function peekShared<T>(key: string): T | undefined {
+  return (sources.get(key) as Source<T> | undefined)?.state.data
+}
+
+/** True while a live listener for `key` is open (data delivered by it is current). */
+export function isSharedLive(key: string): boolean {
+  const s = sources.get(key)
+  return !!s && !!s.stop && s.state.data !== undefined && !s.state.error
+}
+
 /** Number of open shared listeners (diagnostics / tests). */
 export function openSourceCount(): number {
   let n = 0
@@ -128,6 +142,17 @@ export function cachedFetch<T>(key: string, load: () => Promise<T>, ttlMs = DEFA
   entry.promise = p
   entries.set(key, entry)
   return p
+}
+
+/** Cached value younger than `ttlMs` (no load is started), or undefined. */
+export function peekCached<T>(key: string, ttlMs = DEFAULT_TTL_MS): T | undefined {
+  const e = entries.get(key)
+  return e && 'value' in e && clock() - e.at < ttlMs ? (e.value as T) : undefined
+}
+
+/** Stores a value just written by this client (e.g. saved settings), so the next reader needs no read. */
+export function primeCache<T>(key: string, value: T): void {
+  entries.set(key, { at: clock(), value })
 }
 
 /** Drops cached one-shot reads whose key equals `prefix` or starts with `prefix:`; no argument = everything. */

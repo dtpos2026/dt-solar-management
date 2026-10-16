@@ -282,7 +282,8 @@ service cloud.firestore {
         && resource.data.status != 'cancelled'
         && (can('billing.create')
             || (can('billing.payments') && changed().hasOnly(['paid', 'balance', 'status', 'updatedAt', 'lastPaymentAt'])));
-      allow delete: if false;
+      // Deletion (billing.create / owner): only a cancelled invoice or one without money recorded (paid == 0).
+      allow delete: if can('billing.create') && (resource.data.status == 'cancelled' || resource.data.get('paid', 0) == 0);
 
       match /payments/{paymentId} {
         allow read: if canAny(['billing.view', 'billing.create', 'billing.payments']);
@@ -290,7 +291,9 @@ service cloud.firestore {
         allow update: if can('billing.payments')
           && changed().hasOnly(['cancelled', 'cancelledAt', 'cancelledBy', 'cancelReason'])
           && request.resource.data.cancelled == true;
-        allow delete: if false;
+        // Only together with the invoice itself, in the same batch.
+        allow delete: if can('billing.create')
+          && !existsAfter(/databases/$(database)/documents/invoices/$(invoiceId));
       }
     }
 
@@ -300,7 +303,7 @@ service cloud.firestore {
       allow list: if false;
       allow create, update: if canAny(['billing.create', 'billing.payments']) && secretId(token, 24)
         && request.resource.data.status in ['valid', 'cancelled'];
-      allow delete: if false;
+      allow delete: if can('billing.create');
     }
 
     match /counters/{name} {

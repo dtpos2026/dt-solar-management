@@ -121,7 +121,9 @@ cancelledAt, cancelReason, lastPaymentAt`
 
 Totals are computed by `src/lib/billing.ts` (unit tested). `overdue` is derived (`balance > 0 && dueDate < now`).
 Payments are append-only: `amount, method, reference, date, receiptNo, createdAt, createdBy` (+ `cancelled,
-cancelledAt, cancelledBy, cancelReason` to void one). Invoices are never deleted — they are cancelled.
+cancelledAt, cancelledBy, cancelReason` to void one). Invoices are cancelled; a cancelled invoice, or one with `paid == 0`, may be deleted by
+`billing.create` — its `payments/*` (rules: only while the invoice is deleted in the same batch, `!existsAfter`), its
+`publicInvoices/{verifyToken}` copy and the invoice go in one batch with a `financial` activity entry.
 
 ### `publicInvoices/{verifyToken}` — public `get`, no `list`
 `number, issuerName, issuerPhone, issuerEmail, issuerAddress, issuerLogo, customerName (masked per privacy setting),

@@ -76,26 +76,75 @@ export function ErrorBox({ children }: { children: ReactNode }) {
   return <div className="mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{children}</div>
 }
 
-/** Renders children into a body-level node that is the only thing printed (A4). */
-export function PrintPortal({ children }: { children: ReactNode }) {
+export type Paper = 'a4' | '80mm'
+
+/**
+ * Renders children into a body-level node that is the only thing printed. `paper` selects the print CSS:
+ * A4 (`@page size A4`) or an 80 mm thermal roll (`@page size 80mm auto`, no margins, 72 mm printable width).
+ */
+export function PrintPortal({ children, paper = 'a4' }: { children: ReactNode; paper?: Paper }) {
+  const page = paper === '80mm' ? '@page { size: 80mm auto; margin: 0; }' : '@page { size: A4; margin: 12mm; }'
   return createPortal(
-    <div className="dt-print-root">
+    <div className={`dt-print-root dt-paper-${paper}`}>
       <style>{`
         .dt-print-root { display: none; }
         @media print {
-          @page { size: A4; margin: 12mm; }
+          ${page}
+          html, body, #root { height: auto !important; overflow: visible !important; }
           body > *:not(.dt-print-root) { display: none !important; }
-          body { background: #fff !important; }
+          body { background: #fff !important; margin: 0 !important; }
           .dt-print-root { display: block; color: #1a1030; font-size: 12px; }
           .dt-print-root * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .dt-print-root .dt-a4 { width: auto !important; min-height: 270mm !important; padding: 0 !important; box-shadow: none !important; }
           .dt-print-root .dt-a4 > .absolute.bottom-6 { left: 0; right: 0; bottom: 0; }
+          .dt-paper-80mm .dt-thermal { width: 72mm !important; margin: 0 auto; padding: 3mm 0 6mm; color: #000; }
         }
       `}</style>
       {children}
     </div>,
     document.body
   )
+}
+
+/** Prints the current PrintPortal content; the document title becomes the suggested PDF file name ("Save as PDF"). */
+export function printNow(title: string) {
+  const prev = document.title
+  document.title = title
+  const restore = () => {
+    document.title = prev
+    window.removeEventListener('afterprint', restore)
+  }
+  window.addEventListener('afterprint', restore)
+  // Let React commit the print content (and images decode) first.
+  setTimeout(() => {
+    window.print()
+    setTimeout(restore, 1000)
+  }, 200)
+}
+
+/** Copies text to the clipboard (with a fallback for non-secure contexts). */
+export async function copyText(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    const ok = document.execCommand('copy')
+    ta.remove()
+    if (!ok) throw new Error('Copy is blocked by this browser — select the link and copy it manually.')
+  }
+}
+
+/** International WhatsApp number from a Pakistani / international phone ("0300-1234567" → "923001234567"); '' if unusable. */
+export function waNumber(phone: string): string {
+  let d = (phone || '').replace(/\D/g, '')
+  if (d.startsWith('00')) d = d.slice(2)
+  if (d.startsWith('0')) d = '92' + d.slice(1)
+  return /^\d{10,15}$/.test(d) ? d : ''
 }
 
 export function downloadCsv(name: string, csv: string) {

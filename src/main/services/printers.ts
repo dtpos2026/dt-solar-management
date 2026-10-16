@@ -30,7 +30,7 @@ export const PRINTER_SETTING: Record<PrinterRole, string> = {
 }
 
 /** Print kinds rendered by the print window (src/renderer/src/print/PrintView.tsx). */
-const REPORT_KINDS = new Set(['report', 'stock', 'statement', 'project', 'material'])
+const REPORT_KINDS = new Set(['report', 'stock', 'statement', 'project', 'material', 'closing'])
 
 export function isPaperSize(v: unknown): v is PaperSize {
   return typeof v === 'string' && (PAPER_SIZES as readonly string[]).includes(v)
@@ -77,6 +77,8 @@ export interface PrintJobInput {
   settings: Record<string, unknown>
   /** Printer names the operating system reports right now. When given, a configured printer missing from it is not used. */
   available?: string[] | null
+  /** Page orientation chosen by the print window ('landscape' for wide reports); ignored for thermal rolls. */
+  orientation?: unknown
 }
 
 export interface PrintJob {
@@ -92,6 +94,8 @@ export interface PrintJob {
   pdfPageSize: PrintPageSize
   silent: boolean
   marginType: 'default' | 'none'
+  /** A4/A5/Letter/Legal turned sideways (wide reports). Always false on thermal rolls. */
+  landscape: boolean
 }
 
 const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '')
@@ -136,7 +140,32 @@ export function resolvePrintJob(input: PrintJobInput): PrintJob {
     pageSize: printPageSize(paper),
     pdfPageSize: pdfPageSize(paper),
     silent: !!s.print_direct && !!printer,
-    marginType: isThermal(paper) ? 'none' : 'default'
+    marginType: isThermal(paper) ? 'none' : 'default',
+    landscape: !isThermal(paper) && input.orientation === 'landscape'
+  }
+}
+
+/**
+ * Options for webContents.printToPDF(), shared by Save PDF (print.pdf), the page view and WhatsApp attachments
+ * (renderToPdf) so every PDF path paginates the same way:
+ *  - sheets (A4 …): the page size AND margins come from the print CSS (@page in the print window: size, orientation,
+ *    margins and the "Page x of y" footer), so the PDF equals the preview's page view and the physical print;
+ *  - thermal rolls: the receipt sets @page 80mm x <content height> (one continuous strip, by design) and no margins.
+ */
+export function pdfOptionsFor(job: Pick<PrintJob, 'paper' | 'pdfPageSize' | 'landscape'>): {
+  pageSize: PrintPageSize
+  printBackground: true
+  preferCSSPageSize: true
+  landscape: boolean
+  margins?: { top: number; bottom: number; left: number; right: number }
+} {
+  const thermal = isThermal(job.paper)
+  return {
+    pageSize: job.pdfPageSize,
+    printBackground: true,
+    preferCSSPageSize: true,
+    landscape: !thermal && job.landscape,
+    ...(thermal ? { margins: { top: 0.08, bottom: 0.08, left: 0.08, right: 0.08 } } : {})
   }
 }
 
@@ -236,4 +265,29 @@ export function printFailureText(reason: string | null | undefined): string {
   if (/cancel/i.test(r)) return 'Printing was cancelled.'
   if (/Print job failed/i.test(r)) return 'The printer reported an error while printing (check that it is switched on, connected and has paper).'
   return r
+}
+
+/* ------------------------------------------------ PDF inspection ------------------------------------------------ */
+
+/** Number of pages in a PDF produced by Chromium (counts '/Type /Page' objects, not the '/Type /Pages' tree). */
+export function countPdfPages(pdf: Uint8Array): number {
+  const s = Buffer.from(pdf).toString('latin1')
+  return (s.match(/\/Type\s*\/Page(?![a-zA-Z])/g) ?? []).length
+}
+
+/** MediaBox [x0 y0 x1 y1] of each page (in points); a box inherited from the page tree is applied. */
+export function pdfPageBoxes(pdf: Uint8Array): Array<[number, number, number, number] | null> {
+  const s = Buffer.from(pdf).toString('latin1')
+  const parse = (t: string): [number, number, number, number] => t.trim().split(/\s+/).map((n) => Math.round(Number(n))) as [number, number, number, number]
+  const tree = /\/Type\s*\/Pages[^]*?\/MediaBox\s*\[([\d.\s-]+)\]/.exec(s)
+  const out: Array<[number, number, number, number] | null> = []
+  const re = /\/Type\s*\/Page(?![a-zA-Z])/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(s))) {
+    const start = s.lastIndexOf(' obj', m.index)
+    const end = s.indexOf('endobj', m.index)
+    const box = /\/MediaBox\s*\[([\d.\s-]+)\]/.exec(s.slice(Math.max(0, start), end < 0 ? undefined : end))
+    out.push(box ? parse(box[1]) : tree ? parse(tree[1]) : null)
+  }
+  return out
 }

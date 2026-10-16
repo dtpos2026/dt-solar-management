@@ -679,6 +679,43 @@ ALTER TABLE whatsapp_log_v8 RENAME TO whatsapp_log;
 CREATE INDEX idx_wa_dedupe ON whatsapp_log(dedupe_key, created_at);
 CREATE INDEX idx_wa_firm ON whatsapp_log(firm_id, created_at);
 `
+  },
+  {
+    version: 9,
+    name: 'legacy imports (verbatim archive + id map) and document-linked party adjustments (payment discounts)',
+    sql: /* sql */ `
+-- One row per imported legacy backup (e.g. a Vyapar .vyb file).
+CREATE TABLE legacy_sources (
+  id INTEGER PRIMARY KEY,
+  system TEXT NOT NULL,
+  file_name TEXT,
+  file_sha256 TEXT,
+  imported_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  summary TEXT
+);
+-- Every source row, verbatim (JSON), so no original value is ever lost — including fields the new schema cannot represent.
+CREATE TABLE legacy_records (
+  id INTEGER PRIMARY KEY,
+  source_id INTEGER NOT NULL REFERENCES legacy_sources(id),
+  table_name TEXT NOT NULL,
+  legacy_id TEXT,
+  data TEXT NOT NULL
+);
+CREATE INDEX idx_legacy_records ON legacy_records(source_id, table_name, legacy_id);
+-- Old id -> new row, for every entity whose id could not be kept identical.
+CREATE TABLE legacy_id_map (
+  source_id INTEGER NOT NULL REFERENCES legacy_sources(id),
+  entity TEXT NOT NULL,
+  legacy_id TEXT NOT NULL,
+  new_table TEXT NOT NULL,
+  new_id INTEGER NOT NULL,
+  note TEXT,
+  PRIMARY KEY (source_id, entity, legacy_id, new_table)
+);
+-- A party adjustment (e.g. discount given while receiving a payment) can settle part of a specific invoice / bill.
+ALTER TABLE party_adjustments ADD COLUMN document_id INTEGER REFERENCES documents(id);
+CREATE INDEX idx_padj_doc ON party_adjustments(document_id);
+`
   }
 ]
 

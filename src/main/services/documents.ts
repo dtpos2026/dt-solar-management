@@ -43,7 +43,7 @@ import {
   stockIn,
   stockOut
 } from './inventory'
-import { applyAdvances, docAllocated, docDue, docReturned, insertPayment } from './payments'
+import { applyAdvances, docAdjusted, docAllocated, docDue, docReturned, insertPayment } from './payments'
 import { partyBalance } from './parties'
 import { assertPeriodOpen } from './closing'
 
@@ -144,7 +144,7 @@ function assertCanCreate(ctx: Ctx, type: DocType): void {
 }
 
 function isLocked(ctx: Ctx, docId: number): boolean {
-  return docAllocated(ctx.db, docId) > EPS || docReturned(ctx.db, docId) > EPS
+  return docAllocated(ctx.db, docId) > EPS || docReturned(ctx.db, docId) > EPS || docAdjusted(ctx.db, docId) > EPS
 }
 
 function assertCanEdit(ctx: Ctx, type: DocType, docId: number, action: 'edit' | 'cancel'): void {
@@ -227,7 +227,7 @@ function validateAndCompute(ctx: Ctx, input: DocInput): { lines: ComputedLine[];
   return { lines, totals }
 }
 
-interface DocRow {
+export interface DocRow {
   id: number
   firm_id: number
   doc_type: DocType
@@ -262,7 +262,7 @@ function defaultStatus(type: DocType): string {
 const QUOTATION_STATUSES = ['draft', 'sent', 'accepted', 'rejected', 'converted']
 
 /** Posts stock & serial effects for a saved document. Lines must already be inserted. */
-function postStock(ctx: Ctx, doc: DocRow): void {
+export function postStock(ctx: Ctx, doc: DocRow): void {
   const db = ctx.db
   const meta = DOC_TYPES[doc.doc_type]
   if (meta.stock === 0 || doc.status === 'cancelled') return
@@ -329,7 +329,7 @@ function postStock(ctx: Ctx, doc: DocRow): void {
 }
 
 /** Keeps documents.cost_total equal to the sum of its line costs (used by P&L and project reports). */
-function refreshDocCost(ctx: Ctx, docId: number): void {
+export function refreshDocCost(ctx: Ctx, docId: number): void {
   ctx.db
     .prepare('UPDATE documents SET cost_total = ROUND((SELECT COALESCE(SUM(cost_total),0) FROM document_lines WHERE document_id = ?), 2) WHERE id = ?')
     .run(docId, docId)

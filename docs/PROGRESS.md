@@ -11,6 +11,7 @@ Status keys: [x] done & tested · [~] partial · [!] blocked (needs credentials 
 - [x] Cloud: setup-wizard License step (activate with registration details / 15-day trial / offline), heartbeat every 15 min, consented location (off / approximate / manual), support messages with offline queue, certificate refresh (renew / plan / limits / detach), License & About inside Settings
 - [x] Assist: offline Urdu / English help assistant (58 articles, Roman-Urdu, typo tolerant); WhatsApp Web module inside the app (QR link device, stays linked), Send on WhatsApp (PDF + chat + drag tile + send log, no automation)
 - [x] White-label: sidebar shows the active firm's name and logo; Digital Target stays in the footer
+- [x] UI polish (desktop-ui): min 12px text, right-aligned tabular amounts/dates, consistent page headers, collapsible sidebar below 1024px, no horizontal page scroll or clipped buttons at 1366x768, 1280x720, 1920x1080 and 125%/150% scaling (23 screens + 3 modals audited), row actions pinned on wide tables
 
 ## Super Admin portal (Firebase Spark: Firestore + Auth only)
 - [x] Role-based admins (owner, manager, sales, billing, support, technical, custom) enforced by Firestore rules; 28 rules tests on the emulator

@@ -175,6 +175,8 @@ export const cloudRoutes: RouteMap = {
       cloud.setLocation(c.ctx, { mode: a.mode, manual: a.manual })
       // The change (including removal of a previously shared location) is sent right away when online.
       if (cloud.online) await cloud.sendHeartbeat()
+      // Offline: still read the Windows location service once so the customer sees whether it is available.
+      else await cloud.location(true)
       return cloud.overview()
     }
   },

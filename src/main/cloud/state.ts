@@ -1,7 +1,7 @@
 /** Small JSON state file for the online features (kept in the license folder next to install.json). */
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import type { GeoCache } from './location'
+import type { DeviceFix, GeoCache } from './location'
 import type { HeartbeatPayload } from './heartbeat'
 import type { SyncState } from './support'
 
@@ -29,6 +29,10 @@ export interface CloudState {
   geoError: string | null
   /** When the customer last changed the manual location (sent as location.updatedAt). */
   manual: { value: string; at: string } | null
+  /** Last Windows location service fix, error and attempt time (refresh at most every 6 h). */
+  device: DeviceFix | null
+  deviceError: string | null
+  deviceAttemptAt: string | null
   support: SupportRecord
 }
 
@@ -38,6 +42,9 @@ export function emptyState(): CloudState {
     geo: null,
     geoError: null,
     manual: null,
+    device: null,
+    deviceError: null,
+    deviceAttemptAt: null,
     support: {}
   }
 }
@@ -51,6 +58,9 @@ export function loadCloudState(dir: string): CloudState {
       geo: j.geo ?? null,
       geoError: j.geoError ?? null,
       manual: j.manual ?? null,
+      device: j.device ?? null,
+      deviceError: j.deviceError ?? null,
+      deviceAttemptAt: j.deviceAttemptAt ?? null,
       support: { ...(j.support ?? {}) }
     }
   } catch {

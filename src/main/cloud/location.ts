@@ -4,16 +4,21 @@
  *  - approximate: derived from the internet (IP) address through https://ipwho.is/ — city level, labelled
  *    "approximate", cached for 24 hours, accuracy about 25 km.
  *  - manual: coordinates typed by the customer in Settings (`location_manual`: "lat,lng" or "lat,lng | label").
- * Coordinates are never invented: when a lookup fails or the manual entry is invalid, no location is sent.
+ *  - device: the Windows location service (GPS / Wi-Fi positioning) read through PowerShell
+ *    (System.Device.Location.GeoCoordinateWatcher) — only when the customer chose "Use this computer's location
+ *    service" and Windows location is on. Refreshed at most every 6 hours, never on every heartbeat.
+ * Coordinates are never invented: when a lookup fails or the manual entry is invalid, no location is sent — there is no
+ * silent fallback from one source to another (the customer chooses device | approximate | manual | off).
  */
+import { execFile } from 'child_process'
 
-export type LocationMode = 'off' | 'approximate' | 'manual'
+export type LocationMode = 'off' | 'device' | 'approximate' | 'manual'
 
 export interface HeartbeatLocation {
   lat: number
   lng: number
   accuracyKm: number
-  source: 'approximate' | 'manual'
+  source: 'device' | 'approximate' | 'manual'
   label: string
   consent: true
   updatedAt: string
@@ -31,8 +36,10 @@ export const GEO_CACHE_MS = 24 * 60 * 60 * 1000
 export const DEFAULT_GEOIP_URL = 'https://ipwho.is/?fields=success,message,city,region,country,latitude,longitude'
 
 export function normalizeMode(v: unknown): LocationMode {
-  return v === 'approximate' || v === 'manual' ? v : 'off'
+  return v === 'device' || v === 'approximate' || v === 'manual' ? v : 'off'
 }
+
+export const LOCATION_MODES: LocationMode[] = ['off', 'device', 'approximate', 'manual']
 
 export type ManualParse = { ok: true; lat: number; lng: number; accuracyKm: number; label: string } | { ok: false; error: string }
 
@@ -92,12 +99,17 @@ export function geoCacheFresh(c: GeoCache | null | undefined, now = Date.now()):
 /** The location object sent with the heartbeat (null = none). */
 export function buildLocation(
   mode: LocationMode,
-  input: { manual?: string | null; manualAt?: string | null; geo?: GeoCache | null }
+  input: { manual?: string | null; manualAt?: string | null; geo?: GeoCache | null; device?: DeviceFix | null }
 ): HeartbeatLocation | null {
   if (mode === 'approximate') {
     const g = input.geo
     if (!g) return null
     return { lat: g.lat, lng: g.lng, accuracyKm: APPROX_ACCURACY_KM, source: 'approximate', label: g.label, consent: true, updatedAt: g.fetchedAt }
+  }
+  if (mode === 'device') {
+    const d = input.device
+    if (!d) return null
+    return { lat: d.lat, lng: d.lng, accuracyKm: d.accuracyKm, source: 'device', label: DEVICE_LABEL, consent: true, updatedAt: d.fetchedAt }
   }
   if (mode === 'manual') {
     const p = parseManualLocation(input.manual)
@@ -126,4 +138,106 @@ export async function lookupApproximate(opts: { url?: string; fetchImpl?: FetchL
   const g = parseGeoIp(await res.json().catch(() => null))
   if (!g) throw new Error('The location service could not determine the location of this internet connection.')
   return g
+}
+
+/* ------------------------------------------ Windows location service ------------------------------------------ */
+
+export const DEVICE_LABEL = 'Windows location service'
+/** A device fix is refreshed at most this often. */
+export const DEVICE_CACHE_MS = 6 * 60 * 60 * 1000
+/** After a failed device read, the next attempt waits this long (never on every heartbeat). */
+export const DEVICE_RETRY_MS = 60 * 60 * 1000
+/** How long the PowerShell helper may run in total (it waits about 10 s for a position itself). */
+export const DEVICE_TIMEOUT_MS = 25_000
+
+export interface DeviceFix {
+  lat: number
+  lng: number
+  accuracyKm: number
+  fetchedAt: string
+}
+
+/**
+ * PowerShell helper. Prints one JSON line; numbers are formatted with the invariant culture (a comma decimal separator
+ * or NaN would break JSON). Waits up to ~10 s for a position.
+ */
+export const DEVICE_PS_SCRIPT = [
+  "$ErrorActionPreference = 'Stop'",
+  'try {',
+  '  Add-Type -AssemblyName System.Device',
+  '  $w = New-Object System.Device.Location.GeoCoordinateWatcher([System.Device.Location.GeoPositionAccuracy]::High)',
+  '  $deadline = (Get-Date).AddSeconds(10)',
+  '  $started = $w.TryStart($true, [TimeSpan]::FromSeconds(10))',
+  '  while ($started -and ($w.Status -ne "Ready" -or $w.Position.Location.IsUnknown) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }',
+  '  $l = $w.Position.Location',
+  '  $c = [Globalization.CultureInfo]::InvariantCulture',
+  '  $o = [ordered]@{ started = [bool]$started; status = "$($w.Status)"; permission = "$($w.Permission)"; unknown = [bool]$l.IsUnknown;',
+  '    lat = $l.Latitude.ToString($c); lng = $l.Longitude.ToString($c); acc = $l.HorizontalAccuracy.ToString($c) }',
+  '  $w.Stop()',
+  '  Write-Output ($o | ConvertTo-Json -Compress)',
+  '} catch { Write-Output ((@{ error = "$($_.Exception.Message)" }) | ConvertTo-Json -Compress) }'
+].join('\n')
+
+export type DeviceParse = { ok: true; fix: DeviceFix } | { ok: false; error: string }
+
+const UNAVAILABLE = 'Windows location is unavailable'
+
+/** Parses the helper output (unit tested). Every failure is reported as "unavailable" with the reason. */
+export function parseDeviceLocationOutput(stdout: string, now = new Date()): DeviceParse {
+  const line = String(stdout ?? '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('{'))
+    .pop()
+  let j: Record<string, unknown>
+  try {
+    j = line ? (JSON.parse(line) as Record<string, unknown>) : {}
+  } catch {
+    return { ok: false, error: `${UNAVAILABLE}: unexpected answer from Windows.` }
+  }
+  if (typeof j.error === 'string') return { ok: false, error: `${UNAVAILABLE}: ${j.error.slice(0, 200)}` }
+  if (!line) return { ok: false, error: `${UNAVAILABLE}: no answer from Windows.` }
+  if (String(j.permission) === 'Denied') return { ok: false, error: `${UNAVAILABLE}: location access is turned off or denied in Windows (Settings -> Privacy -> Location).` }
+  if (String(j.status) === 'Disabled') return { ok: false, error: `${UNAVAILABLE}: the Windows location service is turned off.` }
+  if (j.started === false || String(j.status) === 'NoData') return { ok: false, error: `${UNAVAILABLE}: no location provider answered (no GPS / Wi-Fi positioning).` }
+  const lat = Number(j.lat)
+  const lng = Number(j.lng)
+  const acc = Number(j.acc)
+  if (j.unknown === true || !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0)) {
+    return { ok: false, error: `${UNAVAILABLE}: no position within 10 seconds.` }
+  }
+  const accuracyKm = Number.isFinite(acc) && acc > 0 ? Math.round(acc) / 1000 : 0
+  return { ok: true, fix: { lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6, accuracyKm, fetchedAt: now.toISOString() } }
+}
+
+/** True while a device fix may be reused (refresh at most every 6 h). */
+export function deviceFixFresh(f: DeviceFix | null | undefined, now = Date.now()): boolean {
+  if (!f) return false
+  const t = Date.parse(f.fetchedAt)
+  return Number.isFinite(t) && now - t < DEVICE_CACHE_MS && now >= t - 60_000
+}
+
+export type ExecLike = (file: string, args: string[], opts: { timeout: number; windowsHide: boolean }) => Promise<string>
+
+const defaultExec: ExecLike = (file, args, opts) =>
+  new Promise((resolve, reject) => {
+    execFile(file, args, { ...opts, encoding: 'utf8', maxBuffer: 64 * 1024 }, (err, stdout) => (err && !stdout ? reject(err) : resolve(String(stdout ?? ''))))
+  })
+
+/** Reads the Windows location service once. Throws a readable "unavailable" error; never returns invented coordinates. */
+export async function readDeviceLocation(opts: { exec?: ExecLike; platform?: string; timeoutMs?: number; now?: () => Date } = {}): Promise<DeviceFix> {
+  if ((opts.platform ?? process.platform) !== 'win32') throw new Error(`${UNAVAILABLE}: the computer location service is only available on Windows.`)
+  let out: string
+  try {
+    out = await (opts.exec ?? defaultExec)('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', DEVICE_PS_SCRIPT], {
+      timeout: opts.timeoutMs ?? DEVICE_TIMEOUT_MS,
+      windowsHide: true
+    })
+  } catch (e) {
+    const killed = (e as { killed?: boolean })?.killed
+    throw new Error(killed ? `${UNAVAILABLE}: Windows did not answer in time.` : `${UNAVAILABLE}: could not start PowerShell.`)
+  }
+  const r = parseDeviceLocationOutput(out, opts.now?.() ?? new Date())
+  if (!r.ok) throw new Error(r.error)
+  return r.fix
 }

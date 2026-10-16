@@ -7,7 +7,21 @@ import type { LicenseStatus, Registration } from '../license/types'
 import { AppError, Ctx, audit, getSetting, setSetting } from '../services/context'
 import type { FirestoreRest } from './firestore'
 import { buildHeartbeat, heartbeatWrite, type HeartbeatPayload } from './heartbeat'
-import { GEO_CACHE_MS, buildLocation, geoCacheFresh, lookupApproximate, normalizeMode, parseManualLocation, type HeartbeatLocation, type LocationMode } from './location'
+import {
+  DEVICE_RETRY_MS,
+  GEO_CACHE_MS,
+  LOCATION_MODES,
+  buildLocation,
+  deviceFixFresh,
+  geoCacheFresh,
+  lookupApproximate,
+  normalizeMode,
+  parseManualLocation,
+  readDeviceLocation,
+  type DeviceFix,
+  type HeartbeatLocation,
+  type LocationMode
+} from './location'
 import { maskToken } from './install'
 import { loadCloudState, saveCloudState, type CloudState, type HeartbeatRecord } from './state'
 import * as support from './support'
@@ -35,6 +49,10 @@ export interface CloudServiceOptions {
   getSession?: () => { firmId: number; fullName: string } | null
   geoUrl?: string
   geoFetch?: NonNullable<Parameters<typeof lookupApproximate>[0]>['fetchImpl']
+  /** Tests: Windows location service reader (default: PowerShell GeoCoordinateWatcher). */
+  deviceLocate?: () => Promise<DeviceFix>
+  /** Tests: clock. */
+  now?: () => number
   onIncoming?: (msgs: support.IncomingMessage[]) => void
   log?: (level: 'info' | 'warn' | 'error', message: string) => void
   /** Automatic (timer) heartbeats and support sync. false in development builds unless enabled explicitly. */
@@ -50,6 +68,9 @@ export interface LocationInfo {
   note: string | null
   geo: { label: string; fetchedAt: string } | null
   geoError: string | null
+  /** Windows location service: last fix (accuracy, time) and why it is unavailable. */
+  device: { accuracyKm: number; fetchedAt: string } | null
+  deviceError: string | null
 }
 
 export class CloudService {
@@ -72,6 +93,10 @@ export class CloudService {
     } catch (e) {
       this.opts.log?.('warn', `Could not save online state: ${(e as Error).message}`)
     }
+  }
+
+  private nowMs(): number {
+    return this.opts.now?.() ?? Date.now()
   }
 
   get online(): boolean {
@@ -125,9 +150,37 @@ export class CloudService {
       location: null,
       note: null,
       geo: this.state.geo ? { label: this.state.geo.label, fetchedAt: this.state.geo.fetchedAt } : null,
-      geoError: this.state.geoError
+      geoError: this.state.geoError,
+      device: null,
+      deviceError: null
     }
-    if (mode === 'approximate') {
+    if (mode === 'device') {
+      const now = this.nowMs()
+      const lastTry = this.state.deviceAttemptAt ? Date.parse(this.state.deviceAttemptAt) : 0
+      const retryOk = !(Number.isFinite(lastTry) && now - lastTry < DEVICE_RETRY_MS && now >= lastTry)
+      // Refresh at most every 6 h; after a failure wait an hour — never re-query on every heartbeat.
+      if (lookup && !deviceFixFresh(this.state.device, now) && (retryOk || !this.state.deviceError)) {
+        this.state.deviceAttemptAt = new Date(now).toISOString()
+        try {
+          this.state.device = await (this.opts.deviceLocate ?? (() => readDeviceLocation()))()
+          this.state.deviceError = null
+        } catch (e) {
+          // Unavailable: report it; an old fix is not reused and no other source is used silently.
+          this.state.device = null
+          this.state.deviceError = (e as Error).message
+        }
+        this.save()
+      }
+      const d = deviceFixFresh(this.state.device, now) ? this.state.device : null
+      info.device = this.state.device ? { accuracyKm: this.state.device.accuracyKm, fetchedAt: this.state.device.fetchedAt } : null
+      info.deviceError = this.state.deviceError
+      info.location = buildLocation('device', { device: d })
+      if (!info.location) {
+        info.note = this.state.deviceError
+          ? `${this.state.deviceError} No location is sent — turn on Windows location or choose another option.`
+          : 'The Windows location service has not been read yet. It is read when you save and then at most every 6 hours.'
+      }
+    } else if (mode === 'approximate') {
       if (lookup && this.online && !geoCacheFresh(this.state.geo)) {
         try {
           this.state.geo = await lookupApproximate({ url: this.opts.geoUrl, fetchImpl: this.opts.geoFetch })
@@ -167,6 +220,15 @@ export class CloudService {
       const at = this.state.manual && this.state.manual.value === manual ? this.state.manual.at : new Date().toISOString()
       return { location: buildLocation('manual', { manual, manualAt: at }), note: null, manualError: null }
     }
+    if (mode === 'device') {
+      const d = deviceFixFresh(this.state.device, this.nowMs()) ? this.state.device : null
+      const location = buildLocation('device', { device: d })
+      return {
+        location,
+        note: location ? null : "This computer's location is read from the Windows location service when you save (Windows location must be on). If it is unavailable nothing is sent.",
+        manualError: null
+      }
+    }
     if (mode === 'approximate') {
       const g = this.state.geo && Date.now() - Date.parse(this.state.geo.fetchedAt) < GEO_MAX_STALE_MS ? this.state.geo : null
       const location = buildLocation('approximate', { geo: g })
@@ -182,7 +244,7 @@ export class CloudService {
   /** Saves the customer's choice (consent). Turning sharing on requires a valid manual entry for "manual". */
   setLocation(ctx: Ctx, input: { mode: unknown; manual?: unknown }): LocationInfo['mode'] {
     const mode = normalizeMode(input.mode)
-    if (input.mode !== undefined && !['off', 'approximate', 'manual'].includes(String(input.mode))) throw new AppError('Unknown location mode.', 'VALIDATION')
+    if (input.mode !== undefined && !(LOCATION_MODES as string[]).includes(String(input.mode))) throw new AppError('Unknown location mode.', 'VALIDATION')
     const prev = this.locationSettings()
     let manual = prev.manual
     if (input.manual !== undefined) {
@@ -203,8 +265,18 @@ export class CloudService {
       this.state.geo = null
       this.state.geoError = null
     }
+    if (mode !== 'device' && prev.mode === 'device') {
+      this.state.device = null
+      this.state.deviceError = null
+      this.state.deviceAttemptAt = null
+    }
+    if (mode === 'device' && prev.mode !== 'device') {
+      // Read right away when the customer turns it on (the heartbeat sent after saving does the lookup).
+      this.state.deviceAttemptAt = null
+      this.state.deviceError = null
+    }
     this.save()
-    const label = { off: 'off', approximate: 'approximate (internet address)', manual: 'exact (entered manually)' }[mode]
+    const label = { off: 'off', device: "this computer's location service (Windows)", approximate: 'approximate (internet address)', manual: 'exact (entered manually)' }[mode]
     audit(ctx, 'update', 'settings', null, `Location sharing with Digital Target: ${label}`, { before: prev.mode, after: mode })
     return mode
   }

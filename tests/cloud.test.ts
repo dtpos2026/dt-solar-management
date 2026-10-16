@@ -3,7 +3,12 @@ import { describe, expect, it } from 'vitest'
 import { buildPayload, certificateToCode, generateKeyPair, signPayload } from '../scripts/license-core.mjs'
 import { decodeFields, double, encodeFields, encodeValue, FirestoreError, resolveFirestoreConfig } from '../src/main/cloud/firestore'
 import { buildHeartbeat, heartbeatWrite } from '../src/main/cloud/heartbeat'
-import { buildLocation, parseGeoIp, parseManualLocation } from '../src/main/cloud/location'
+import { buildLocation, normalizeMode, parseDeviceLocationOutput, parseGeoIp, parseManualLocation, readDeviceLocation } from '../src/main/cloud/location'
+import { CloudService } from '../src/main/cloud/service'
+import { setSetting } from '../src/main/services/context'
+import { mkdtempSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { decideCertUpdate, isDetached } from '../src/main/cloud/certRefresh'
 import { maskToken, randomToken, TOKEN_RE } from '../src/main/cloud/install'
 import * as support from '../src/main/cloud/support'
@@ -204,5 +209,78 @@ describe('support queue', () => {
     expect(support.backoffMs(1)).toBe(30_000)
     expect(support.backoffMs(2)).toBe(60_000)
     expect(support.backoffMs(20)).toBe(30 * 60_000)
+  })
+})
+
+describe('Windows location service (device source)', () => {
+  const ok = JSON.stringify({ started: true, status: 'Ready', permission: 'Granted', unknown: false, lat: '30.0457', lng: '72.3489', acc: '35' })
+  it('parses the PowerShell helper output; failures are reported as unavailable', () => {
+    const r = parseDeviceLocationOutput(`noise\r\n${ok}\r\n`, new Date('2026-10-16T00:00:00Z'))
+    expect(r).toEqual({ ok: true, fix: { lat: 30.0457, lng: 72.3489, accuracyKm: 0.035, fetchedAt: '2026-10-16T00:00:00.000Z' } })
+    const bad = (o: Record<string, unknown>) => parseDeviceLocationOutput(JSON.stringify({ started: true, status: 'Ready', permission: 'Granted', unknown: false, lat: '30', lng: '72', acc: '10', ...o }))
+    expect(bad({ permission: 'Denied' })).toMatchObject({ ok: false, error: expect.stringMatching(/unavailable.*denied/i) })
+    expect(bad({ status: 'Disabled' })).toMatchObject({ ok: false, error: expect.stringMatching(/turned off/) })
+    expect(bad({ started: false, status: 'NoData' })).toMatchObject({ ok: false, error: expect.stringMatching(/no location provider/) })
+    expect(bad({ unknown: true, lat: 'NaN', lng: 'NaN' })).toMatchObject({ ok: false, error: expect.stringMatching(/no position/) })
+    expect(parseDeviceLocationOutput('{"error":"boom"}')).toMatchObject({ ok: false, error: expect.stringMatching(/unavailable: boom/) })
+    expect(parseDeviceLocationOutput('')).toMatchObject({ ok: false })
+    const fix = (r as { fix: Parameters<typeof buildLocation>[1]['device'] }).fix
+    expect(buildLocation('device', { device: fix })).toMatchObject({ source: 'device', accuracyKm: 0.035, label: 'Windows location service', consent: true, updatedAt: '2026-10-16T00:00:00.000Z' })
+    expect(buildLocation('device', { device: null })).toBeNull()
+    expect(normalizeMode('device')).toBe('device')
+  })
+  it('runs PowerShell hidden with a timeout, and only on Windows', async () => {
+    await expect(readDeviceLocation({ platform: 'linux' })).rejects.toThrow(/only available on Windows/)
+    const calls: Array<{ file: string; opts: { timeout: number; windowsHide: boolean } }> = []
+    const fix = await readDeviceLocation({ platform: 'win32', exec: async (file, args, opts) => (calls.push({ file, opts }), expect(args.join(' ')).toContain('GeoCoordinateWatcher'), ok) })
+    expect(fix.lat).toBe(30.0457)
+    expect(calls[0]).toMatchObject({ file: 'powershell.exe', opts: { windowsHide: true } })
+    expect(calls[0].opts.timeout).toBeGreaterThan(10_000)
+    await expect(readDeviceLocation({ platform: 'win32', exec: async () => Promise.reject(Object.assign(new Error('t'), { killed: true })) })).rejects.toThrow(/did not answer in time/)
+  })
+  it('caches a fix for 6 h, retries a failure after 1 h, never falls back to another source', async () => {
+    const db = freshDb()
+    setSetting(db, 'location_sharing', 'device')
+    const dir = mkdtempSync(join(tmpdir(), 'dtsp-loc-'))
+    let now = Date.parse('2026-10-16T00:00:00Z')
+    let calls = 0
+    let fail = false
+    const lic = { deviceId: 'D', deviceName: 'PC', installToken: 'T'.repeat(40), os: 'win', appVersion: '1', client: {} as never, status: () => ({}) as never, registration: () => null }
+    const cloud = new CloudService({
+      dir,
+      license: lic,
+      getDb: () => db,
+      now: () => now,
+      geoFetch: async () => { throw new Error('IP lookup must not be used') },
+      deviceLocate: async () => {
+        calls++
+        if (fail) throw new Error('Windows location is unavailable: the Windows location service is turned off.')
+        return { lat: 30.05, lng: 72.35, accuracyKm: 0.02, fetchedAt: new Date(now).toISOString() }
+      }
+    })
+    let info = await cloud.location(true)
+    expect(info.location).toMatchObject({ source: 'device', lat: 30.05 })
+    await cloud.location(true)
+    now += 5 * 3600_000
+    await cloud.location(true)
+    expect(calls).toBe(1)
+    now += 2 * 3600_000
+    fail = true
+    info = await cloud.location(true)
+    expect(calls).toBe(2)
+    expect(info.location).toBeNull()
+    expect(info.deviceError).toMatch(/unavailable/)
+    expect(info.note).toMatch(/No location is sent/)
+    now += 30 * 60_000
+    await cloud.location(true)
+    expect(calls).toBe(2)
+    now += 31 * 60_000
+    fail = false
+    info = await cloud.location(true)
+    expect(calls).toBe(3)
+    expect(info.location?.source).toBe('device')
+    // overview / preview never trigger a lookup
+    await cloud.location(false)
+    expect(calls).toBe(3)
   })
 })

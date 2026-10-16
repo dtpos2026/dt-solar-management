@@ -201,12 +201,15 @@ export function ConfirmDialog({ opts, onClose }: { opts: ConfirmOptions | null; 
   const [typed, setTyped] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  // Reset when a dialog opens / closes / switches — not on every re-render of the parent (opts is rebuilt each render,
+  // which used to wipe the typed confirmation and re-enable the button while an action was running).
+  const openKey = opts ? opts.title : null
   useEffect(() => {
     setReason('')
     setTyped('')
     setErr(null)
     setBusy(false)
-  }, [opts])
+  }, [openKey])
   if (!opts) return null
   const typedOk = !opts.typeToConfirm || typed.trim() === opts.typeToConfirm
   const reasonOk = !opts.reasonRequired || reason.trim().length >= 3

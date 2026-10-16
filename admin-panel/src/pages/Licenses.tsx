@@ -1,6 +1,6 @@
 /** Licenses: list (search / filters / pagination) with tabs for activation requests and offline activation. */
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { BadgeCheck, Inbox, KeyRound, Sparkles, TimerReset, WifiOff } from 'lucide-react'
 import { onSnapshot, query, where } from 'firebase/firestore'
 import { PageTitle, copy } from '../components/ui'
@@ -55,7 +55,14 @@ export function Licenses() {
   const [clientId, setClientId] = useState('')
   const [form, setForm] = useState(false)
   const [trial, setTrial] = useState(false)
-  const [created, setCreated] = useState<{ id: string; key: string } | null>(null)
+  const [created, setCreated] = useState<{ id: string; key: string; client?: { label: string; created: boolean } } | null>(null)
+  // Notice handed over by the license page after "Delete license" (shown once, then dropped from the history entry).
+  const loc = useLocation()
+  const handed = (loc.state as { notice?: string; tone?: 'success' | 'warn' } | null) ?? null
+  const [deletedMsg, setDeletedMsg] = useState(handed?.notice ? { tone: handed.tone ?? 'success', text: handed.notice } : null)
+  useEffect(() => {
+    if (handed?.notice) nav({ pathname: loc.pathname, search: loc.search }, { replace: true, state: null })
+  }, [handed?.notice]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const clientById = useMemo(() => new Map(clients.data.map((c) => [c.id, c])), [clients.data])
   const invByLicense = useMemo(() => {
@@ -139,12 +146,14 @@ export function Licenses() {
                     <Link className="font-bold underline" to={`/licenses/${created.id}`}>
                       open license
                     </Link>
+                    {created.client && <> · client {created.client.label}{created.client.created ? ' (new)' : ''}</>}
                   </span>
                 )
               }}
               onClose={() => setCreated(null)}
             />
           )}
+          <Notice msg={deletedMsg} onClose={() => setDeletedMsg(null)} />
           <Notice msg={licenses.error ? { tone: 'error', text: licenses.error } : null} />
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <SearchBox value={q} onChange={setQ} placeholder="Search business, customer, key, phone, client…" className="w-80" />
@@ -262,7 +271,7 @@ export function Licenses() {
         open={form}
         onClose={() => setForm(false)}
         onSaved={(id, info) => {
-          if (info.licenseKey) setCreated({ id, key: info.licenseKey })
+          if (info.licenseKey) setCreated({ id, key: info.licenseKey, client: info.client })
         }}
       />
     </div>

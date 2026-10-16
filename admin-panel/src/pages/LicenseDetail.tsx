@@ -3,23 +3,24 @@
  * certificates, assigned computers with heartbeat (version, last verification, location with its source),
  * pending activation requests and the lazily loaded, paginated history.
  */
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { getDocs, onSnapshot, query, where } from 'firebase/firestore'
-import { ArrowLeft, Ban, CalendarClock, Copy, Download, FileSignature, Link2, Pause, Pencil, Play, Unplug, UserPlus } from 'lucide-react'
+import { ArrowLeft, Ban, CalendarClock, Copy, Download, FileSignature, Link2, Pause, Pencil, Play, Trash2, Unplug, UserPlus } from 'lucide-react'
 import { Field, PageTitle, Stat, copy, download } from '../components/ui'
 import {
   changeTerms, detachLicense, deviceFromSnap, devicesCol, expiryLabel, licenseFromSnap,
   licenseRef, licenseStatusRef, linkLicenseClient, republishStatus, requestFromSnap, requestsCol, setDeviceState, setLicenseState, type DeviceAction, type TermsChange
 } from '../lib/licenses'
 import { certTermsOf, issueForDevice, publishCertificates, type PublishedCert } from '../lib/approve'
+import { deleteLicense, licenseDeletePreview, type LicenseDeletePreview } from '../lib/deletions'
 import { clientFromLicense, PLAN_TYPE_LABEL, PLAN_TYPES } from '../lib/clients'
 import { certificateFreshness, deviceLimitGuard, detachEligibility, suggestRenewal } from '../lib/terms'
 import { latestHeartbeats, slotsUsed as slotsUsedOf } from '../lib/devices'
 import { heartbeatLike, loadHeartbeatsForLicenses } from '../lib/fleet'
 import { maskDeviceId } from '../lib/terms'
 import { paymentStatusFromInvoices } from '../lib/stats'
-import { useAdminEmail, useCan } from '../lib/auth'
+import { useAdmin, useAdminEmail, useCan } from '../lib/auth'
 import { useSigningKey } from '../lib/signingKey'
 import { errorMessage, fmtDate, fmtDateTime, fromInputDate, timeAgo, toInputDate } from '../lib/format'
 import { PAID_PLANS, PLAN_PRESETS, type ActivationRequest, type Device, type Heartbeat, type License, type Plan, type PlanType } from '../lib/types'
@@ -42,6 +43,7 @@ type Dlg =
   | { k: 'publish' }
   | { k: 'device'; d: Device; action: DeviceAction }
   | { k: 'link' }
+  | { k: 'delete' }
 
 export function LicenseDetail() {
   const { id = '' } = useParams()
@@ -66,6 +68,11 @@ export function LicenseDetail() {
   const [fNum, setFNum] = useState(1)
   const [fBool, setFBool] = useState(true)
   const [fClient, setFClient] = useState('')
+  // Delete license (owner only — the rules allow nobody else).
+  const isOwner = !!useAdmin()?.isOwner
+  const [delPrev, setDelPrev] = useState<LicenseDeletePreview | null>(null)
+  const [delErr, setDelErr] = useState<string | null>(null)
+  const deleting = useRef(false)
 
   const manage = can('licenses.manage')
   const devManage = can('devices.manage')
@@ -106,6 +113,7 @@ export function LicenseDetail() {
   const client = l ? clients.data.find((c) => c.id === l.clientId) ?? null : null
 
   if (l === undefined) return <Loading />
+  if (l === null && deleting.current) return <Loading label="Deleting…" />
   if (l === null) return <Empty title="License not found">{msg && <Notice msg={msg} />}<Link className="text-[#3d096d] underline" to="/licenses">Back to licenses</Link></Empty>
   const lic = l
 
@@ -120,6 +128,13 @@ export function LicenseDetail() {
   const terms = async (c: TermsChange, reason: string, okText: string) => {
     await changeTerms(lic.id, c, reason, by)
     await afterTerms(reason || okText, okText)
+  }
+
+  const openDelete = () => {
+    setDelPrev(null)
+    setDelErr(null)
+    setDlg({ k: 'delete' })
+    licenseDeletePreview(lic, { invoices: BILLING_READ_PERMS.some(can) }).then(setDelPrev, (e) => setDelErr(errorMessage(e)))
   }
 
   const open = (d: Dlg) => {
@@ -256,6 +271,47 @@ export function LicenseDetail() {
           }
         }
       }
+      case 'delete': {
+        const activeN = delPrev ? delPrev.devices.filter((d) => d.active).length : 0
+        const stops = !lic.detached && lic.checkinDays > 0
+        return {
+          title: 'Delete license permanently', confirmLabel: 'Delete license', tone: 'danger', reason: true, typeToConfirm: 'DELETE',
+          body: (
+            <div className="space-y-2">
+              <p>License <b className="font-mono">{lic.licenseKey}</b> ({lic.businessName || lic.customerName || '—'}) is deleted with everything that belongs to it. This cannot be undone — <b>Revoke</b> keeps the record instead.</p>
+              {delErr ? <div className="rounded-lg bg-red-50 p-2.5 text-[13px] text-red-700">{delErr}</div> : !delPrev ? <Loading label="Counting computers, history and requests…" /> : (
+                <ul className="list-disc space-y-1 pl-5 text-[13px]">
+                  <li>{delPrev.devices.length} computer record(s) deleted{activeN ? ` (${activeN} still active)` : ''}.</li>
+                  <li>{delPrev.history.length} license history entr{delPrev.history.length === 1 ? 'y' : 'ies'} deleted; the activity log keeps a “license deleted” entry.</li>
+                  <li>The published license status and the activation pass of the key are removed.</li>
+                  {delPrev.requests.length > 0 && <li>{delPrev.requests.length} pending activation request(s) are answered as rejected.</li>}
+                  {lic.clientId && <li>Unlinked from client {client ? `${client.code} · ${client.company}` : lic.clientId} (the client record is kept).</li>}
+                  <li>{delPrev.invoices === null ? 'Invoices are never deleted.' : delPrev.invoices ? `${delPrev.invoices} invoice(s) are kept (they keep their own copy of the customer details).` : 'No invoice mentions this license.'}</li>
+                </ul>
+              )}
+              {activeN > 0 && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[13px] text-amber-800">
+                  {stops
+                    ? `Activated computers keep their certificate: they can no longer check in and switch to read-only once ${lic.checkinDays} day(s) + ${lic.graceDays} grace day(s) pass without a successful check. Revoke the license (and keep it) to block them at their next check-in instead.`
+                    : 'Activated computers keep working: this license never needs a check-in (detached or check-in 0), so deleting it does not stop them.'}
+                </div>
+              )}
+            </div>
+          ),
+          run: async (reason) => {
+            if (!delPrev) throw new Error('Still counting what belongs to this license — try again in a moment.')
+            deleting.current = true
+            try {
+              const r = await deleteLicense(lic, by, reason, { invoices: BILLING_READ_PERMS.some(can) })
+              const text = `License ${lic.licenseKey} deleted (${r.devices} computer record(s), ${r.history} history entr${r.history === 1 ? 'y' : 'ies'}${r.requests ? `, ${r.requests} pending request(s) rejected` : ''}).${r.warnings.length ? ` ${r.warnings.join(' ')}` : ''}`
+              nav('/licenses', { state: { notice: text, tone: r.warnings.length ? 'warn' : 'success' } })
+            } catch (e) {
+              deleting.current = false
+              throw e
+            }
+          }
+        }
+      }
       case 'link':
         return {
           title: 'Link to client', confirmLabel: 'Save link',
@@ -297,7 +353,10 @@ export function LicenseDetail() {
       <PageTitle
         title={lic.businessName || lic.customerName || 'License'}
         sub={`${lic.customerName}${lic.city ? ` · ${lic.city}` : ''}${lic.phone ? ` · ${lic.phone}` : ''}`}
-        actions={manage && <button className="btn btn-secondary" onClick={() => setEdit(true)}><Pencil className="h-4 w-4" />Edit</button>}
+        actions={(manage || isOwner) && <>
+          {manage && <button className="btn btn-secondary" onClick={() => setEdit(true)}><Pencil className="h-4 w-4" />Edit</button>}
+          {isOwner && <button className="btn btn-danger" onClick={openDelete}><Trash2 className="h-4 w-4" />Delete license</button>}
+        </>}
       />
       <Notice msg={msg} onClose={() => setMsg(null)} className="mb-4" />
 

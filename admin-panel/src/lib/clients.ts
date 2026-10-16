@@ -97,7 +97,7 @@ export function clientSearchText(c: { code?: string; company?: string; ownerName
   return [c.code, c.company, c.ownerName, c.phone, c.email, c.city].filter(Boolean).join(' ').toLowerCase()
 }
 
-/** Hard delete is owner-only and only when no license or invoice references the client. */
+/** Legacy guard (owner-only, nothing linked). The portal now uses clientDeleteCheck (clients.manage, unlinks licenses). */
 export function hardDeleteGuard(x: { isOwner: boolean; linkedLicenses: number; linkedInvoices: number; linkedThreads?: number }): { ok: boolean; reason: string } {
   if (!x.isOwner) return { ok: false, reason: 'Only the owner can permanently delete a client. Archive it instead.' }
   const parts: string[] = []
@@ -144,7 +144,7 @@ export function clientDeleteCheck(x: ClientDeleteCheckInput): ClientDeleteCheck 
   const unlink = x.licenses.filter((l) => !isActiveLicense(l, now))
   const blockers: string[] = []
   const warnings: string[] = []
-  if (!x.canDelete) blockers.push('You need the “Create / edit clients” permission to delete a client. Archive it instead.')
+  if (!x.canDelete) blockers.push('You need the “Create / edit / suspend / archive / delete clients” permission to delete a client.')
   if (active.length) {
     blockers.push(
       `${active.length} active license(s) still belong to this client (${active.map((l) => l.licenseKey).join(', ')}). Unlink them, move them to another client or suspend / revoke them first.`

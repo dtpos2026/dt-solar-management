@@ -37,6 +37,14 @@ admins.manage verify.use`.
 `code, company, ownerName, phone, email, address, city, logo (data URL ≤ 200 KB), status ('active'|'suspended'|'archived'),
 plan, planType ('monthly'|'yearly'|'lifetime'), allowedFirms, allowedDevices, notes, registeredAt, createdAt, createdBy, updatedAt`
 
+* Delete (`clients.manage`): refused while an active (status active, not expired) license is linked — the dialog offers
+  to unlink those; suspended / revoked / expired licenses are unlinked (`clientId: ''` + history) in the same
+  transaction as the delete and its `client_deleted` audit entry. Invoices are never deleted (they keep `clientName`).
+* License form "save as client": the company / owner / phone typed on a license create or update the client in the
+  license transaction — the picked client, else an existing non-archived client with the same phone (digits only,
+  last 10) or the same company + owner name (case-insensitive), else a new client (`counters/clients`). An existing
+  client only gets its empty fields filled.
+
 ### `licenses/{licenseId}` (+ `devices/{deviceId}`, `history/{id}`)
 Existing fields (`licenseKey, customerName, businessName, phone, email, city, plan, status, maxDevices, maxFirms,
 maxUsers, features, expiresAt, checkinDays, graceDays, notes, activeDevices, createdAt, updatedAt, createdBy`) plus
@@ -51,6 +59,16 @@ computer is re-issued (no new slot); a full license needs "replace computer X" (
 
 `status`: `active` | `suspended` | `revoked`. Pending = license with `activeDevices == 0` and no device ever activated.
 Expired = `expiresAt` in the past (derived).
+
+Delete license (owner only): removes `activationPasses/{sha256(key)}`, the history, released device records and answers
+pending `activationRequests` for the key (`rejected`, deactivate requests `processed`); then one batch deletes the
+license, `licenseStatus/{id}`, the active device records (rules: an active device record may only be deleted by the
+owner once its license no longer exists after the write) and writes the `license_deleted` audit entry. Invoices are
+kept. Activated computers keep their certificate but can no longer check in.
+
+Remove device (`devices.manage`): a computer holding a slot is released first (slot freed, added to
+`licenseStatus.deactivatedDevices`); then, optionally, its record is deleted, dropped from `devicesSummary`, and its
+heartbeat for that license is deleted. It stays on the deactivated list.
 
 ### `licenseStatus/{licenseId}` — public `get`, no `list`
 `status, expiresAt, deactivatedDevices: string[], poweredBy: bool, detached: bool, updatedAt,

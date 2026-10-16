@@ -8,7 +8,7 @@ export interface AdminPermission {
 }
 
 export const ADMIN_PERMISSION_GROUPS: { group: string; items: AdminPermission[] }[] = [
-  { group: 'Clients', items: [{ key: 'clients.view', label: 'View clients' }, { key: 'clients.manage', label: 'Create / edit / suspend / archive clients' }] },
+  { group: 'Clients', items: [{ key: 'clients.view', label: 'View clients' }, { key: 'clients.manage', label: 'Create / edit / suspend / archive / delete clients' }] },
   {
     group: 'Licenses',
     items: [

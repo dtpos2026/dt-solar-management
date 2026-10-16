@@ -13,6 +13,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   query,
   runTransaction,
@@ -21,14 +22,16 @@ import {
   writeBatch,
   type DocumentReference
 } from 'firebase/firestore'
-import { db } from '../firebase'
+import { auth, db } from '../firebase'
 import { sha256Hex } from './crypto'
+import { isOwnerRole } from './perm'
 import {
   deactivateDeviceInTx,
   deviceFromSnap,
   deviceLabel,
   deviceRef,
   devicesCol,
+  historyCol,
   invalidateLicenses,
   licenseFromSnap,
   licenseRef,
@@ -114,6 +117,11 @@ async function commitOps(ops: Op[], extra?: (b: ReturnType<typeof writeBatch>) =
  * license removal. Computers that were activated keep their certificate but can no longer check in.
  */
 export async function deleteLicense(l: License, by: string, reason = '', opts: { invoices?: boolean } = {}): Promise<LicenseDeleteResult> {
+  // Owner only (the rules refuse the license delete to anyone else): check first, so nobody else can clear the
+  // history / released devices of a license and then be refused the delete itself.
+  const uid = auth.currentUser?.uid
+  const me = uid ? await getDoc(doc(db, 'admins', uid)) : null
+  if (!me?.exists() || me.data()?.active === false || !isOwnerRole(String(me.data()?.role ?? ''))) throw new Error('Only the owner can delete a license.')
   const p = await licenseDeletePreview(l, { invoices: !!opts.invoices })
   const warnings: string[] = []
 
@@ -156,6 +164,16 @@ export async function deleteLicense(l: License, by: string, reason = '', opts: {
   await commitOps([{ ref: licenseRef(l.id) }, { ref: licenseStatusRef(l.id) }, ...first], (b) => writeAudit(b, 'license_deleted', by, l.id, details, 'license'))
   // Any further active device records (only for licenses with hundreds of computers): the license is gone now.
   for (const part of planClearBatches(active.slice(room), DELETE_BATCH_SIZE)) await commitOps(part)
+
+  // 3. Records written meanwhile (e.g. a history entry added by another admin during the delete). The license is
+  //    gone, so the owner may remove them; a failure here is reported, the license itself is already deleted.
+  try {
+    const [devLeft, histLeft] = await Promise.all([getDocs(devicesCol(l.id)), getDocs(historyCol(l.id))])
+    const left = [...devLeft.docs, ...histLeft.docs].map((d) => ({ ref: d.ref }))
+    for (const part of planClearBatches(left, DELETE_BATCH_SIZE)) await commitOps(part)
+  } catch (e) {
+    warnings.push(`Some records of the deleted license could not be removed: ${(e as Error).message}`)
+  }
 
   invalidateLicenses()
   invalidate('licenses')

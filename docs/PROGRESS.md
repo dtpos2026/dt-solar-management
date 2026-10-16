@@ -15,6 +15,7 @@ Status keys: [x] done & tested · [~] partial · [!] blocked (needs credentials 
 ## Super Admin portal (Firebase Spark: Firestore + Auth only)
 - [x] Role-based admins (owner, manager, sales, billing, support, technical, custom) enforced by Firestore rules; 28 rules tests on the emulator
 - [x] Dashboard, Clients, Licenses (generate, suspend, reactivate, revoke, renew, change plan / firm / device limits, history, lifetime detach), Devices (+ activation requests, offline activation), Device Map (consented locations only)
+- [x] Release hardening — portal licensing: no auto-approval (explicit devices.manage approval; re-issue for an active computer; "needs reassignment" → reject or replace computer in one transaction, race-tested), Issue trial (15 days, 1 computer), masked keys / device ids, license detail with heartbeat version / last verification / location source + accuracy, lazy paginated history; Devices page from `license.devicesSummary` (emulator, 300 licenses / 600 devices / 600 heartbeats: 302 queries · 1500 reads · 2152 ms → 2 queries · 900 reads · 244 ms)
 - [x] Billing (invoices, payments, receipts, reports, print / PDF), public QR verification page `/v/<token>`, Support conversations
 - [x] Settings (branding, invoice, bank, payment QR, support, portal, signing key), Activity Log (filters, CSV, archive, retention), Verify Key
 

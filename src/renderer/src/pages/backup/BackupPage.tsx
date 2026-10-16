@@ -1,3 +1,4 @@
+import { JsonBackupCard } from './JsonBackupCard'
 import { ReactNode, useEffect, useState } from 'react'
 import { AlertTriangle, CalendarClock, Download, FileJson, CheckCircle2, DatabaseBackup, FileUp, FolderOpen, FolderSync, HardDrive, LifeBuoy, Mail, MessageCircle, PlayCircle, RefreshCw, RotateCcw, ShieldCheck, Usb, XCircle } from 'lucide-react'
 import { api } from '../../api'
@@ -130,6 +131,7 @@ export function BackupPage(): JSX.Element {
         />
       )}
       {tab === 'import' && canImport ? <ImportPanel /> : <BackupPanel />}
+      {tab !== 'import' && canBackup && <JsonBackupCard />}
     </div>
   )
 }

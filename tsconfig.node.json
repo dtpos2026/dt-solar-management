@@ -20,6 +20,6 @@
   "include": [
     "electron.vite.config.ts", "vitest.config.ts", "src/main/**/*", "src/preload/**/*", "src/shared/**/*", "tests/**/*",
     "admin-panel/src/lib/types.ts", "admin-panel/src/lib/perm.ts", "admin-panel/src/lib/verify.ts", "admin-panel/src/lib/auditLog.ts", "admin-panel/src/lib/branding.ts",
-    "admin-panel/src/lib/crypto.ts", "admin-panel/src/lib/stats.ts", "admin-panel/src/lib/clients.ts", "admin-panel/src/lib/terms.ts", "admin-panel/src/lib/devices.ts", "admin-panel/src/lib/billing.ts"
+    "admin-panel/src/lib/crypto.ts", "admin-panel/src/lib/stats.ts", "admin-panel/src/lib/clients.ts", "admin-panel/src/lib/terms.ts", "admin-panel/src/lib/devices.ts", "admin-panel/src/lib/billing.ts", "admin-panel/src/lib/queryCache.ts"
   ]
 }

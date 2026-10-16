@@ -72,8 +72,9 @@ await page.goto(BASE + '/')
 await page.fill('input[type=email]', 'digitaltarget.digital@gmail.com').catch(() => undefined)
 await page.fill('input[type=password]', 'secret123')
 await page.click('button:has-text("Sign in")')
-const init = await page.waitForSelector('button:has-text("Initialise Super Admin"), nav >> text=Clients', { timeout: 30000 })
-if ((await init.textContent())?.includes('Initialise')) { await init.click(); await page.waitForSelector('nav >> text=Clients', { timeout: 30000 }) }
+const NAV = 'nav a[href="#/clients"]'
+const init = await page.waitForSelector(`button:has-text("Initialise Super Admin"), ${NAV}`, { timeout: 30000 }).catch(async (e) => { await page.screenshot({ path: 'login-fail.png' }); throw e })
+if ((await init.textContent())?.includes('Initialise')) { await init.click(); await page.waitForSelector(NAV, { timeout: 30000 }) }
 
 /** Waits until no new read for `quietMs`, returns { reads, queries, firstMs, settledMs }. */
 async function settle(t0, quietMs = 2500, maxMs = 60000) {
@@ -97,7 +98,7 @@ const results = {}
 for (const r of routes) {
   await page.goto(BASE + '/#' + r)
   await page.reload()
-  await page.waitForSelector('nav >> text=Clients', { timeout: 30000 })
+  await page.waitForSelector(NAV, { timeout: 30000 })
   const t0 = Date.now()
   const res = await settle(t0)
   results[r] = { reads: res.reads, queries: res.queries, firstDataMs: res.firstMs, settledMs: res.settledMs }
@@ -106,7 +107,7 @@ for (const r of routes) {
 // Warm: in-app navigation Dashboard → Clients → Billing → Dashboard → Clients (no reloads).
 await page.goto(BASE + '/#/')
 await page.reload()
-await page.waitForSelector('nav >> text=Clients', { timeout: 30000 })
+await page.waitForSelector(NAV, { timeout: 30000 })
 await settle(Date.now())
 const before = await page.evaluate(() => window.__reads.n)
 for (const r of ['/clients', '/billing', '/', '/clients', '/']) {

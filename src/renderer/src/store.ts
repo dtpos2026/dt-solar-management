@@ -47,6 +47,10 @@ export interface LicenseStatus {
   maxUsers: number
   poweredBy?: boolean
   detached?: boolean
+  /** Why writes are blocked: license, device, connectivity, activation or clock (null = allowed). */
+  blockReason?: 'license' | 'device' | 'connectivity' | 'activation' | 'clock' | null
+  /** Old installation that used the former local trial (read-only until activated). */
+  legacyTrial?: boolean
 }
 
 interface State {

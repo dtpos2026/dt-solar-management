@@ -57,6 +57,8 @@ const MONO_SM: CSSProperties = { ...MONO, fontSize: '11.5px' }
 const POLL_MS = 5000
 
 const MODES: Record<string, { label: string; tone: 'ok' | 'info' | 'warn' | 'bad' }> = {
+  not_activated: { label: 'Not activated', tone: 'warn' },
+  device_deactivated: { label: 'Device deactivated', tone: 'bad' },
   active: { label: 'Active', tone: 'ok' },
   trial: { label: 'Trial', tone: 'info' },
   grace: { label: 'Grace period', tone: 'warn' },
@@ -333,7 +335,7 @@ export function LicensePage({ embedded = false }: { embedded?: boolean } = {}): 
             The license for <b>{lic.payload.businessName}</b> will be removed from this computer and Digital Target will be notified, so it can be activated on another computer.
           </p>
           <p>
-            Your business data is <b>not deleted</b>. Without a license the app falls back to the trial (if any days remain) or becomes read-only until a license is activated again.
+            Your business data is <b>not deleted</b>. Without a license the app becomes read-only (view, print, export and backup still work) until a license is activated again.
           </p>
         </div>
       )

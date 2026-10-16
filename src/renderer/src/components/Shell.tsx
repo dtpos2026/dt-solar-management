@@ -596,20 +596,30 @@ function LockScreen({ onLogout }: { onLogout: () => void }): JSX.Element {
   )
 }
 
+const BLOCK_TITLE: Record<string, string> = {
+  activation: 'Activate your license.',
+  license: 'License problem.',
+  device: 'This computer is deactivated.',
+  connectivity: 'License verification overdue.',
+  clock: 'System clock problem.'
+}
+
 function LicenseBanner(): JSX.Element | null {
   const license = useApp((s) => s.license)
   const nav = useNavigate()
   if (!license || license.mode === 'active') return null
   const bad = !license.canWrite
+  const title = bad ? (BLOCK_TITLE[license.blockReason ?? ''] ?? 'Read-only mode.') : ''
   return (
-    <div className={cx('no-print flex items-center gap-3 px-6 py-2 text-[13px]', bad ? 'bg-bad text-white' : 'bg-warn-soft text-warn')}>
+    <div className={cx('no-print flex items-center gap-3 px-6 py-2 text-[13px]', bad ? 'bg-bad text-white' : 'bg-warn-soft text-warn')} data-testid="license-banner">
       <AlertTriangle className="h-4 w-4 shrink-0" />
       <span className="flex-1">
+        {title && <b className="mr-1">{title}</b>}
         {license.message}
-        {bad && ' Read-only mode: you can view, print and back up, but not add or change records.'}
+        {bad && !/viewed, printed/.test(license.message) && ' Read-only mode: you can view, print, export and back up, but not add or change records.'}
       </span>
       <button type="button" className="font-semibold underline cursor-pointer" onClick={() => nav('/settings?tab=license')}>
-        Activate / renew
+        {license.mode === 'not_activated' ? 'Activate your license' : 'Activate / renew'}
       </button>
     </div>
   )

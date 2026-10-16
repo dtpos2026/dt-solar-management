@@ -152,10 +152,16 @@ async function openPreview(args) {
   return w
 }
 
-/** Preview window → Save PDF button (route print.pdf). */
+const previewPages = {}
+/** Preview window → Save PDF button (route print.pdf). Also records the page count the preview toolbar shows. */
 async function previewPdf(name, args, before) {
   const w = await openPreview(args)
   if (before) await before(w)
+  const counted = await w
+    .waitForSelector('[data-pages]', { timeout: 8000 })
+    .then((el) => el.getAttribute('data-pages'))
+    .catch(() => null)
+  previewPages[name] = counted ? Number(counted) : null
   const file = join(out, `${name}.pdf`)
   await stubDialog(file)
   await w.click('button:has-text("Save PDF")')
@@ -206,6 +212,25 @@ const cases = [
       }),
     'many'
   ],
+  [
+    'stock-report-landscape',
+    () =>
+      previewPdf('stock-report-landscape', { kind: 'stock', id: 0, params: {} }, async (w) => {
+        await w.locator('[data-testid=orientation-select]').selectOption('landscape')
+        await w.waitForTimeout(1500)
+      }),
+    'any',
+    true
+  ],
+  [
+    'receipt-thermal80',
+    () =>
+      previewPdf('receipt-thermal80', { kind: 'payment', id: payments[0].id }, async (w) => {
+        await w.locator('[data-testid=template-select]').selectOption('builtin:thermal80')
+        await w.waitForTimeout(1000)
+      }),
+    'thermal'
+  ],
   ['whatsapp-invoice-120', () => whatsappPdf('whatsapp-invoice-120', 'document', idOf(longInvoiceId)), 'many'],
   ['whatsapp-statement-200', () => whatsappPdf('whatsapp-statement-200', 'statement', stmtPartyId, { from: '2000-01-01', to: '2099-12-31' }), 'many'],
   ['whatsapp-receipt', () => whatsappPdf('whatsapp-receipt', 'payment', payments[0].id), 'one']
@@ -230,13 +255,44 @@ for (const [name, produce, expect, landscape] of cases) {
     continue
   }
   const info = inspectPdf(readFileSync(file))
-  const allA4 = info.boxes.every((b) => isA4(b, !!landscape) || isA4(b, !landscape))
-  const countOk = expect === 'one' ? info.pages === 1 : expect === 'many' ? info.pages > 1 : info.pages >= 1
-  const ok = allA4 && countOk
+  // thermal 80 mm: one continuous strip, 80 mm (~227 pt) wide; sheets: A4 in the expected orientation
+  const sizeOk =
+    expect === 'thermal'
+      ? info.pages === 1 && info.boxes.every((b) => b && Math.abs(b[2] - b[0] - 227) <= 2)
+      : info.boxes.every((b) => isA4(b, !!landscape))
+  const countOk = expect === 'one' || expect === 'thermal' ? info.pages === 1 : expect === 'many' ? info.pages > 1 : info.pages >= 1
+  // preview == PDF: the page count shown in the preview toolbar equals the saved PDF (sheet prints only)
+  const shown = previewPages[name]
+  const previewOk = shown === undefined || expect === 'thermal' || shown === info.pages
+  const ok = sizeOk && countOk && previewOk
   if (!ok) failed++
   const sizes = [...new Set(info.boxes.map((b) => (b ? `${b[2] - b[0]}x${b[3] - b[1]}` : '?')))].join(',')
-  results.push({ name, ok, pages: info.pages, sizes, expect })
-  console.log(`${ok ? 'ok  ' : 'FAIL'} ${name.padEnd(28)} pages=${String(info.pages).padStart(3)} size=${sizes} expect=${expect}`)
+  results.push({ name, ok, pages: info.pages, previewPages: shown ?? null, sizes, expect })
+  console.log(
+    `${ok ? 'ok  ' : 'FAIL'} ${name.padEnd(28)} pages=${String(info.pages).padStart(3)} preview=${String(shown ?? '-').padStart(3)} size=${sizes} expect=${expect}${landscape ? ' (landscape)' : ''}`
+  )
+}
+
+/* Page view: the preview's "Page view" button opens the generated PDF in a viewer window. */
+try {
+  const w = await openPreview({ kind: 'doc', id: idOf(longInvoiceId) })
+  const viewWin = app.waitForEvent('window', { timeout: 20000 })
+  await w.click('button:has-text("Page view")')
+  const v = await viewWin
+  await v.waitForLoadState('load', { timeout: 20000 }).catch(() => undefined)
+  const url = v.url()
+  const ok = /page-view\.pdf$/.test(url)
+  if (!ok) failed++
+  results.push({ name: 'page-view-window', ok, url })
+  console.log(`${ok ? 'ok  ' : 'FAIL'} page-view-window             url=${url}`)
+  await v.waitForTimeout(3000)
+  await v.screenshot({ path: join(out, 'page-view.png') }).catch(() => undefined)
+  await v.close()
+  await w.close()
+} catch (e) {
+  failed++
+  results.push({ name: 'page-view-window', ok: false, error: e.message })
+  console.log(`FAIL page-view-window: ${e.message}`)
 }
 
 writeFileSync(join(out, 'results.json'), JSON.stringify({ results, errors }, null, 2))

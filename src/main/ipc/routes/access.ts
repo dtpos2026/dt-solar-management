@@ -217,6 +217,8 @@ export const accessRoutes: RouteMap = {
       const id = Number(a.id ?? target?.id ?? 0) || 0
       const job = resolvePrintJob({ kind, docType: kind === 'doc' ? docTypeOf(db, id) : null, paper: a.paper, orientation: a.orientation, settings: getAllSettings(db) })
       const name = String(a.filename || 'document').replace(/[^\w\- .]+/g, '').trim() || 'document'
+      // count: page count of the PDF the preview would produce (shown in the preview toolbar); nothing is saved
+      if (a.count === true) return { pages: countPdfPages(await c.sender.printToPDF(pdfOptionsFor(job))) }
       if (a.view === true) {
         const data = await c.sender.printToPDF(pdfOptionsFor(job))
         const dir = join(runtime.paths.userData, 'print-preview')

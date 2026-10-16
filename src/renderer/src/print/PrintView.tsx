@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState, ComponentType } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, ComponentType } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { FileDown, Printer, X, Loader2, SlidersHorizontal, RotateCcw, Save } from 'lucide-react'
+import { FileDown, Printer, X, Loader2, SlidersHorizontal, RotateCcw, Save, Files } from 'lucide-react'
 import { api } from '../api'
 import { useCan } from '../store'
 import { Button, Checkbox, Field, Input, Modal, toast } from '../components/ui'
@@ -15,6 +15,7 @@ import { ReportPrint } from './ReportPrint'
 import { DesignControls, DesignValue } from './DesignControls'
 import { KIND_LABELS, LAYOUT_LABEL, PrintDesign, SavedTemplate, TemplateKind, THERMAL_KINDS, builtinLayouts, resolveDesign, sameOptions } from './design'
 import { ClosingPrint } from './ClosingPrint'
+import { SHEET_MM, sheetPageCss, type Orientation, type SheetPaper } from './pageRules'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const TEMPLATES: Record<string, ComponentType<TemplateProps>> = {
@@ -50,7 +51,10 @@ export function PrintView(): JSX.Element {
   const [ctx, setCtx] = useState<PrintContext | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [title, setTitle] = useState('Document')
-  const [busy, setBusy] = useState<'print' | 'pdf' | null>(null)
+  const [busy, setBusy] = useState<'print' | 'pdf' | 'view' | null>(null)
+  const [orientation, setOrientation] = useState<Orientation>('portrait')
+  const userOriented = useRef(false)
+  const [pages, setPages] = useState<number | null>(null)
   const params = useMemo(() => Object.fromEntries(search.entries()), [search])
   const designable = DESIGNABLE.has(kind)
 
@@ -112,12 +116,20 @@ export function PrintView(): JSX.Element {
   const paper = designable ? (thermal ? 'thermal80' : params.paper && !params.paper.startsWith('thermal') ? params.paper : 'A4') : params.paper || undefined
   const customised = !!(design && base && (design.layout !== base.layout || !sameOptions(design.options, base.options)))
 
+  const sheetPaper: SheetPaper = paper && paper in SHEET_MM ? (paper as SheetPaper) : 'A4'
+  const orient: Orientation = thermal ? 'portrait' : orientation
+
   const Template = TEMPLATES[kind]
-  const run = async (what: 'print' | 'pdf'): Promise<void> => {
+  const run = async (what: 'print' | 'pdf' | 'view'): Promise<void> => {
     setBusy(what)
     try {
-      if (what === 'print') await api('print.run', { kind, paper })
-      else await api('print.pdf', { filename: title, kind, paper })
+      if (what === 'print') await api('print.run', { kind, paper, orientation: orient })
+      else if (what === 'pdf') await api('print.pdf', { filename: title, kind, paper, orientation: orient })
+      else {
+        // Page view: the exact pages Save PDF and the printer produce, in the built-in PDF viewer.
+        const r = await api<{ pages: number }>('print.pdf', { filename: title, kind, paper, orientation: orient, view: true })
+        if (r?.pages) setPages(r.pages)
+      }
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -126,6 +138,33 @@ export function PrintView(): JSX.Element {
   }
 
   const ready = !!ctx && title !== 'Document' && (!designable || !!design)
+
+  // Wide reports: when a portrait sheet cannot hold its content (a table wider than the page), turn it sideways
+  // automatically — unless the user picked the orientation.
+  useEffect(() => {
+    if (!ready || thermal || userOriented.current || orientation === 'landscape') return
+    const t = setTimeout(() => {
+      const wide = Array.from(document.querySelectorAll<HTMLElement>('.print-root .sheet')).some((el) => el.scrollWidth > el.clientWidth + 4)
+      if (wide) setOrientation('landscape')
+    }, 300)
+    return () => clearTimeout(t)
+  }, [ready, thermal, orientation, design, title])
+
+  // Page count of the real PDF (same pagination as Save PDF / Print), refreshed when the layout changes.
+  useEffect(() => {
+    setPages(null)
+    if (!ready || thermal) return
+    let live = true
+    const t = setTimeout(() => {
+      api<{ pages: number }>('print.pdf', { kind, paper, orientation: orient, count: true })
+        .then((r) => live && setPages(r?.pages ?? null))
+        .catch(() => undefined)
+    }, 900)
+    return () => {
+      live = false
+      clearTimeout(t)
+    }
+  }, [ready, thermal, kind, paper, orient, design, title]) // eslint-disable-line react-hooks/exhaustive-deps
   const options: Array<{ value: string; label: string }> = kt
     ? [
         ...kt.templates.map((t) => ({ value: String(t.id), label: `${t.name} — ${LAYOUT_LABEL[t.layout]}${String(kt.defaultRef) === String(t.id) ? ' (default)' : ''}` })),
@@ -134,7 +173,8 @@ export function PrintView(): JSX.Element {
     : []
 
   return (
-    <div className="print-root" data-print-ready={ready ? '1' : undefined}>
+    <div className={`print-root ${orient === 'landscape' ? 'print-landscape' : ''}`} data-print-ready={ready ? '1' : undefined} data-orientation={orient} data-pages={pages ?? undefined}>
+      {!thermal && <style>{sheetPageCss(sheetPaper, orient)}</style>}
       <div className="no-print fixed inset-x-0 top-0 z-50 flex h-14 items-center gap-2.5 bg-[#2b2d31] px-4 text-white shadow-lg">
         <div className="mr-auto min-w-0 truncate font-semibold">{title}</div>
         {designable && kt && (
@@ -165,7 +205,36 @@ export function PrintView(): JSX.Element {
             <SlidersHorizontal className="h-4 w-4" /> Customise{customised ? ' •' : ''}
           </button>
         )}
-        <span className="hidden text-[12px] text-white/60 xl:inline">{thermal ? '80 mm receipt' : 'A4'} · Preview matches the printed page</span>
+        {!thermal && (
+          <select
+            aria-label="Page orientation"
+            data-testid="orientation-select"
+            value={orientation}
+            onChange={(e) => {
+              userOriented.current = true
+              setOrientation(e.target.value as Orientation)
+            }}
+            className="h-9 rounded-lg border border-white/20 bg-[#3a3d42] px-2 text-[13px] text-white outline-none focus:border-white/50 cursor-pointer"
+          >
+            <option value="portrait">Portrait</option>
+            <option value="landscape">Landscape</option>
+          </select>
+        )}
+        <span className="hidden text-[12px] text-white/60 xl:inline" data-testid="page-count">
+          {thermal ? '80 mm receipt (one continuous strip)' : `${sheetPaper} ${orient}`}
+          {!thermal && pages ? ` · ${pages} ${pages === 1 ? 'page' : 'pages'}` : ''}
+        </span>
+        {!thermal && (
+          <button
+            type="button"
+            onClick={() => run('view')}
+            disabled={!!busy || !ready}
+            className="flex h-9 items-center gap-2 rounded-lg bg-white/10 px-3 font-medium hover:bg-white/20 disabled:opacity-50 cursor-pointer"
+            title="Show the exact A4 pages that Print and Save PDF produce"
+          >
+            {busy === 'view' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Files className="h-4 w-4" />} Page view
+          </button>
+        )}
         <button type="button" onClick={() => run('print')} disabled={!!busy || !ready} className="flex h-9 items-center gap-2 rounded-lg bg-[#2f5bea] px-4 font-medium hover:brightness-110 disabled:opacity-50 cursor-pointer">
           {busy === 'print' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />} Print
         </button>

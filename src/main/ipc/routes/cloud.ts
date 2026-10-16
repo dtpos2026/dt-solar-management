@@ -87,7 +87,7 @@ export const cloudRoutes: RouteMap = {
     handler: async (_c, a) => {
       const ctx = requireLicenseManager()
       const r = await license().activateOnline(String(a.licenseKey ?? ''), a.registration ?? undefined)
-      auditLicense(ctx, 'license', r.state === 'approved' ? 'License activated online' : `Online activation requested (${String(a.licenseKey ?? '').slice(0, 9)}…)`)
+      auditLicense(ctx, 'license', r.state === 'approved' ? 'License activated online' : 'Online activation requested')
       if (r.state === 'approved') heartbeatSoon()
       return r
     }

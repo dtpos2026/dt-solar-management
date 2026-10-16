@@ -1,11 +1,13 @@
 /**
  * Loading helpers shared by the Dashboard, Clients, Devices and Device Map pages.
- * collectionGroup queries are not allowed by the rules, so devices are read license by license
- * (fine for hundreds of licenses). Only collections the admin may read are requested.
+ * collectionGroup queries are not allowed by the rules. Devices come from the denormalised
+ * license.devicesSummary (kept in sync by every device transaction), so the fleet costs one licenses query
+ * plus one heartbeats query; only licenses without a summary yet (created before it existed) are read
+ * license by license, and are backfilled once by an admin with devices.manage.
  */
 import { Timestamp, collection, doc, getDoc, getDocs, query, where, type DocumentData, type QueryDocumentSnapshot } from 'firebase/firestore'
 import { db } from '../firebase'
-import { deviceFromSnap, devicesCol, licenseFromSnap, licensesCol } from './licenses'
+import { backfillSummary, deviceFromSnap, invalidateLicenses, licensesGeneration, devicesCol, licenseFromSnap, licensesCol } from './licenses'
 import type { DeviceInfoLike, HeartbeatLike, LicenseInfo } from './devices'
 import { normaliseDeviceStatus } from './devices'
 import { validLocation } from './devices'
@@ -84,9 +86,64 @@ export async function mapLimit<T, R>(items: T[], n: number, fn: (t: T) => Promis
   return out
 }
 
-export async function loadLicenses(): Promise<License[]> {
-  const snap = await getDocs(licensesCol())
-  return snap.docs.map(licenseFromSnap).sort((a, b) => (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0))
+/*
+ * Short-lived cache of the licenses list, shared by pages opened one after another (Dashboard → Devices → Map)
+ * and by concurrent callers (one request in flight). It is dropped by invalidateLicenses() after every portal
+ * mutation (writeLog calls it) and bypassed by an explicit Refresh. The TTL is short so a license suspended by
+ * another admin is not shown as active for long; pages that act on a license read it again in a transaction.
+ */
+export const LICENSES_CACHE_MS = 15_000
+let licCache: { at: number; gen: number; data: License[] } | null = null
+let licInflight: { gen: number; p: Promise<License[]> } | null = null
+export { invalidateLicenses }
+
+export async function loadLicenses(opts: { fresh?: boolean } = {}): Promise<License[]> {
+  const gen = licensesGeneration()
+  if (!opts.fresh && licCache && licCache.gen === gen && Date.now() - licCache.at < LICENSES_CACHE_MS) return licCache.data
+  if (!opts.fresh && licInflight && licInflight.gen === gen) return licInflight.p
+  const p = getDocs(licensesCol()).then((snap) => {
+    const data = snap.docs.map(licenseFromSnap).sort((a, b) => (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0))
+    if (gen === licensesGeneration()) licCache = { at: Date.now(), gen, data }
+    return data
+  })
+  licInflight = { gen, p }
+  try {
+    return await p
+  } finally {
+    if (licInflight?.p === p) licInflight = null
+  }
+}
+
+/**
+ * Device rows of every license: from license.devicesSummary when present (no extra read), otherwise from the
+ * devices sub-collection (8 in parallel). With `backfill` (admin holds devices.manage) a license read that way
+ * gets its summary written once, guarded by its updatedAt.
+ */
+export async function loadDeviceInfos(licenses: License[], opts: { backfill?: boolean } = {}): Promise<Record<string, DeviceInfoLike[]>> {
+  const out: Record<string, DeviceInfoLike[]> = {}
+  const missing: License[] = []
+  for (const l of licenses) {
+    if (l.devicesSummary === null) {
+      missing.push(l)
+      continue
+    }
+    out[l.id] = Object.entries(l.devicesSummary).map(([deviceId, d]) => ({
+      deviceId,
+      deviceName: d.deviceName,
+      os: d.os,
+      appVersion: d.appVersion,
+      status: normaliseDeviceStatus(d.status),
+      activatedAtMs: d.activatedAtMs,
+      activationType: d.activationType,
+      statusNote: d.statusNote
+    }))
+  }
+  await mapLimit(missing, 8, async (l) => {
+    const snap = await getDocs(devicesCol(l.id))
+    out[l.id] = snap.docs.map(deviceFromSnap).map(deviceInfo)
+    if (opts.backfill) await backfillSummary(l.id, snap.docs, l.updatedAt ? l.updatedAt.toMillis() : null).catch(() => false)
+  })
+  return out
 }
 
 export async function loadDevicesFor(licenses: License[]): Promise<Record<string, Device[]>> {

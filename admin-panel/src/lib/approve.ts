@@ -21,7 +21,7 @@ import {
   licenseStatusRef,
   requestRef,
   summaryEntry,
-  summaryPath,
+  summaryPatch,
   writeAudit,
   writeLog
 } from './licenses'
@@ -130,14 +130,14 @@ export async function issueForDevice(
     if (plan.kind === 'reissue') {
       tx.update(deviceRef(lic.id, dev.deviceId), base)
       tx.update(licenseRef(lic.id), {
-        [summaryPath(dev.deviceId)]: summaryEntry({ ...existing!, ...dev, activatedAt: devSnap.data()?.activatedAt ?? null, status: 'active', activationType }),
+        ...summaryPatch(lic, { [dev.deviceId]: summaryEntry({ ...existing!, ...dev, activatedAt: devSnap.data()?.activatedAt ?? null, status: 'active', activationType }) }),
         updatedAt: serverTimestamp()
       })
       writeLog(tx, lic.id, 'certificate_reissued', by, `${label} — certificate re-issued (${activationType}); no new slot used`, 'license')
       return { license: lic, kind: 'reissue' as const }
     }
     let activeDevices = lic.activeDevices
-    const licPatch: Record<string, unknown> = {}
+    const changes: Record<string, Record<string, unknown>> = {}
     let outcome: 'new' | 'reassign' = 'new'
     if (plan.kind === 'reassign') {
       if (!replaceId) throw new NeedsReassignmentError(plan.slotsUsed, plan.maxDevices)
@@ -146,7 +146,7 @@ export async function issueForDevice(
       if (err) throw new Error(err)
       // Release the replaced computer (slot freed) — same transaction as the activation below.
       tx.update(deviceRef(lic.id, replaceId), { status: 'deactivated', deactivatedAt: serverTimestamp(), statusChangedAt: serverTimestamp(), statusBy: by, statusNote: (opts.note ?? '').trim() || `Replaced by ${dev.deviceName || 'another computer'}` })
-      licPatch[summaryPath(replaceId)] = summaryEntry({ ...old!, activatedAt: oldSnap!.data()?.activatedAt ?? null, status: 'deactivated', statusNote: `Replaced by ${dev.deviceName || 'another computer'}` })
+      changes[replaceId] = summaryEntry({ ...old!, activatedAt: oldSnap!.data()?.activatedAt ?? null, status: 'deactivated', statusNote: `Replaced by ${dev.deviceName || 'another computer'}` })
       activeDevices -= 1
       outcome = 'reassign'
     }
@@ -155,9 +155,8 @@ export async function issueForDevice(
     if (activeDevices > lic.maxDevices) throw new Error(`Device limit reached (${lic.activeDevices} of ${lic.maxDevices})`)
     tx.set(deviceRef(lic.id, dev.deviceId), { ...base, status: 'active', activatedAt: serverTimestamp(), deactivatedAt: null, statusNote: '', statusChangedAt: serverTimestamp(), statusBy: by }, { merge: true })
     tx.update(licenseRef(lic.id), {
-      ...licPatch,
       activeDevices,
-      [summaryPath(dev.deviceId)]: summaryEntry({ ...dev, status: 'active', activatedAt: serverTimestamp(), activationType }),
+      ...summaryPatch(lic, { ...changes, [dev.deviceId]: summaryEntry({ ...dev, status: 'active', activatedAt: serverTimestamp(), activationType }) }),
       updatedAt: serverTimestamp(),
       ...(lic.activatedAt ? {} : { activatedAt: serverTimestamp() })
     })

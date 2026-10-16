@@ -32,6 +32,15 @@ import { fmtDate } from './format'
 import { detachEligibility, deviceLimitGuard, firmLimitGuard, holdsSlot, maskDeviceId, planTermsError, trialExpiryError } from './terms'
 import { licenseBucket, type LicenseBucket } from './stats'
 
+/* ------------------------------------------------ cache generation ------------------------------------------------ */
+
+let licGen = 0
+/** Bumped by every portal mutation (writeLog): cached license lists of an older generation are discarded (fleet.ts). */
+export function invalidateLicenses(): void {
+  licGen++
+}
+export const licensesGeneration = () => licGen
+
 /* ------------------------------------------------ refs ------------------------------------------------ */
 
 export const licensesCol = () => collection(db, 'licenses')
@@ -123,8 +132,17 @@ export function summaryEntry(d: { deviceName?: string; os?: string; appVersion?:
   }
 }
 
-/** Field path of one device inside license.devicesSummary (device ids are [A-Za-z0-9_-]). */
-export const summaryPath = (deviceId: string) => `devicesSummary.${deviceId}`
+/**
+ * License patch that rewrites the whole devicesSummary map with `changes` applied (no dotted field paths, so any
+ * device id is safe). Returns {} while the license has no summary yet: a partial map would hide the devices that
+ * are not in it, so such licenses keep being read from the sub-collection until backfillSummary writes a full one.
+ */
+export function summaryPatch(lic: Pick<License, 'devicesSummary'>, changes: Record<string, Record<string, unknown>>): Record<string, unknown> {
+  if (lic.devicesSummary === null) return {}
+  const out: Record<string, unknown> = {}
+  for (const [id, e] of Object.entries(lic.devicesSummary)) out[id] = summaryEntry({ ...e, activatedAt: e.activatedAtMs === null ? null : Timestamp.fromMillis(e.activatedAtMs) })
+  return { devicesSummary: { ...out, ...changes } }
+}
 
 /** Short, log-safe label of a computer: name + masked id (full device ids are never logged). */
 export function deviceLabel(name: string, deviceId: string): string {
@@ -293,6 +311,7 @@ export function writeAuditEntry(
 
 /** Writes a history entry on the license AND an audit log entry. */
 export function writeLog(w: Writer, licenseId: string, action: string, by: string, details: string, category: AuditCategory = 'license'): void {
+  invalidateLicenses()
   writeHistory(w, licenseId, action, by, details)
   writeAudit(w, action, by, licenseId, details, category)
 }
@@ -624,7 +643,7 @@ export function deactivateDeviceInTx(
   tx.update(deviceRef(lic.id, deviceId), { status: 'deactivated', deactivatedAt: serverTimestamp(), statusChangedAt: serverTimestamp(), statusBy: by, statusNote: note.trim() })
   tx.update(licenseRef(lic.id), {
     activeDevices: Math.max(0, lic.activeDevices - 1),
-    [summaryPath(deviceId)]: summaryEntry({ ...dev, activatedAt: devSnap.data()?.activatedAt ?? null, status: 'deactivated', statusNote: note.trim() }),
+    ...summaryPatch(lic, { [deviceId]: summaryEntry({ ...dev, activatedAt: devSnap.data()?.activatedAt ?? null, status: 'deactivated', statusNote: note.trim() }) }),
     updatedAt: serverTimestamp()
   })
   tx.set(licenseStatusRef(lic.id), licenseStatusPatch(lic, { add: [deviceId] }, [deviceId]), { merge: true })
@@ -651,7 +670,7 @@ export async function setDeviceState(licenseId: string, deviceId: string, action
     const dev = deviceFromSnap(devSnap)
     const label = deviceLabel(dev.deviceName, deviceId)
     const meta = { statusChangedAt: serverTimestamp(), statusBy: by, statusNote: note.trim() }
-    const summary = (status: string) => ({ [summaryPath(deviceId)]: summaryEntry({ ...dev, activatedAt: devSnap.data()?.activatedAt ?? null, status, statusNote: note.trim() }) })
+    const summary = (status: string) => summaryPatch(lic, { [deviceId]: summaryEntry({ ...dev, activatedAt: devSnap.data()?.activatedAt ?? null, status, statusNote: note.trim() }) })
     if (action === 'release') {
       if (!deactivateDeviceInTx(tx, lic, devSnap, deviceId, by, 'by admin', note)) throw new Error('This computer does not hold a slot (already released).')
       return { ...lic, activeDevices: Math.max(0, lic.activeDevices - 1) }
@@ -721,14 +740,18 @@ export function buildSummary(docs: Array<QueryDocumentSnapshot<DocumentData>>): 
 
 /**
  * Writes devicesSummary on a license that has none (one-time backfill by an admin who may manage devices).
- * The transaction only writes while the summary is still missing, so a concurrent device change wins.
+ * `docs` were read after the license version whose updatedAt is `seenUpdatedAtMs`; every device change bumps
+ * updatedAt, so the transaction skips the write when anything changed in between (no stale or partial summary).
  */
-export async function backfillSummary(licenseId: string, docs: Array<QueryDocumentSnapshot<DocumentData>>): Promise<void> {
+export async function backfillSummary(licenseId: string, docs: Array<QueryDocumentSnapshot<DocumentData>>, seenUpdatedAtMs: number | null): Promise<boolean> {
   const summary = buildSummary(docs)
-  await runTransaction(db, async (tx) => {
+  return runTransaction(db, async (tx) => {
     const snap = await tx.get(licenseRef(licenseId))
-    if (!snap.exists() || snap.data()?.devicesSummary) return
+    if (!snap.exists() || snap.data()?.devicesSummary) return false
+    const u = snap.data()?.updatedAt
+    if ((u instanceof Timestamp ? u.toMillis() : null) !== seenUpdatedAtMs) return false
     tx.update(licenseRef(licenseId), { devicesSummary: summary, updatedAt: serverTimestamp() })
+    return true
   })
 }
 

@@ -188,7 +188,7 @@ export function validLocation(loc: unknown): HeartbeatLocation | null {
   if (l.consent !== true) return null
   if (typeof l.lat !== 'number' || typeof l.lng !== 'number' || !Number.isFinite(l.lat) || !Number.isFinite(l.lng)) return null
   if (l.lat < -90 || l.lat > 90 || l.lng < -180 || l.lng > 180) return null
-  if (l.source !== 'approximate' && l.source !== 'manual') return null
+  if (l.source !== 'device' && l.source !== 'approximate' && l.source !== 'manual') return null
   return {
     lat: l.lat,
     lng: l.lng,
@@ -225,4 +225,35 @@ export function filterDeviceRows(rows: DeviceRow[], f: DeviceFilter): DeviceRow[
 export function sortDeviceRows(rows: DeviceRow[]): DeviceRow[] {
   const rank: Record<OnlineState, number> = { online: 0, recent: 1, offline: 2, never: 3 }
   return [...rows].sort((a, b) => rank[a.online] - rank[b.online] || (b.lastSeenMs ?? 0) - (a.lastSeenMs ?? 0) || a.company.localeCompare(b.company))
+}
+
+/* ------------------------------------------------ location display ------------------------------------------------ */
+
+export type LocationSource = HeartbeatLocation['source'] | 'unavailable'
+
+/** Source label shown next to every location. IP locations are never called precise. */
+export const LOCATION_SOURCE_LABEL: Record<LocationSource, string> = {
+  device: 'Device location service',
+  approximate: 'Approximate (internet IP) — usually the ISP’s city',
+  manual: 'Manual (entered by the customer)',
+  unavailable: 'Unavailable'
+}
+
+export function locationSource(loc: HeartbeatLocation | null | undefined): LocationSource {
+  return loc ? loc.source : 'unavailable'
+}
+
+/** Accuracy radius in metres ('device' points report metres; IP points are kilometres wide), null when unknown. */
+export function accuracyMetres(loc: HeartbeatLocation | null | undefined): number | null {
+  if (!loc || !loc.accuracyKm || !(loc.accuracyKm > 0)) return null
+  return Math.round(loc.accuracyKm * 1000)
+}
+
+/** "±35 m" for device fixes, "±25 km" for IP / manual points, '' when unknown. */
+export function accuracyText(loc: HeartbeatLocation | null | undefined): string {
+  const m = accuracyMetres(loc)
+  if (m === null) return ''
+  if (loc!.source === 'device' && m < 10_000) return `±${m.toLocaleString('en-US')} m`
+  const km = m / 1000
+  return `±${km >= 10 ? Math.round(km) : Math.round(km * 10) / 10} km`
 }

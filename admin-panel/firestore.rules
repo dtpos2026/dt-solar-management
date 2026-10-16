@@ -79,7 +79,9 @@ service cloud.firestore {
 
       match /devices/{deviceId} {
         allow read: if canAny(['licenses.view', 'licenses.manage', 'devices.view', 'devices.manage']);
-        allow create, update: if canAny(['licenses.manage', 'devices.manage']);
+        // A computer is only ever registered by an explicit approval of an admin holding devices.manage.
+        allow create: if can('devices.manage');
+        allow update: if canAny(['licenses.manage', 'devices.manage']);
         // Only released / deactivated device records can be removed (clearing device history); active ones never.
         allow delete: if canAny(['licenses.manage', 'devices.manage']) && resource.data.get('status', 'active') != 'active';
       }

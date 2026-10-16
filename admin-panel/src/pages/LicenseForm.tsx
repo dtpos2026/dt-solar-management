@@ -7,8 +7,8 @@ import { DEFAULT_CHECKIN_DAYS, DEFAULT_GRACE_DAYS, FEATURES, PAID_PLANS, PLAN_PR
 import { errorMessage, fromInputDate, toInputDate } from '../lib/format'
 import { useAdminEmail, useCan } from '../lib/auth'
 import { suggestExpiry, planTermsError } from '../lib/terms'
-import { PLAN_TYPES, PLAN_TYPE_LABEL } from '../lib/clients'
-import { loadClients } from '../lib/clientsDb'
+import { PLAN_TYPES, PLAN_TYPE_LABEL, clientDetailsFromLicense, findDuplicateClient, isValidClientPhone } from '../lib/clients'
+import { clientSyncFor, loadClients } from '../lib/clientsDb'
 import { loadBranding } from '../lib/fleet'
 import { logActivitySafe } from '../lib/audit'
 
@@ -18,10 +18,10 @@ export interface LicenseFormProps {
   /** Prefill for a new license created from a client page. */
   client?: Client | null
   onClose: () => void
-  onSaved: (id: string, info: { created: boolean; certChange: boolean; licenseKey?: string }) => void
+  onSaved: (id: string, info: { created: boolean; certChange: boolean; licenseKey?: string; client?: { label: string; created: boolean } }) => void
 }
 
-type Errors = Partial<Record<'name' | 'email' | 'expiry' | 'limits' | 'form', string>>
+type Errors = Partial<Record<'name' | 'email' | 'phone' | 'expiry' | 'limits' | 'form', string>>
 
 export function LicenseForm({ open, license, client, onClose, onSaved }: LicenseFormProps) {
   const by = useAdminEmail()
@@ -46,10 +46,14 @@ export function LicenseForm({ open, license, client, onClose, onSaved }: License
   const [f, setF] = useState<LicenseInput>(blank())
   const [busy, setBusy] = useState(false)
   const [errs, setErrs] = useState<Errors>({})
+  // Save the owner / company / phone typed here as a client record (matched by phone or company + owner, else created).
+  const canSync = can('clients.manage') && can('clients.view')
+  const [sync, setSync] = useState(true)
 
   useEffect(() => {
     if (!open) return
     setErrs({})
+    setSync(true)
     if (license) {
       setF({
         customerName: license.customerName,
@@ -103,11 +107,25 @@ export function LicenseForm({ open, license, client, onClose, onSaved }: License
   const set = (p: Partial<LicenseInput>) => setF((x) => ({ ...x, ...p }))
   const planType = f.planType ?? 'yearly'
   const pickableClients = useMemo(() => (clients ?? []).filter((c) => c.status !== 'archived' || c.id === f.clientId).sort((a, b) => a.company.localeCompare(b.company)), [clients, f.clientId])
+  const syncing = canSync && sync
+  const picked = (clients ?? []).find((c) => c.id === f.clientId) ?? null
+  // Preview of what saving does to the client records (the save itself re-reads the clients).
+  const syncHint = useMemo(() => {
+    if (!syncing) return null
+    if (picked) return `On save, empty fields of ${picked.code} · ${picked.company} are filled from these details (nothing is overwritten).`
+    const d = clientDetailsFromLicense(f)
+    if (!d.company) return 'Enter the business or customer name: a client record is created or matched on save.'
+    const m = clients ? findDuplicateClient(clients, d) : null
+    return m
+      ? `On save, the license is linked to the existing client ${m.client.code} · ${m.client.company} (same ${m.by === 'phone' ? 'phone number' : 'company and owner name'}); its empty fields are filled from these details.`
+      : 'On save, a new client is created from these details and linked (no client with the same phone or company + owner name exists).'
+  }, [syncing, picked, clients, f])
 
   const validate = (): Errors => {
     const e: Errors = {}
     if (!f.businessName.trim() && !f.customerName.trim()) e.name = 'Enter the business name or the customer name.'
     if (f.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim())) e.email = 'Enter a valid email address.'
+    if (syncing && f.phone.trim() && !isValidClientPhone(f.phone)) e.phone = 'Enter a valid phone number (digits, spaces, + - ( )) — it is saved on the client too.'
     if (!license) {
       const pe = planTermsError(planType, f.expiresAt ? f.expiresAt.getTime() : null)
       if (pe) e.expiry = pe
@@ -123,12 +141,15 @@ export function LicenseForm({ open, license, client, onClose, onSaved }: License
     if (Object.keys(e).length) return
     setBusy(true)
     try {
+      // Client record from the details (fresh read of the clients so no duplicate is created), applied in the
+      // same transaction as the license.
+      const linker = syncing ? (await clientSyncFor(f, by)).linker : undefined
       if (license) {
-        const certChange = await updateLicense(license, f, by)
+        const certChange = await updateLicense(license, f, by, linker)
         onSaved(license.id, { created: false, certChange })
       } else {
-        const r = await createLicense(f, by)
-        onSaved(r.id, { created: true, certChange: false, licenseKey: r.licenseKey })
+        const r = await createLicense(f, by, undefined, linker)
+        onSaved(r.id, { created: true, certChange: false, licenseKey: r.licenseKey, client: r.client })
       }
       onClose()
     } catch (err) {
@@ -161,12 +182,12 @@ export function LicenseForm({ open, license, client, onClose, onSaved }: License
     >
       <div className="grid grid-cols-2 gap-3">
         {can('clients.view') && (
-          <Field label="Client (company)" className="col-span-2" hint={clients === null ? 'Loading clients…' : 'Linking keeps billing, devices and support of one company together.'}>
+          <Field label="Client (company)" className="col-span-2" hint={clients === null ? 'Loading clients…' : syncHint ?? 'Linking keeps billing, devices and support of one company together.'}>
             <select className="input" value={f.clientId ?? ''} onChange={(e) => {
               const c = (clients ?? []).find((x) => x.id === e.target.value)
               set(c && !license ? { clientId: c.id, businessName: f.businessName || c.company, customerName: f.customerName || c.ownerName, phone: f.phone || c.phone, email: f.email || c.email, city: f.city || c.city } : { clientId: e.target.value })
             }}>
-              <option value="">— No client —</option>
+              <option value="">{syncing ? '— Match or create from the details below —' : '— No client —'}</option>
               {pickableClients.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.code} · {c.company}
@@ -176,6 +197,12 @@ export function LicenseForm({ open, license, client, onClose, onSaved }: License
             </select>
           </Field>
         )}
+        {canSync && (
+          <label className="col-span-2 -mt-1 flex items-center gap-2 text-[13px]">
+            <input type="checkbox" checked={sync} onChange={(e) => setSync(e.target.checked)} />
+            Save the company, owner name and phone below as a client record (create or update it, no duplicates)
+          </label>
+        )}
         <Field label="Business name">
           <input className="input" value={f.businessName} onChange={(e) => set({ businessName: e.target.value })} autoFocus maxLength={200} />
         </Field>
@@ -183,7 +210,7 @@ export function LicenseForm({ open, license, client, onClose, onSaved }: License
           <input className="input" value={f.customerName} onChange={(e) => set({ customerName: e.target.value })} maxLength={200} />
         </Field>
         {errs.name && <div className="col-span-2 -mt-1 text-[12.5px] text-red-600">{errs.name}</div>}
-        <Field label="Phone">
+        <Field label="Phone" hint={errs.phone && <span className="text-red-600">{errs.phone}</span>}>
           <input className="input" value={f.phone} onChange={(e) => set({ phone: e.target.value })} maxLength={60} />
         </Field>
         <Field label="Email" hint={errs.email && <span className="text-red-600">{errs.email}</span>}>

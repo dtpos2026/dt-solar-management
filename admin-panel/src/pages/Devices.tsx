@@ -1,7 +1,7 @@
 /** Devices: every registered computer across licenses merged with heartbeats; actions; activation requests tab. */
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Inbox, Map as MapIcon, MonitorSmartphone, RefreshCw, WifiOff } from 'lucide-react'
+import { Inbox, Map as MapIcon, MonitorSmartphone, RefreshCw, Trash2, WifiOff } from 'lucide-react'
 import { PageTitle } from '../components/ui'
 import { setDeviceState, type DeviceAction } from '../lib/licenses'
 import { publishCertificates } from '../lib/approve'
@@ -12,6 +12,7 @@ import { useSigningKey } from '../lib/signingKey'
 import { fmtDateTime, timeAgo } from '../lib/format'
 import { ConfirmDialog, Empty, Loading, Notice, Pager, Panel, Pill, SearchBox, Tabs, usePaged, type ConfirmOptions, type NoticeMsg } from './licensing/kit'
 import { useFleet } from './licensing/useFleet'
+import { RemoveDeviceDialog, useRemovedRows } from './licensing/RemoveDevice'
 import { maskDeviceId, maskLicenseKey } from '../lib/terms'
 import { copy } from '../components/ui'
 import { Copy } from 'lucide-react'
@@ -40,10 +41,13 @@ export function Devices() {
   const [f, setF] = useState<DeviceFilter>({ q: '', online: '', deviceStatus: '', licenseStatus: '' })
   const [msg, setMsg] = useState<NoticeMsg | null>(null)
   const [act, setAct] = useState<{ r: DeviceRow; a: DeviceAction } | null>(null)
+  const [removing, setRemoving] = useState<DeviceRow | null>(null)
+  // Removed computers disappear at once (before the refresh that confirms it arrives).
+  const { visible, hide } = useRemovedRows(fleet.rows, fleet.loading)
 
-  const list = useMemo(() => sortDeviceRows(filterDeviceRows(fleet.rows, f)), [fleet.rows, f])
+  const list = useMemo(() => sortDeviceRows(filterDeviceRows(visible, f)), [visible, f])
   const paged = usePaged(list, 20, JSON.stringify(f))
-  const counts = useMemo(() => countOnline(fleet.rows.map((r) => r.lastSeenMs), fleet.loadedAt || Date.now()), [fleet.rows, fleet.loadedAt])
+  const counts = useMemo(() => countOnline(visible.map((r) => r.lastSeenMs), fleet.loadedAt || Date.now()), [visible, fleet.loadedAt])
 
   const opts: ConfirmOptions | null = act && {
     title: `${ACTION_LABEL[act.a]} “${act.r.deviceName || maskDeviceId(act.r.deviceId)}”`,
@@ -116,7 +120,7 @@ export function Devices() {
               {sel('licenseStatus', [['', 'Any license status'], ['active', 'Active'], ['pending', 'Pending'], ['suspended', 'Suspended'], ['revoked', 'Revoked'], ['expired', 'Expired'], ['detached', 'Detached'], ['none', 'No license']])}
             </div>
             {fleet.loading && !fleet.rows.length ? <Loading /> : list.length === 0 ? (
-              <Empty icon={<MonitorSmartphone className="h-6 w-6" />} title={fleet.rows.length ? 'No device matches the filters' : 'No devices yet'}>Computers appear here once they activate a license or send a heartbeat.</Empty>
+              <Empty icon={<MonitorSmartphone className="h-6 w-6" />} title={visible.length ? 'No device matches the filters' : 'No devices yet'}>Computers appear here once they activate a license or send a heartbeat.</Empty>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-[13px]">
@@ -144,12 +148,15 @@ export function Devices() {
                           {r.statusNote && <div className="text-[11px] text-[#7a6d92]">{r.statusNote}</div>}
                         </td>
                         <td className="px-3 py-2">
-                          {manage && r.licenseId && r.deviceStatus !== 'unregistered' && (
+                          {manage && (
                             <div className="flex flex-wrap justify-end gap-1">
-                              {r.deviceStatus !== 'active' && <button className="btn btn-sm btn-success" onClick={() => setAct({ r, a: 'reactivate' })}>Activate</button>}
-                              {r.deviceStatus === 'active' && r.licenseStatus !== 'detached' && <button className="btn btn-sm btn-secondary" onClick={() => setAct({ r, a: 'suspend' })}>Suspend</button>}
-                              {['active', 'suspended'].includes(r.deviceStatus) && r.licenseStatus !== 'detached' && <button className="btn btn-sm btn-secondary" onClick={() => setAct({ r, a: 'revoke' })}>Revoke</button>}
-                              {r.deviceStatus !== 'deactivated' && <button className="btn btn-sm btn-secondary" onClick={() => setAct({ r, a: 'release' })}>Release</button>}
+                              {r.licenseId && r.deviceStatus !== 'unregistered' && <>
+                                {r.deviceStatus !== 'active' && <button className="btn btn-sm btn-success" onClick={() => setAct({ r, a: 'reactivate' })}>Activate</button>}
+                                {r.deviceStatus === 'active' && r.licenseStatus !== 'detached' && <button className="btn btn-sm btn-secondary" onClick={() => setAct({ r, a: 'suspend' })}>Suspend</button>}
+                                {['active', 'suspended'].includes(r.deviceStatus) && r.licenseStatus !== 'detached' && <button className="btn btn-sm btn-secondary" onClick={() => setAct({ r, a: 'revoke' })}>Revoke</button>}
+                                {r.deviceStatus !== 'deactivated' && <button className="btn btn-sm btn-secondary" onClick={() => setAct({ r, a: 'release' })}>Release</button>}
+                              </>}
+                              <button className="btn btn-sm btn-danger" title="Remove device" onClick={() => setRemoving(r)}><Trash2 className="h-3.5 w-3.5" />Remove</button>
                             </div>
                           )}
                         </td>
@@ -164,6 +171,15 @@ export function Devices() {
         </>
       )}
       <ConfirmDialog opts={opts} onClose={() => setAct(null)} />
+      <RemoveDeviceDialog
+        row={removing}
+        onClose={() => setRemoving(null)}
+        onDone={(info) => {
+          if (info.deleted) hide(info.row.key)
+          setMsg({ tone: info.tone, text: info.text })
+          fleet.refresh()
+        }}
+      />
     </div>
   )
 }

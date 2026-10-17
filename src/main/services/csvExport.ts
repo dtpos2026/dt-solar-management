@@ -12,7 +12,7 @@
  * "Against" allocations. Cancelled documents / payments / expenses are not exported.
  *
  * CSV is NOT a full backup: settings, users, images, projects, returns, stock movement history, cancelled records are
- * not included — use the full backup for that.
+ * not included - use the full backup for that.
  */
 import { AppError, Ctx, isValidDate, requirePerm } from './context'
 import { assertKind, importFields, type ImportKind } from './importer'

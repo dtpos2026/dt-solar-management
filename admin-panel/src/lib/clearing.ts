@@ -3,7 +3,7 @@
  *
  * Flow: count first with paged queries (the exact references are kept), the admin confirms the exact number,
  * then the same references are deleted in batches of <= CLEAR_BATCH_SIZE with progress. One 'security' entry
- * records who cleared what and how many — security entries themselves are never deleted (the rules refuse it).
+ * records who cleared what and how many - security entries themselves are never deleted (the rules refuse it).
  * Pure scope / batching logic lives in auditLog.ts (unit tested).
  */
 import {

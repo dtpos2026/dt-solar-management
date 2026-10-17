@@ -6,7 +6,7 @@ export const CSV_KINDS: Array<{ key: CsvKind; label: string; importNote: string;
   {
     key: 'products',
     label: 'Products (with opening stock)',
-    importNote: 'Opening stock of new products goes to the default warehouse at the opening unit cost (or the purchase price). Existing products never change stock here — use “Stock levels”.',
+    importNote: 'Opening stock of new products goes to the default warehouse at the opening unit cost (or the purchase price). Existing products never change stock here - use “Stock levels”.',
     exportNote: 'Opening qty / cost are the opening-stock entries only; current stock is in the “Stock levels” export.'
   },
   {

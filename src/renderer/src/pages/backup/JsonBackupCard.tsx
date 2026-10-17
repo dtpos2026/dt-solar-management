@@ -130,7 +130,7 @@ export function JsonBackupCard(): JSX.Element | null {
           <div className="space-y-3 text-[13px]">
             <div className="grid grid-cols-2 gap-x-6 gap-y-1">
               <span className="text-muted">Created</span><span>{new Date(inspect.createdAt).toLocaleString()}</span>
-              <span className="text-muted">Source</span><span>{String(inspect.source?.kind ?? 'export')}{inspect.source?.file ? ` — ${String(inspect.source.file)}` : ''}</span>
+              <span className="text-muted">Source</span><span>{String(inspect.source?.kind ?? 'export')}{inspect.source?.file ? ` - ${String(inspect.source.file)}` : ''}</span>
               {Object.entries(inspect.summary).map(([k, v]) => (
                 <span key={k} className="contents"><span className="text-muted capitalize">{k}</span><span className="num">{v}</span></span>
               ))}

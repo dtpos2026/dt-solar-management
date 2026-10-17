@@ -143,7 +143,7 @@ export function testPageHtml(printer: string, paper: PaperSize, appVersion: stri
   const now = new Date().toLocaleString('en-GB')
   const ruler = thermal
     ? ''
-    : `<div class="ruler">${Array.from({ length: 11 }, (_, i) => `<span style="left:${i}cm">${i}</span>`).join('')}</div><div class="cap">10 cm ruler — measure it to check the scale is 100%.</div>`
+    : `<div class="ruler">${Array.from({ length: 11 }, (_, i) => `<span style="left:${i}cm">${i}</span>`).join('')}</div><div class="cap">10 cm ruler - measure it to check the scale is 100%.</div>`
   return `<!doctype html><html><head><meta charset="utf-8"><title>Printer test</title><style>
 @page { margin: ${thermal ? '2mm' : '12mm'}; }
 * { box-sizing: border-box; }
@@ -160,7 +160,7 @@ td:first-child { width: ${thermal ? '40%' : '30%'}; font-weight: 600; }
 .blocks { display: flex; gap: 2mm; margin-top: 4mm; }
 .blocks div { flex: 1; height: ${thermal ? '5mm' : '10mm'}; }
 </style></head><body><div class="box">
-<h1>DT Solar Pro — printer test</h1>
+<h1>DT Solar Pro - printer test</h1>
 <p>If you can read this page clearly, the printer is set up correctly.</p>
 <table>
 <tr><td>Printer</td><td>${esc(printer)}</td></tr>

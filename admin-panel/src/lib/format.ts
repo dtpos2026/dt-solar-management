@@ -11,13 +11,13 @@ export function toDate(v: DateLike): Date | null {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
-export function fmtDate(v: DateLike, fallback = '—'): string {
+export function fmtDate(v: DateLike, fallback = '-'): string {
   const d = toDate(v)
   if (!d) return fallback
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-export function fmtDateTime(v: DateLike, fallback = '—'): string {
+export function fmtDateTime(v: DateLike, fallback = '-'): string {
   const d = toDate(v)
   if (!d) return fallback
   return d.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -25,7 +25,7 @@ export function fmtDateTime(v: DateLike, fallback = '—'): string {
 
 export function timeAgo(v: DateLike): string {
   const d = toDate(v)
-  if (!d) return '—'
+  if (!d) return '-'
   const s = Math.round((Date.now() - d.getTime()) / 1000)
   if (s < 0) return fmtDateTime(d)
   if (s < 60) return 'just now'

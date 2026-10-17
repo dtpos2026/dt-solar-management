@@ -1,7 +1,7 @@
 /**
  * Print design = layout + show/hide options used to render a customer document. It comes from a saved template
  * (Settings -> Invoice templates), a built-in layout, or temporary changes in the print preview. A design only
- * changes how a document looks on paper — never the document data.
+ * changes how a document looks on paper - never the document data.
  */
 import type { PrintSettings } from './PrintKit'
 
@@ -49,8 +49,8 @@ export const THERMAL_KINDS: TemplateKind[] = ['sale_invoice', 'payment']
 export const LAYOUTS: Array<{ key: Layout; label: string; hint: string }> = [
   { key: 'classic', label: 'Classic (A4)', hint: 'Letterhead with colour bar, boxed customer details and a coloured table header.' },
   { key: 'modern', label: 'Modern (A4)', hint: 'Bold colour header band, airy table and a highlighted total.' },
-  { key: 'compact', label: 'Compact (A4)', hint: 'Small header and tight rows — fits long invoices on fewer pages.' },
-  { key: 'thermal80', label: 'Thermal receipt (80 mm)', hint: 'Narrow receipt for 80 mm POS printers — sales invoices and payment receipts.' }
+  { key: 'compact', label: 'Compact (A4)', hint: 'Small header and tight rows - fits long invoices on fewer pages.' },
+  { key: 'thermal80', label: 'Thermal receipt (80 mm)', hint: 'Narrow receipt for 80 mm POS printers - sales invoices and payment receipts.' }
 ]
 
 export const LAYOUT_LABEL: Record<Layout, string> = { classic: 'Classic', modern: 'Modern', compact: 'Compact', thermal80: 'Thermal 80 mm' }

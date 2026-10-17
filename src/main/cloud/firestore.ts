@@ -1,5 +1,5 @@
 /**
- * Minimal Firestore REST client (no SDK, no sign-in — API key only). Used by licensing, heartbeats and support messages.
+ * Minimal Firestore REST client (no SDK, no sign-in - API key only). Used by licensing, heartbeats and support messages.
  *
  *  - Typed value encoding/decoding (stringValue, integerValue as string, doubleValue, booleanValue, mapValue, arrayValue,
  *    nullValue, timestampValue).
@@ -110,7 +110,7 @@ export class FirestoreError extends Error {
   readonly status: number
   /** gRPC style status, e.g. PERMISSION_DENIED, NOT_FOUND, UNAVAILABLE */
   readonly code: string
-  /** True when the server could not be reached (offline, DNS, timeout) — safe to retry later. */
+  /** True when the server could not be reached (offline, DNS, timeout) - safe to retry later. */
   readonly offline: boolean
   constructor(message: string, status: number, code: string, offline = false) {
     super(message)

@@ -428,7 +428,7 @@ export class LicenseService {
       signingConfigured: this.signingConfigured,
       maxFirms: payload ? payload.maxFirms : TRIAL_LIMITS.maxFirms,
       maxUsers: payload ? payload.maxUsers : TRIAL_LIMITS.maxUsers,
-      // A detached license no longer receives remote settings — its certificate decides.
+      // A detached license no longer receives remote settings - its certificate decides.
       poweredBy: detached ? !!payload?.poweredBy : (s.remotePoweredBy ?? payload?.poweredBy ?? false),
       detached,
       registration: s.registration ?? null,
@@ -561,7 +561,7 @@ export class LicenseService {
     if (reg) st.registration = reg
     this.writeState(st)
     this.log('info', `Activation needs approval: ${instant.approval}`)
-    return this.result('pending', `${instant.approval} The request was sent to Digital Target — this window updates by itself when it is approved.`, id)
+    return this.result('pending', `${instant.approval} The request was sent to Digital Target - this window updates by itself when it is approved.`, id)
   }
 
   private lastInstantTry = 0
@@ -651,7 +651,7 @@ export class LicenseService {
     st.lastCheckAt = this.iso()
     st.lastCheckError = null
     if (reg) st.registration = reg
-    const how = deviceDoc ? 'This computer was already registered on this license — no new slot used.' : 'Activated instantly.'
+    const how = deviceDoc ? 'This computer was already registered on this license - no new slot used.' : 'Activated instantly.'
     st.activationNotice = { kind: 'approved', message: `${how} Licensed to ${p.businessName}.`, at: st.lastCheckAt, licenseKey: key }
     this.writeState(st)
     this.log('info', `License activated instantly (${deviceDoc ? 'already registered' : 'new device slot'}).`)
@@ -718,7 +718,7 @@ export class LicenseService {
       }
     }
     const reason = this.readState().pendingRequest?.reason
-    return this.result('pending', reason ? `Waiting for approval from Digital Target — ${reason}` : 'Waiting for approval from Digital Target…', s.pendingRequest.id)
+    return this.result('pending', reason ? `Waiting for approval from Digital Target - ${reason}` : 'Waiting for approval from Digital Target…', s.pendingRequest.id)
   }
 
   cancelPending(): LicenseStatus {
@@ -780,7 +780,7 @@ export class LicenseService {
    * Prompt command synchronisation without a server: while the app runs and a license is installed, it asks Digital
    * Target every 5 minutes (every 30 s while blocked) for the license status, this computer's decision and a re-signed
    * certificate. Offline it retries with back-off (2, 4, 8, 10 min) and catches up the moment the connection is back;
-   * nothing is ever assumed — a disconnected computer keeps following its signed offline policy until it reaches Digital Target.
+   * nothing is ever assumed - a disconnected computer keeps following its signed offline policy until it reaches Digital Target.
    */
   startSync(firstDelayMs = 3_000): void {
     this.stopSync()
@@ -833,7 +833,7 @@ export class LicenseService {
   }
 
   /**
-   * Online check-in: reads licenseStatus/{licenseId} — status, deactivated devices, the "Powered by" flag and a
+   * Online check-in: reads licenseStatus/{licenseId} - status, deactivated devices, the "Powered by" flag and a
    * re-signed certificate for this device. Network problems never change (or clear) the stored decision.
    * A detached lifetime license is not checked at all. Concurrent calls share one request.
    */
@@ -888,7 +888,7 @@ export class LicenseService {
       }
       // 1. Status of the license and of this device.
       const block = remoteDecision(d, this.deviceId)
-      // 2. A re-signed certificate for this computer (renewal, plan / limit change, detachment) — never while the
+      // 2. A re-signed certificate for this computer (renewal, plan / limit change, detachment) - never while the
       //    license is suspended / revoked or this device is deactivated.
       const certs = d.certs && typeof d.certs === 'object' ? (d.certs as Record<string, unknown>) : {}
       if (!block) {
@@ -960,7 +960,7 @@ export class LicenseService {
     s.certUpdate = { at: this.iso(), summary: decision.summary }
     this.writeState(s)
     this.log('info', `License certificate installed on request: ${decision.summary}`)
-    // Reconnected: the license is centrally managed again — apply the published status right away.
+    // Reconnected: the license is centrally managed again - apply the published status right away.
     const status = isDetached(decision.payload) ? this.status(true) : await this.checkIn(true)
     return { installed: true, message: `Certificate updated: ${decision.summary}.`, status }
   }

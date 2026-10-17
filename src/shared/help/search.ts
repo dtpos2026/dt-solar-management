@@ -26,7 +26,7 @@ export function normalize(text: string): string {
     .replace(/[۰-۹]/g, (c) => String(c.charCodeAt(0) - 0x06f0))
 }
 
-/** Words that carry no meaning for search (English, Roman Urdu, Urdu script — normalised forms). */
+/** Words that carry no meaning for search (English, Roman Urdu, Urdu script - normalised forms). */
 const STOP = new Set(
   (
     'a an the to of in on for and or is are am be do does did i me my we our you your it this that these those how what where when which who why can could should would will ' +

@@ -57,7 +57,7 @@ export interface EvalInput {
   now: number
   payload: LicensePayload | null
   certError: string | null
-  /** Legacy (v1.0 local trial start). Ignored — kept so old state files and callers stay valid. */
+  /** Legacy (v1.0 local trial start). Ignored - kept so old state files and callers stay valid. */
   trialStartedAt?: number
   /** An old installation that used the former local trial (only changes the wording). */
   legacyTrial?: boolean
@@ -75,7 +75,7 @@ export type EvalResult = { mode: LicenseMode; message: string; trialDaysLeft: nu
 const SAFE = 'Your data is safe and can still be viewed, printed, exported and backed up.'
 
 export const NOT_ACTIVATED_MESSAGE = `DT Solar Pro is not activated on this computer. Activate your license to add or change records. ${SAFE}`
-export const LEGACY_TRIAL_MESSAGE = `Activate your license — the built-in trial is no longer available. ${SAFE}`
+export const LEGACY_TRIAL_MESSAGE = `Activate your license - the built-in trial is no longer available. ${SAFE}`
 
 /** Pure license-mode evaluation (unit tested). There is no local trial: without a certificate the app is not activated. */
 export function evaluate(i: EvalInput): EvalResult {
@@ -119,7 +119,7 @@ export function evaluate(i: EvalInput): EvalResult {
   }
   if (isTrial) {
     const left = daysLeft ?? null
-    return { mode: 'trial', message: left !== null ? `Trial — ${left} day(s) left. Licensed to ${p.businessName}.` : `Trial license for ${p.businessName}.`, trialDaysLeft: left, daysLeft, graceDaysLeft: null }
+    return { mode: 'trial', message: left !== null ? `Trial - ${left} day(s) left. Licensed to ${p.businessName}.` : `Trial license for ${p.businessName}.`, trialDaysLeft: left, daysLeft, graceDaysLeft: null }
   }
   const warn = daysLeft !== null && daysLeft <= 15 ? ` License expires in ${daysLeft} day(s).` : ''
   return { mode: 'active', message: `Licensed to ${p.businessName}.${warn}`, trialDaysLeft: null, daysLeft, graceDaysLeft: null }

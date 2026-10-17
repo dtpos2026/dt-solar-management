@@ -54,13 +54,13 @@ const ROLL_PAGE_MM = 297
 
 export type PrintPageSize = 'A4' | 'A5' | 'Letter' | 'Legal' | { width: number; height: number }
 
-/** Page size for webContents.print() — named sizes or { width, height } in MICRONS. */
+/** Page size for webContents.print() - named sizes or { width, height } in MICRONS. */
 export function printPageSize(paper: PaperSize): PrintPageSize {
   if (isThermal(paper)) return { width: THERMAL_MM[paper as 'thermal80' | 'thermal58'] * 1000, height: ROLL_PAGE_MM * 1000 }
   return paper as 'A4' | 'A5' | 'Letter' | 'Legal'
 }
 
-/** Page size for webContents.printToPDF() — named sizes or { width, height } in INCHES. */
+/** Page size for webContents.printToPDF() - named sizes or { width, height } in INCHES. */
 export function pdfPageSize(paper: PaperSize): PrintPageSize {
   if (isThermal(paper)) {
     const w = THERMAL_MM[paper as 'thermal80' | 'thermal58'] / 25.4
@@ -230,7 +230,7 @@ export function parseLpstatDefault(text: string): string | null {
 
 /**
  * Normalises the printers Electron reports, enriched with OS facts when available. Only printers the OS lists
- * are returned — nothing is ever invented.
+ * are returned - nothing is ever invented.
  */
 export function normalizePrinters(list: ElectronPrinterLike[], win: WinPrinterFacts[] = [], cupsDefault: string | null = null): OsPrinter[] {
   const facts = new Map(win.map((w) => [w.Name, w]))

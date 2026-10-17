@@ -1,7 +1,7 @@
 /**
- * Solar Projects — project records, material issues/returns, and project profitability.
+ * Solar Projects - project records, material issues/returns, and project profitability.
  *
- * PROFIT RULES (accrual based — never "cash received minus cash paid"):
+ * PROFIT RULES (accrual based - never "cash received minus cash paid"):
  *   Revenue            = Σ project sales invoices net_total (EXCLUDING tax) − Σ project sales returns net_total
  *   Direct material    = COGS of stock items on project invoices (deduct_stock)  − COGS of their returns
  *                      + cost of materials issued from stock                      − cost of materials returned to stock
@@ -389,7 +389,7 @@ export function projectLedger(ctx: Ctx, id: number): unknown[] {
                 CASE d.doc_type
                   WHEN 'sale_invoice' THEN 'Sales invoice' || CASE WHEN d.deduct_stock = 0 THEN ' (stock not deducted)' ELSE '' END
                   WHEN 'sale_return' THEN 'Sales return / credit note'
-                  WHEN 'purchase_invoice' THEN CASE WHEN d.direct_to_project = 1 THEN 'Purchase — delivered direct to site' ELSE 'Purchase into stock (cost charged when issued)' END
+                  WHEN 'purchase_invoice' THEN CASE WHEN d.direct_to_project = 1 THEN 'Purchase - delivered direct to site' ELSE 'Purchase into stock (cost charged when issued)' END
                   WHEN 'purchase_return' THEN 'Purchase return'
                   WHEN 'quotation' THEN 'Quotation (' || d.status || ')'
                   WHEN 'sale_order' THEN 'Sales order (' || d.status || ')'
@@ -713,7 +713,7 @@ export function getProjectLinks(ctx: Ctx, id: number): ProjectLinks & { id: numb
 }
 
 /**
- * Permanently delete a project — only when nothing is linked to it. Projects with documents, payments,
+ * Permanently delete a project - only when nothing is linked to it. Projects with documents, payments,
  * expenses, material moves, adjustments or files are refused (archive or cancel them instead); financial
  * records are never cascade-deleted.
  */

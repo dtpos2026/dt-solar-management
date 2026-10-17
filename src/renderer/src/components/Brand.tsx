@@ -22,7 +22,7 @@ export function AppLogo({ size = 44, light }: { size?: number; light?: boolean }
         <div className={light ? 'text-[20px] font-extrabold text-white' : 'text-[20px] font-extrabold'}>
           DT Solar <span className="text-sun">Pro</span>
         </div>
-        <div className={light ? 'text-[11.5px] text-white/75' : 'text-[11.5px] text-muted'}>{VENDOR.tagline}</div>
+        <div className={light ? 'text-[12px] text-white/75' : 'text-[12px] text-muted'}>{VENDOR.tagline}</div>
       </div>
     </div>
   )
@@ -33,7 +33,7 @@ export function VendorLine({ light }: { light?: boolean }): JSX.Element {
     <div className={light ? 'flex items-center gap-2 text-[12px] text-white/80' : 'flex items-center gap-2 text-[12px] text-muted'}>
       <DtMark className="h-4 w-4" />
       <span>
-        Developed by <b className="tracking-wider">DIGITAL TARGET</b> · {VENDOR.phone} · {VENDOR.email}
+        Developed by <b className="tracking-wider">DIGITAL TARGET</b>, {VENDOR.phone}, {VENDOR.email}
       </span>
     </div>
   )

@@ -3,7 +3,7 @@
  *
  * - `useSharedDocs(key, query)`: ONE live listener per key for every component that needs it, kept open briefly after
  *   the last page leaves (queryCache linger), so moving between pages does not re-read whole collections. Being live,
- *   status changes (e.g. a license suspended by another admin) arrive immediately — nothing is shown from a stale copy.
+ *   status changes (e.g. a license suspended by another admin) arrive immediately - nothing is shown from a stale copy.
  * - `useCachedValue(key, load)`: one-shot reads with a short TTL + in-flight de-duplication; call `invalidate(key)`
  *   after a mutation.
  * Pages map the raw documents themselves (useMemo), so different shapes share one listener.
@@ -29,7 +29,7 @@ const EMPTY: Snap[] = []
 /**
  * Live documents of `makeQuery()` shared under `key`. Disabled → empty, not loading.
  * When the listener is already open (another page uses it, or it is lingering) the cached documents are rendered on
- * the first paint — no skeleton flash — and live updates continue.
+ * the first paint - no skeleton flash - and live updates continue.
  */
 export function useSharedDocs(key: string, makeQuery: () => Query<DocumentData>, enabled = true): SharedDocs {
   const initialState = (): SourceState<Snap[]> => {

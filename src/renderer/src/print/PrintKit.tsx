@@ -52,22 +52,22 @@ export interface TemplateProps {
 }
 
 export function pm(ctx: PrintContext, n: number | null | undefined, decimals?: number): string {
-  if (n === null || n === undefined) return '—'
+  if (n === null || n === undefined) return '-'
   return formatMoney(n, '', decimals ?? Math.max(0, Math.min(2, Number(ctx.settings.money_decimals ?? 0))))
 }
 
 export function pmSym(ctx: PrintContext, n: number | null | undefined, decimals?: number): string {
-  if (n === null || n === undefined) return '—'
+  if (n === null || n === undefined) return '-'
   return formatMoney(n, String(ctx.settings.currency_symbol ?? 'Rs.'), decimals ?? Math.max(0, Math.min(2, Number(ctx.settings.money_decimals ?? 0))))
 }
 
 export function pq(n: number | null | undefined): string {
-  return n === null || n === undefined ? '—' : formatQty(n)
+  return n === null || n === undefined ? '-' : formatQty(n)
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 export function pd(s: string | null | undefined): string {
-  if (!s) return '—'
+  if (!s) return '-'
   const [y, m, d] = s.slice(0, 10).split('-')
   return y && m && d ? `${d}-${MONTHS[Number(m) - 1]}-${y}` : s
 }
@@ -191,7 +191,7 @@ export function CompactHeader({ ctx, title, number, date, showLogo }: { ctx: Pri
         <div className="min-w-0">
           <div className="text-[15px] leading-tight font-extrabold" style={{ color: 'var(--pc)' }}>{f.name}</div>
           <div className="text-[8.8px] leading-snug text-[#2d3748]">
-            {[[f.address, f.city].filter(Boolean).join(', '), contact && `Ph: ${contact}`, f.email, f.ntn && `NTN: ${f.ntn}`, f.strn && `STRN: ${f.strn}`].filter(Boolean).join(' · ')}
+            {[[f.address, f.city].filter(Boolean).join(', '), contact && `Ph: ${contact}`, f.email, f.ntn && `NTN: ${f.ntn}`, f.strn && `STRN: ${f.strn}`].filter(Boolean).join(', ')}
           </div>
         </div>
       </div>

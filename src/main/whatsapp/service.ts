@@ -1,5 +1,5 @@
 /**
- * WhatsApp send flow — database side (owner: assist area). No Electron imports so it can be unit tested.
+ * WhatsApp send flow - database side (owner: assist area). No Electron imports so it can be unit tested.
  * Builds the default phone/message for an entity, guards duplicates and keeps the whatsapp_log
  * (prepared -> opened -> sent / failed). The app never claims a message was sent: 'sent' is only set
  * when the user clicks "Mark as sent".

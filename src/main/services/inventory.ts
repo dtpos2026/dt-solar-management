@@ -558,7 +558,7 @@ export interface ProductUsage {
 
 const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`
 
-/** Everything that references a product (across all firms — a shared product may be used by another firm). */
+/** Everything that references a product (across all firms - a shared product may be used by another firm). */
 export function productUsage(db: DB, productId: number): ProductUsage {
   const c = (sql: string): number => (db.prepare(sql).get(productId) as { c: number }).c
   const documents = c('SELECT COUNT(DISTINCT document_id) AS c FROM document_lines WHERE product_id = ?')
@@ -738,7 +738,7 @@ export function saveCategory(ctx: Ctx, input: { id?: number; name: string; kind?
 /**
  * Delete a category. An empty category is deleted straight away. A category with products is deleted only
  * when a destination is chosen: its products are moved to that category (or to "no category") and the
- * category is removed — in one transaction. Stock and documents are not touched.
+ * category is removed - in one transaction. Stock and documents are not touched.
  */
 export function deleteCategory(ctx: Ctx, id: number, opts: { moveToCategoryId?: number | null; clearCategory?: boolean } = {}): { moved: number } {
   requirePerm(ctx, 'inventory.manage')

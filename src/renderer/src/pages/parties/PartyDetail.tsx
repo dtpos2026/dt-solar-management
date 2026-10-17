@@ -99,7 +99,7 @@ export function PartyDetail(): JSX.Element {
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label={p.balance >= 0 ? 'Balance — they owe us' : 'Balance — we owe them'} value={<span className={p.balance > 0.5 ? 'text-bad' : p.balance < -0.5 ? 'text-ok' : ''}>{money(Math.abs(p.balance))}</span>} tone={p.balance > 0 ? 'bad' : 'ok'} icon={<Scale className="h-5 w-5" />} />
+        <StatCard label={p.balance >= 0 ? 'Balance - they owe us' : 'Balance - we owe them'} value={<span className={p.balance > 0.5 ? 'text-bad' : p.balance < -0.5 ? 'text-ok' : ''}>{money(Math.abs(p.balance))}</span>} tone={p.balance > 0 ? 'bad' : 'ok'} icon={<Scale className="h-5 w-5" />} />
         {p.type !== 'supplier' && <StatCard label="Total sales (net of returns)" value={money(p.stats.total_sales - p.stats.total_sale_returns)} icon={<Plus className="h-5 w-5" />} />}
         {p.type !== 'customer' && <StatCard label="Total purchases (net of returns)" value={money(p.stats.total_purchases - p.stats.total_purchase_returns)} icon={<Plus className="h-5 w-5" />} tone="warn" />}
         <StatCard label="Invoices / bills" value={p.stats.invoice_count} tone="info" icon={<Plus className="h-5 w-5" />} />
@@ -190,7 +190,7 @@ function PartyPayments({ partyId, range, onChanged }: { partyId: number; range: 
         { key: 'method', header: 'Method', render: (r: any) => label(r.method) },
         { key: 'reference', header: 'Reference' },
         { key: 'amount', header: 'Amount', align: 'right', render: (r: any) => money(r.amount) },
-        { key: 'unallocated', header: 'Unallocated', align: 'right', render: (r: any) => (r.unallocated > 0.5 ? <span className="text-info">{money(r.unallocated)}</span> : '—') },
+        { key: 'unallocated', header: 'Unallocated', align: 'right', render: (r: any) => (r.unallocated > 0.5 ? <span className="text-info">{money(r.unallocated)}</span> : '-') },
         {
           key: 'a', header: '', sortable: false, csv: false,
           render: (r: any) => (
@@ -234,8 +234,8 @@ function AdjustmentModal({ open, partyId, onClose, onSaved }: { open: boolean; p
         <Field label="Date"><DateInput value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
         <Field label="Type">
           <Select value={f.direction} onChange={(e) => setF({ ...f, direction: e.target.value })}>
-            <option value="credit">Credit — reduce what they owe us / increase what we owe</option>
-            <option value="debit">Debit — increase what they owe us / reduce what we owe</option>
+            <option value="credit">Credit - reduce what they owe us / increase what we owe</option>
+            <option value="debit">Debit - increase what they owe us / reduce what we owe</option>
           </Select>
         </Field>
         <Field label="Amount"><NumberInput value={f.amount} onChange={(v) => setF({ ...f, amount: v })} /></Field>

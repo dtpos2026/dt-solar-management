@@ -74,7 +74,7 @@ export function HistoryPanel({ licenseId, refreshKey }: { licenseId: string; ref
         <ul className="divide-y divide-[#f1ecf7] text-[13px]">
           {shown.map((h) => (
             <li key={h.id} className="px-4 py-2">
-              <div className="flex justify-between gap-3"><b>{h.action.replace(/_/g, ' ')}</b><span className="text-[#7a6d92]">{fmtDateTime(h.at)} · {h.by}</span></div>
+              <div className="flex justify-between gap-3"><b>{h.action.replace(/_/g, ' ')}</b><span className="text-[#7a6d92]">{fmtDateTime(h.at)}, {h.by}</span></div>
               {h.details && <div className="text-[#5d4f78]">{h.details}</div>}
             </li>
           ))}

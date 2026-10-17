@@ -36,13 +36,13 @@ function popupHtml(r: DeviceRow, canRemove: boolean): string {
   ].filter(Boolean)
   return `<div style="font-size:12.5px;line-height:1.5;min-width:230px">
     <b>${esc(r.deviceName || 'Computer')}</b> <span style="color:#7a6d92">${esc(maskDeviceId(r.deviceId))}</span><br/>
-    Company: ${esc(r.company || '—')}<br/>
-    Last seen: ${esc(r.lastSeenMs ? `${fmtDateTime(r.lastSeenMs)} (${timeAgo(r.lastSeenMs)})` : '—')}<br/>
+    Company: ${esc(r.company || '-')}<br/>
+    Last seen: ${esc(r.lastSeenMs ? `${fmtDateTime(r.lastSeenMs)} (${timeAgo(r.lastSeenMs)})` : '-')}<br/>
     Location: ${esc(loc.label || `${loc.lat.toFixed(digits)}, ${loc.lng.toFixed(digits)}`)}<br/>
     Location time: ${esc(updated ? `${fmtDateTime(updated)} (${timeAgo(updated)})` : 'unknown')}<br/>
     Accuracy: ${esc(acc || 'unknown')}<br/>
     Source: ${esc(LOCATION_SOURCE_LABEL[loc.source])}<br/>
-    Device: ${esc(DEVICE_STATUS_LABEL[r.deviceStatus])} · License: ${esc(r.licenseStatus === 'none' ? '—' : r.licenseStatus)}
+    Device: ${esc(DEVICE_STATUS_LABEL[r.deviceStatus])}, License: ${esc(r.licenseStatus === 'none' ? '-' : r.licenseStatus)}
     ${links.length ? `<div style="margin-top:4px;display:flex;gap:12px">${links.join('')}</div>` : ''}
   </div>`
 }
@@ -107,7 +107,7 @@ export function DeviceMap() {
       if (m) L.circle([loc.lat, loc.lng], { radius: m, color: c, weight: 1, fillOpacity: loc.source === 'approximate' ? 0.06 : 0.12, dashArray: loc.source === 'approximate' ? '4 4' : undefined }).addTo(g)
       const when = loc.updatedAt && Number.isFinite(Date.parse(loc.updatedAt)) ? timeAgo(Date.parse(loc.updatedAt)) : r.lastSeenMs ? timeAgo(r.lastSeenMs) : ''
       L.circleMarker([loc.lat, loc.lng], { radius: 8, color: '#fff', weight: 2, fillColor: c, fillOpacity: 0.95, dashArray: loc.source === 'approximate' ? '2 2' : undefined })
-        .bindTooltip(`${esc(r.deviceName || r.company || 'Device')}${r.company && r.deviceName ? ` · ${esc(r.company)}` : ''}${loc.source === 'approximate' ? ' · approximate' : ''}${when ? ` · ${esc(when)}` : ''}`)
+        .bindTooltip(`${esc(r.deviceName || r.company || 'Device')}${r.company && r.deviceName ? `, ${esc(r.company)}` : ''}${loc.source === 'approximate' ? ', approximate' : ''}${when ? `, ${esc(when)}` : ''}`)
         .bindPopup(popupHtml(r, manage))
         .on('popupopen', (e) => {
           const btn = (e as L.PopupEvent).popup.getElement()?.querySelector<HTMLButtonElement>('[data-remove]')
@@ -129,7 +129,7 @@ export function DeviceMap() {
     <div>
       <PageTitle
         title="Device map"
-        sub={`Only computers whose owner enabled location sharing · IP locations are approximate (usually the ISP’s city) · ${ONLINE_THRESHOLD_LABEL}`}
+        sub={`Only computers whose owner enabled location sharing, IP locations are approximate (usually the ISP’s city), ${ONLINE_THRESHOLD_LABEL}`}
         actions={<button className="btn btn-secondary" onClick={fleet.refresh} disabled={fleet.loading}><RefreshCw className="h-4 w-4" />Refresh</button>}
       />
       <Notice msg={msg} onClose={() => setMsg(null)} className="mb-3" />
@@ -161,9 +161,9 @@ export function DeviceMap() {
               {hidden.map((r) => (
                 <li key={r.key} className="flex items-center justify-between gap-2 px-4 py-2">
                   <div className="min-w-0">
-                    <div className="truncate font-semibold">{r.company || '—'}</div>
-                    <div className="truncate text-[11.5px] text-[#7a6d92]">{r.deviceName || maskDeviceId(r.deviceId)}{r.licenseId && <> · <Link className="underline" to={`/licenses/${r.licenseId}`}>license</Link></>}</div>
-                    <div className="text-[11.5px] text-[#9a8fb0]">{unavailableReason(r)}{r.lastSeenMs ? ` · seen ${timeAgo(r.lastSeenMs)}` : ''}</div>
+                    <div className="truncate font-semibold">{r.company || '-'}</div>
+                    <div className="truncate text-[12px] text-[#7a6d92]">{r.deviceName || maskDeviceId(r.deviceId)}{r.licenseId && <>, <Link className="underline" to={`/licenses/${r.licenseId}`}>license</Link></>}</div>
+                    <div className="text-[12px] text-[#9a8fb0]">{unavailableReason(r)}{r.lastSeenMs ? `, seen ${timeAgo(r.lastSeenMs)}` : ''}</div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <Pill value={r.online} />

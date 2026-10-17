@@ -2,7 +2,7 @@
  * Pure metric helpers for the Super Admin dashboard, client and device pages.
  * No Firebase imports: everything here takes plain numbers (epoch milliseconds) so it is unit tested from the
  * root test suite (tests/portal-licensing.test.ts). Never fabricate numbers: callers pass `null` when a source
- * could not be read and the UI shows "—".
+ * could not be read and the UI shows "-".
  */
 
 /* ------------------------------------------------ online status ------------------------------------------------ */

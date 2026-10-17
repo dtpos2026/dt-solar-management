@@ -47,7 +47,7 @@ export function ProjectsPage(): JSX.Element {
     </span>
   )
   const cols: Array<Column<any>> = [
-    { key: 'code', header: 'Project', render: (r) => <div><div className="font-semibold">{r.name}</div><div className="text-[12px] text-muted">{r.code} · {r.customer_name ?? '—'}</div></div>, value: (r) => `${r.code} ${r.name}` },
+    { key: 'code', header: 'Project', render: (r) => <div><div className="font-semibold">{r.name}</div><div className="text-[12px] text-muted">{r.code}, {r.customer_name ?? '-'}</div></div>, value: (r) => `${r.code} ${r.name}` },
     { key: 'capacity_kw', header: 'Size', align: 'right', render: (r) => `${qty(r.capacity_kw)} kW` },
     { key: 'system_type', header: 'System', render: (r) => SYSTEM_TYPE_LABELS[r.system_type] },
     { key: 'status', header: 'Status', render: statusBadges },
@@ -64,7 +64,7 @@ export function ProjectsPage(): JSX.Element {
     <div>
       <PageHeader
         title="Solar Projects"
-        subtitle="Every installation with its own revenue, material, labor and profit — no double counting"
+        subtitle="Every installation with its own revenue, material, labor and profit - no double counting"
         icon={<SunMedium className="h-5 w-5" />}
         actions={
           <>
@@ -87,7 +87,7 @@ export function ProjectsPage(): JSX.Element {
           <option value="only">Show archived</option>
           <option value="all">Active + archived</option>
         </Select>
-        <span className="ml-auto text-[13px] text-muted">{rows.length} project(s) · {qty(rows.reduce((a, r) => a + (r.capacity_kw || 0), 0))} kW</span>
+        <span className="ml-auto text-[13px] text-muted">{rows.length} project(s), {qty(rows.reduce((a, r) => a + (r.capacity_kw || 0), 0))} kW</span>
       </div>
       {loading ? (
         <Loading />
@@ -196,14 +196,14 @@ export function ProjectForm({ open, project, onClose, onSaved }: { open: boolean
         </Field>
         <Field label="Project manager">
           <Select value={f.managerUserId ?? ''} onChange={(e) => set('managerUserId', e.target.value ? Number(e.target.value) : null)}>
-            <option value="">— Not assigned —</option>
+            <option value="">Not assigned</option>
             {(users.data ?? []).map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
           </Select>
         </Field>
         <Field label="Linked quotation">
           <Select value={f.quotationId ?? ''} onChange={(e) => set('quotationId', e.target.value ? Number(e.target.value) : null)}>
-            <option value="">— None —</option>
-            {(quotes.data ?? []).filter((q) => !f.customerId || q.party_id === f.customerId).map((q) => <option key={q.id} value={q.id}>{q.number} · {money(q.grand_total)}</option>)}
+            <option value="">None</option>
+            {(quotes.data ?? []).filter((q) => !f.customerId || q.party_id === f.customerId).map((q) => <option key={q.id} value={q.id}>{q.number}, {money(q.grand_total)}</option>)}
           </Select>
         </Field>
         <Field label="Contract / quoted amount" hint="For reference; revenue comes from invoices."><NumberInput value={f.contractAmount} onChange={(v) => set('contractAmount', v)} /></Field>

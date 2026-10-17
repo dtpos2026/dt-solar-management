@@ -62,7 +62,7 @@ function Header({ ctx, o, title, lines }: { ctx: PrintContext; o: TemplateOption
       <div className="text-[9.5px] leading-snug">
         {[f.address, f.city].filter(Boolean).join(', ')}
         {contact && <div>Ph: {contact}</div>}
-        {(f.ntn || f.strn) && <div>{[f.ntn && `NTN: ${f.ntn}`, f.strn && `STRN: ${f.strn}`].filter(Boolean).join(' · ')}</div>}
+        {(f.ntn || f.strn) && <div>{[f.ntn && `NTN: ${f.ntn}`, f.strn && `STRN: ${f.strn}`].filter(Boolean).join(', ')}</div>}
       </div>
       <Rule strong />
       <div className="text-[12.5px] font-black tracking-[0.12em] uppercase">{title}</div>
@@ -128,7 +128,7 @@ export function ThermalDocument({ v, ctx }: { v: DocView; ctx: PrintContext }): 
             <div className="font-bold leading-tight">
               {i + 1}. {l.description}
             </div>
-            {o.showBrandModel && (l.brand || l.model) && l.description !== l.product_name && <div className="text-[9px]">{[l.brand, l.model].filter(Boolean).join(' · ')}</div>}
+            {o.showBrandModel && (l.brand || l.model) && l.description !== l.product_name && <div className="text-[9px]">{[l.brand, l.model].filter(Boolean).join(', ')}</div>}
             {o.showDescription && l.details && (
               <div className="text-[9.3px] leading-snug whitespace-pre-line" data-item-details="1">
                 {l.details}
@@ -239,7 +239,7 @@ export function ThermalPayment({ p, ctx, o }: { p: any; ctx: PrintContext; o: Te
           <div className="text-[9.5px] font-bold uppercase">{isIn ? 'Settled against' : 'Paid against'}</div>
           <div className="space-y-0.5 text-[10px]">
             {allocations.map((a, i) => (
-              <Row key={a.id ?? i} k={a.document_number ?? a.expense_number ?? '—'} v={pm(ctx, a.amount, 2)} />
+              <Row key={a.id ?? i} k={a.document_number ?? a.expense_number ?? '-'} v={pm(ctx, a.amount, 2)} />
             ))}
           </div>
         </>

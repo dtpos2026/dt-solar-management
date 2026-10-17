@@ -85,7 +85,7 @@ export function useParties(type?: 'customer' | 'supplier'): { parties: PartyLite
 export function useProjects(): { projects: Array<{ id: number; code: string; name: string; customer_id: number | null; status: string }>; options: Option[]; reload: () => Promise<void> } {
   const { data, reload } = useLoad(() => api<Array<{ id: number; code: string; name: string; customer_id: number | null; status: string }>>('projects.options'), [])
   const projects = data ?? []
-  return { projects, options: projects.map((p) => ({ value: p.id, label: `${p.code} — ${p.name}`, sub: p.status.replace('_', ' ') })), reload }
+  return { projects, options: projects.map((p) => ({ value: p.id, label: `${p.code} - ${p.name}`, sub: p.status.replace('_', ' ') })), reload }
 }
 
 export function useAccounts(): Array<{ id: number; name: string; type: string; balance: number; is_default: number }> {

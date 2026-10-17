@@ -1,5 +1,5 @@
 /**
- * Pure billing maths (no firebase imports — unit tested from tests/portal-billing.test.ts).
+ * Pure billing maths (no firebase imports - unit tested from tests/portal-billing.test.ts).
  * All money values are rounded to 2 decimals.
  */
 export type LineKind = 'plan' | 'extra_firm' | 'extra_device' | 'other'

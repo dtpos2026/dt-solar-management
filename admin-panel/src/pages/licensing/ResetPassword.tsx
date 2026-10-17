@@ -70,7 +70,7 @@ export function ResetPasswordDialog({ row, resetState, onClose }: { row: DeviceR
     <Modal
       open
       onClose={onClose}
-      title={`Reset Administrator password · ${row.deviceName || maskDeviceId(row.deviceId)}`}
+      title={`Reset Administrator password, ${row.deviceName || maskDeviceId(row.deviceId)}`}
       wide
       footer={
         cmd ? (
@@ -115,7 +115,7 @@ export function ResetPasswordDialog({ row, resetState, onClose }: { row: DeviceR
               <code className="rounded-lg bg-[#f6f0fd] px-3 py-2 text-[20px] font-bold tracking-wider text-[#3d096d] select-all">{cmd.password}</code>
               <button className="btn btn-secondary btn-sm" onClick={() => copy(cmd.password, 'Password')}><Copy className="h-4 w-4" />Copy</button>
             </div>
-            <div className="mt-1 text-[12px] text-[#7a6d92]">Valid until {fmtDateTime(cmd.expiresAt)} · one use · capitals and dashes do not matter when typing.</div>
+            <div className="mt-1 text-[12px] text-[#7a6d92]">Valid until {fmtDateTime(cmd.expiresAt)}, one use, capitals and dashes do not matter when typing.</div>
           </div>
           <div className={withdrawn ? 'opacity-60' : ''}>
             <div className="label">Delivery</div>
@@ -126,7 +126,7 @@ export function ResetPasswordDialog({ row, resetState, onClose }: { row: DeviceR
             <p className="mt-2 text-[12.5px] text-[#6b5d85]">
               On the sign-in screen the customer clicks <b>Administrator locked out?</b>, pastes this code, then signs in as the Administrator with the temporary password.
             </p>
-            <textarea className="input mt-2 font-mono text-[11px]" rows={4} readOnly value={cmd.code} onFocus={(e) => e.currentTarget.select()} aria-label="Reset code" />
+            <textarea className="input mt-2 font-mono text-[12px]" rows={4} readOnly value={cmd.code} onFocus={(e) => e.currentTarget.select()} aria-label="Reset code" />
             <button className="btn btn-secondary btn-sm mt-2" onClick={() => copy(cmd.code, 'Reset code')}><Copy className="h-4 w-4" />Copy code</button>
           </details>
         </div>

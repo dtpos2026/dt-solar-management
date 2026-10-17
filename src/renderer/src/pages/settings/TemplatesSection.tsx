@@ -1,8 +1,8 @@
 /**
- * Settings section — Invoice / quotation template designer (owner: documents area).
+ * Settings section - Invoice / quotation template designer (owner: documents area).
  * Create / edit / duplicate / delete print templates, choose the default per document type, and see a live preview
  * rendered with a real recent document (or a clearly labelled sample when none exists yet).
- * Templates only change how documents look — never the stored document data.
+ * Templates only change how documents look - never the stored document data.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Copy, FileText, Pencil, Plus, Star, Trash2 } from 'lucide-react'
@@ -107,7 +107,7 @@ export function TemplatesSection(): JSX.Element {
           <Spinner />
         ) : templates.length === 0 ? (
           <div className="rounded-xl border border-dashed border-line px-4 py-6 text-center text-muted">
-            No templates yet — documents print with the built-in layouts. Create one to choose layout, colours and what is shown.
+            No templates yet - documents print with the built-in layouts. Create one to choose layout, colours and what is shown.
           </div>
         ) : (
           <div className="divide-y divide-line rounded-xl border border-line" data-testid="template-list">
@@ -117,7 +117,7 @@ export function TemplatesSection(): JSX.Element {
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-semibold">{t.name}</div>
                   <div className="text-[12px] text-muted">
-                    {LAYOUT_LABEL[t.layout]} · {t.applies_to === 'all' ? 'All document types' : KIND_LABELS[t.applies_to]}
+                    {LAYOUT_LABEL[t.layout]}, {t.applies_to === 'all' ? 'All document types' : KIND_LABELS[t.applies_to]}
                   </div>
                 </div>
                 {t.default_for.map((k) => (
@@ -151,7 +151,7 @@ export function TemplatesSection(): JSX.Element {
                     .filter((t) => templateFits(t, k))
                     .map((t) => (
                       <option key={t.id} value={String(t.id)}>
-                        {t.name} — {LAYOUT_LABEL[t.layout]}
+                        {t.name} - {LAYOUT_LABEL[t.layout]}
                       </option>
                     ))}
                   {builtinLayouts(k).map((l) => (
@@ -214,7 +214,7 @@ function TemplateEditor({ draft: initial, ctx, onClose, onSaved }: { draft: Draf
       open
       size="full"
       onClose={onClose}
-      title={d.id ? `Edit template — ${initial.name}` : 'New print template'}
+      title={d.id ? `Edit template - ${initial.name}` : 'New print template'}
       footer={
         <>
           <Button onClick={onClose}>Cancel</Button>
@@ -269,7 +269,7 @@ function TemplatePreview({ kind, ctx, design, name }: { kind: TemplateKind; ctx:
     setSrc(null)
     api<{ entity: 'doc' | 'payment'; id: number; number: string } | null>('templates.previewSource', { kind })
       .then(async (s) => {
-        if (!s) return kind === 'payment' ? 'none' : { data: sampleDoc(kind), label: 'SAMPLE data — no real document of this type exists yet', sample: true }
+        if (!s) return kind === 'payment' ? 'none' : { data: sampleDoc(kind), label: 'SAMPLE data - no real document of this type exists yet', sample: true }
         const data = await api<any>(s.entity === 'doc' ? 'docs.get' : 'payments.get', { id: s.id })
         return { data, label: `Previewing your ${KIND_LABELS[kind].toLowerCase()} ${s.number}`, sample: false }
       })

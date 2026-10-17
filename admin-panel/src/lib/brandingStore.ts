@@ -1,8 +1,8 @@
 /**
  * Firestore access for Digital Target branding and portal settings.
- *   settings/branding        — full Branding (admins read, branding.manage writes)
- *   publicSettings/branding  — public subset (public get; used by the invoice verification page)
- *   settings/portal          — { sessionTimeoutMin } (admins read, branding.manage writes)
+ *   settings/branding        - full Branding (admins read, branding.manage writes)
+ *   publicSettings/branding  - public subset (public get; used by the invoice verification page)
+ *   settings/portal          - { sessionTimeoutMin } (admins read, branding.manage writes)
  */
 import { useEffect, useState } from 'react'
 import { Timestamp, doc, getDoc, onSnapshot, serverTimestamp, writeBatch } from 'firebase/firestore'
@@ -150,6 +150,6 @@ export async function saveSettings(prev: Branding, next: Branding, prevTimeout: 
 }
 
 function short(v: unknown): string {
-  const t = v === null || v === undefined ? '—' : String(v)
-  return t.length > 60 ? `${t.slice(0, 57)}…` : t || '—'
+  const t = v === null || v === undefined ? '-' : String(v)
+  return t.length > 60 ? `${t.slice(0, 57)}…` : t || '-'
 }

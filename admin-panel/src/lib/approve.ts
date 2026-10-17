@@ -1,5 +1,5 @@
 /**
- * Activation approval and certificate publishing — runs in the admin's browser (no Cloud Functions on the Spark plan).
+ * Activation approval and certificate publishing - runs in the admin's browser (no Cloud Functions on the Spark plan).
  * Registers/reactivates the device in a transaction, signs the certificate with the local key,
  * and (for online requests) writes the activation code back to activationRequests/{id}.
  * After a change of terms, publishCertificates re-signs every ACTIVE device and publishes the codes to
@@ -130,8 +130,8 @@ export interface IssueResult {
  * Validates and registers the device, returns the signed certificate. Throws a human readable error to reject.
  * Only ever called on an explicit admin action (approve / reassign / offline activation / re-issue): a valid key
  * alone never grants a slot through the admin path. Everything happens in ONE transaction (reads in parallel, one
- * commit): slot, device record, summary, history, the certificate published to licenseStatus.certs and — for an online
- * request — the approval written back to activationRequests/{id}. The customer's app therefore sees the approval at the
+ * commit): slot, device record, summary, history, the certificate published to licenseStatus.certs and - for an online
+ * request - the approval written back to activationRequests/{id}. The customer's app therefore sees the approval at the
  * moment the slot exists, with no further round trips. The transaction re-reads everything, so two approvals racing for
  * the last slot cannot both succeed (the loser is retried by Firestore, sees the full limit and fails).
  */
@@ -183,7 +183,7 @@ export async function issueForDevice(
         updatedAt: serverTimestamp()
       })
       tx.set(licenseStatusRef(lic.id), { certs: { [dev.deviceId]: signed.code }, updatedAt: serverTimestamp() }, { merge: true })
-      writeLog(tx, lic.id, 'certificate_reissued', by, `${label} — certificate re-issued (${activationType}); no new slot used`, 'license')
+      writeLog(tx, lic.id, 'certificate_reissued', by, `${label} - certificate re-issued (${activationType}); no new slot used`, 'license')
       linkLog()
       approveRequestDoc(signed.code)
       return { license: lic, kind: 'reissue' as const, cert: signed }
@@ -198,13 +198,13 @@ export async function issueForDevice(
       const err = replaceableError(old ? { deviceId: old.deviceId, status: old.status } : null, dev.deviceId)
       if (err) throw new ActivationRefusedError(err)
       replacedName = old!.deviceName
-      // Release the replaced computer (slot freed) — same transaction as the activation below.
+      // Release the replaced computer (slot freed) - same transaction as the activation below.
       tx.update(deviceRef(lic.id, replaceId), { status: 'deactivated', deactivatedAt: serverTimestamp(), statusChangedAt: serverTimestamp(), statusBy: by, statusNote: (opts.note ?? '').trim() || `Replaced by ${dev.deviceName || 'another computer'}` })
       changes[replaceId] = summaryEntry({ ...old!, activatedAt: oldSnap!.data()?.activatedAt ?? null, status: 'deactivated', statusNote: `Replaced by ${dev.deviceName || 'another computer'}` })
       activeDevices -= 1
       outcome = 'reassign'
     }
-    // (A slot freed up meanwhile: the chosen computer is NOT released — the request simply takes the free slot.)
+    // (A slot freed up meanwhile: the chosen computer is NOT released - the request simply takes the free slot.)
     activeDevices += 1
     if (activeDevices > lic.maxDevices) throw new Error(`Device limit reached (${lic.activeDevices} of ${lic.maxDevices})`)
     const signed = await signFor({ ...lic, activeDevices }, dev.deviceId, key)
@@ -226,12 +226,12 @@ export async function issueForDevice(
         lic.id,
         'device_reassigned',
         by,
-        `${deviceLabel(replacedName, replaceId)} released and replaced by ${label} (${activationType}) — slots ${activeDevices} of ${lic.maxDevices}${opts.note?.trim() ? `. Note: ${opts.note.trim()}` : ''}`,
+        `${deviceLabel(replacedName, replaceId)} released and replaced by ${label} (${activationType}) - slots ${activeDevices} of ${lic.maxDevices}${opts.note?.trim() ? `. Note: ${opts.note.trim()}` : ''}`,
         'license'
       )
     } else {
       tx.set(licenseStatusRef(lic.id), { ...licenseStatusPatch(lic, { remove: [dev.deviceId] }), certs: { [dev.deviceId]: signed.code } }, { merge: true })
-      writeLog(tx, lic.id, 'device_activated', by, `${label} approved and activated (${activationType}) — slots ${activeDevices} of ${lic.maxDevices}`, 'license')
+      writeLog(tx, lic.id, 'device_activated', by, `${label} approved and activated (${activationType}) - slots ${activeDevices} of ${lic.maxDevices}`, 'license')
     }
     linkLog()
     approveRequestDoc(signed.code)

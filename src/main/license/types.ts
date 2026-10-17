@@ -30,7 +30,7 @@ export interface LicensePayload {
   /** Super Admin client record this license belongs to. */
   clientId?: string
   maxDevices?: number
-  /** Show "Powered by Digital Target" on customer documents (default false — customer documents are white-label). */
+  /** Show "Powered by Digital Target" on customer documents (default false - customer documents are white-label). */
   poweredBy?: boolean
   /**
    * Lifetime license detached from central management: no online check-ins are required or performed, so the
@@ -49,7 +49,7 @@ export interface LicenseCertificate {
 /**
  * - not_activated: no certificate installed (fresh install, or an old installation that used the former local trial).
  *   Read-only: data can be viewed, printed, exported and backed up; nothing can be created until a license is installed.
- * - trial: a Super Admin-issued trial license (plan 'trial', short expiry) — there is no local trial any more.
+ * - trial: a Super Admin-issued trial license (plan 'trial', short expiry) - there is no local trial any more.
  * - trial_expired: that trial license has passed its expiry date.
  * - device_deactivated: Digital Target suspended / released THIS computer on the license (the license itself may be fine).
  */
@@ -109,7 +109,7 @@ export interface LicenseStatus {
   detached: boolean
   /** Customer registration details sent with the last online activation (company, owner, phone, address). */
   registration: Registration | null
-  /** Installation id (secret token) shortened for display — never the full value. */
+  /** Installation id (secret token) shortened for display - never the full value. */
   installId: string
   /** Last certificate that reached this computer through a check-in (renewal / plan / limits / detachment). */
   certUpdate: { at: string; summary: string } | null

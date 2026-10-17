@@ -27,7 +27,7 @@ export function InventoryPage(): JSX.Element {
     <div>
       <PageHeader
         title="Products & Inventory"
-        subtitle="Solar panels, inverters, batteries, structures, cables, accessories and services — valued at moving average cost"
+        subtitle="Solar panels, inverters, batteries, structures, cables, accessories and services - valued at moving average cost"
         icon={<Boxes className="h-5 w-5" />}
         actions={
           <>
@@ -130,13 +130,13 @@ function ProductsTab({ onEdit, tick }: { onEdit: (p: any) => void; tick: number 
         </span>
       )
     },
-    { key: 'name', header: 'Product', render: (r) => <div><div className="font-medium">{r.name}</div><div className="text-[12px] text-muted">{[r.sku, r.brand, r.model].filter(Boolean).join(' · ')}</div></div>, value: (r) => `${r.name} ${r.sku ?? ''} ${r.brand ?? ''} ${r.model ?? ''}` },
-    { key: 'category_name', header: 'Category', render: (r) => r.category_name ?? <span className="text-muted">—</span> },
+    { key: 'name', header: 'Product', render: (r) => <div><div className="font-medium">{r.name}</div><div className="text-[12px] text-muted">{[r.sku, r.brand, r.model].filter(Boolean).join(', ')}</div></div>, value: (r) => `${r.name} ${r.sku ?? ''} ${r.brand ?? ''} ${r.model ?? ''}` },
+    { key: 'category_name', header: 'Category', render: (r) => r.category_name ?? <span className="text-muted">-</span> },
     { key: 'type', header: 'Type', render: (r) => <Badge tone={r.type === 'service' ? 'info' : 'muted'}>{r.type === 'service' ? 'Service' : 'Goods'}</Badge> },
-    { key: 'stock', header: 'In stock', align: 'right', render: (r) => (r.type === 'service' ? '—' : <span className={r.stock <= 0 ? 'font-semibold text-bad' : r.reorder_level > 0 && r.stock <= r.reorder_level ? 'font-semibold text-warn' : ''}>{qty(r.stock)} {r.unit}</span>) },
-    { key: 'avg_cost', header: 'Avg cost', align: 'right', hidden: !showCost, render: (r) => (r.type === 'service' ? '—' : money(r.avg_cost)) },
+    { key: 'stock', header: 'In stock', align: 'right', render: (r) => (r.type === 'service' ? '-' : <span className={r.stock <= 0 ? 'font-semibold text-bad' : r.reorder_level > 0 && r.stock <= r.reorder_level ? 'font-semibold text-warn' : ''}>{qty(r.stock)} {r.unit}</span>) },
+    { key: 'avg_cost', header: 'Avg cost', align: 'right', hidden: !showCost, render: (r) => (r.type === 'service' ? '-' : money(r.avg_cost)) },
     { key: 'sale_price', header: 'Sale price', align: 'right', render: (r) => money(r.sale_price) },
-    { key: 'stock_value', header: 'Stock value', align: 'right', hidden: !showCost, render: (r) => (r.type === 'service' ? '—' : money(r.stock_value)) },
+    { key: 'stock_value', header: 'Stock value', align: 'right', hidden: !showCost, render: (r) => (r.type === 'service' ? '-' : money(r.stock_value)) },
     { key: 'flags', header: '', sortable: false, csv: false, render: (r) => <div className="flex gap-1">{r.track_serial ? <Badge tone="info">S/N</Badge> : null}{r.warranty_months ? <Badge tone="ok">{r.warranty_months}m</Badge> : null}{!r.is_active && <Badge tone="warn">Archived</Badge>}</div> },
     {
       key: 'actions', header: '', sortable: false, csv: false,
@@ -243,7 +243,7 @@ function ProductDetail({ id, onClose, onEdit, onChanged }: { id: number | null; 
     </>
   )
   return (
-    <Modal open={!!id} onClose={onClose} title={p?.name ?? 'Product'} subtitle={p ? [p.sku, p.category_name, p.brand, p.model].filter(Boolean).join(' · ') : ''} size="lg" footer={footer}>
+    <Modal open={!!id} onClose={onClose} title={p?.name ?? 'Product'} subtitle={p ? [p.sku, p.category_name, p.brand, p.model].filter(Boolean).join(', ') : ''} size="lg" footer={footer}>
       {!p ? null : (
         <div className="space-y-4">
           {!p.is_active && (
@@ -255,7 +255,7 @@ function ProductDetail({ id, onClose, onEdit, onChanged }: { id: number | null; 
           <div className="grid grid-cols-3 gap-3">
             <Card><Kv label="Sale price">{money(p.sale_price)}</Kv>{p.avg_cost !== null && <Kv label="Average cost">{money(p.avg_cost)}</Kv>}{p.purchase_price !== null && <Kv label="Last purchase price">{money(p.purchase_price)}</Kv>}</Card>
             <Card><Kv label="Unit">{p.unit}</Kv><Kv label="Tax rate">{p.tax_rate}%</Kv><Kv label="Reorder level">{qty(p.reorder_level)}</Kv></Card>
-            <Card><Kv label="Warranty">{p.warranty_months ? `${p.warranty_months} months` : '—'}</Kv><Kv label="Serial tracking">{p.track_serial ? 'Yes' : 'No'}</Kv><Kv label="Type">{label(p.type)}</Kv></Card>
+            <Card><Kv label="Warranty">{p.warranty_months ? `${p.warranty_months} months` : '-'}</Kv><Kv label="Serial tracking">{p.track_serial ? 'Yes' : 'No'}</Kv><Kv label="Type">{label(p.type)}</Kv></Card>
           </div>
           {p.type === 'goods' && (
             <Card title="Stock by warehouse" pad={false}>
@@ -267,7 +267,7 @@ function ProductDetail({ id, onClose, onEdit, onChanged }: { id: number | null; 
             <Card title="Recent stock movements" pad={false}>
               <table className="tbl">
                 <thead><tr><th>Date</th><th>Type</th><th>Ref</th><th>Warehouse</th><th className="text-right">In</th><th className="text-right">Out</th><th className="text-right">Unit cost</th></tr></thead>
-                <tbody>{moves.map((m) => <tr key={m.id} className={m.is_reversal ? 'opacity-60' : ''}><td>{date(m.date)}</td><td>{label(m.ref_type)}{m.is_reversal ? ' (reversal)' : ''}</td><td>{m.ref_number ?? ''}{m.project_name ? ` · ${m.project_name}` : ''}</td><td>{m.warehouse_name}</td><td className="num text-right text-ok">{m.qty_in ? qty(m.qty_in) : ''}</td><td className="num text-right text-bad">{m.qty_out ? qty(m.qty_out) : ''}</td><td className="num text-right">{money(m.unit_cost)}</td></tr>)}</tbody>
+                <tbody>{moves.map((m) => <tr key={m.id} className={m.is_reversal ? 'opacity-60' : ''}><td>{date(m.date)}</td><td>{label(m.ref_type)}{m.is_reversal ? ' (reversal)' : ''}</td><td>{m.ref_number ?? ''}{m.project_name ? `, ${m.project_name}` : ''}</td><td>{m.warehouse_name}</td><td className="num text-right text-ok">{m.qty_in ? qty(m.qty_in) : ''}</td><td className="num text-right text-bad">{m.qty_out ? qty(m.qty_out) : ''}</td><td className="num text-right">{money(m.unit_cost)}</td></tr>)}</tbody>
               </table>
             </Card>
           )}
@@ -310,7 +310,7 @@ export function ProductForm({ open, product, onClose, onSaved }: { open: boolean
       {product && !product.is_active && (
         <div className="mb-3 flex items-start gap-3 rounded-xl bg-warn-soft px-4 py-2.5 text-[13px]">
           <Archive className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
-          <div>This product is <b>archived</b>. Saving keeps it archived — use <b>Restore</b> in the product list to make it available on new documents again.</div>
+          <div>This product is <b>archived</b>. Saving keeps it archived - use <b>Restore</b> in the product list to make it available on new documents again.</div>
         </div>
       )}
       <div className="grid grid-cols-4 gap-3">
@@ -321,9 +321,9 @@ export function ProductForm({ open, product, onClose, onSaved }: { open: boolean
             <option value="service">Service / labor</option>
           </Select>
         </Field>
-        <Field label="Category" className="col-span-2" hint={product ? 'Can be changed at any time — stock, costs and past documents are not affected.' : undefined}>
+        <Field label="Category" className="col-span-2" hint={product ? 'Can be changed at any time - stock, costs and past documents are not affected.' : undefined}>
           <Select value={f.categoryId ?? ''} onChange={(e) => set('categoryId', e.target.value ? Number(e.target.value) : null)}>
-            <option value="">— None —</option>
+            <option value="">None</option>
             {(cats.data ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </Select>
         </Field>
@@ -395,8 +395,8 @@ function StockTab(): JSX.Element {
           <Checkbox checked={zero} onChange={setZero} label="Include zero stock" />
           <Button size="sm" variant="ghost" icon={<Printer className="h-4 w-4" />} onClick={() => api('print.open', { kind: 'stock', id: 0, params: { warehouseId: wh } })}>Print</Button>
           <span className="ml-auto text-[12.5px] text-muted">
-            {data?.totalValue !== null && data?.totalValue !== undefined && <>Stock value <b className="text-ink">{money(data.totalValue)}</b> · </>}
-            At sale price <b className="text-ink">{money(data?.totalSaleValue ?? 0)}</b> · Method: {data?.method}
+            {data?.totalValue !== null && data?.totalValue !== undefined && <>Stock value <b className="text-ink">{money(data.totalValue)}</b>, </>}
+            At sale price <b className="text-ink">{money(data?.totalSaleValue ?? 0)}</b>, Method: {data?.method}
           </span>
         </>
       }
@@ -413,7 +413,7 @@ function MovementsTab(): JSX.Element {
     { key: 'date', header: 'Date', render: (r) => date(r.date) },
     { key: 'product_name', header: 'Product' },
     { key: 'ref_type', header: 'Type', render: (r) => <span>{label(r.ref_type)}{r.is_reversal ? <Badge tone="warn" className="ml-1">Reversal</Badge> : null}</span> },
-    { key: 'ref_number', header: 'Reference', render: (r) => <span>{r.ref_number ?? '—'}{r.project_name && <span className="text-muted"> · {r.project_name}</span>}</span> },
+    { key: 'ref_number', header: 'Reference', render: (r) => <span>{r.ref_number ?? '-'}{r.project_name && <span className="text-muted">, {r.project_name}</span>}</span> },
     { key: 'warehouse_name', header: 'Warehouse' },
     { key: 'firm_name', header: 'Firm' },
     { key: 'qty_in', header: 'In', align: 'right', render: (r) => (r.qty_in ? <span className="text-ok">+{qty(r.qty_in)}</span> : '') },
@@ -453,7 +453,7 @@ function AdjustmentsTab(): JSX.Element {
   return (
     <>
       <DataTable rows={data ?? []} columns={cols} loading={loading} exportName="Stock adjustments" onRowClick={async (r) => setView(await api('stock.adjustment', { id: r.id }))} />
-      <Modal open={!!view} onClose={() => setView(null)} title={`${view?.number} — ${view?.kind === 'opening' ? 'Opening stock' : 'Stock adjustment'}`} subtitle={view ? `${date(view.date)} · ${view.warehouse_name} · ${view.reason ?? ''}` : ''} size="lg">
+      <Modal open={!!view} onClose={() => setView(null)} title={`${view?.number} - ${view?.kind === 'opening' ? 'Opening stock' : 'Stock adjustment'}`} subtitle={view ? `${date(view.date)}, ${view.warehouse_name}, ${view.reason ?? ''}` : ''} size="lg">
         {view && (
           <table className="tbl">
             <thead><tr><th>Product</th><th className="text-right">Qty</th><th className="text-right">Unit cost</th><th className="text-right">Value</th><th>Serials</th></tr></thead>
@@ -730,10 +730,10 @@ function SerialsTab(): JSX.Element {
                       <td className="font-mono font-semibold">{r.serial}</td>
                       <td>{r.product_name}</td>
                       <td><Badge tone={r.status === 'in_stock' ? 'ok' : 'info'}>{label(r.status)}</Badge></td>
-                      <td>{r.party_name ?? '—'}{r.project_name ? ` · ${r.project_name}` : ''}</td>
+                      <td>{r.party_name ?? '-'}{r.project_name ? `, ${r.project_name}` : ''}</td>
                       <td>{date(r.out_date)}</td>
-                      <td>{r.out_doc_number ?? '—'}</td>
-                      <td>{end ? <span className={end < new Date() ? 'text-bad' : 'text-ok'}>until {date(end.toISOString().slice(0, 10))}</span> : r.warranty_months ? `${r.warranty_months} months` : '—'}</td>
+                      <td>{r.out_doc_number ?? '-'}</td>
+                      <td>{end ? <span className={end < new Date() ? 'text-bad' : 'text-ok'}>until {date(end.toISOString().slice(0, 10))}</span> : r.warranty_months ? `${r.warranty_months} months` : '-'}</td>
                     </tr>
                   )
                 })}

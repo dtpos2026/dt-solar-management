@@ -1,4 +1,4 @@
-/** Settings section — Printers on this computer, printer per document kind, paper size, direct printing, test print (owner: access area). */
+/** Settings section - Printers on this computer, printer per document kind, paper size, direct printing, test print (owner: access area). */
 import { ReactNode, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, FileText, Printer, Receipt, RefreshCw, RotateCcw, Save, ScrollText, Star, XCircle, Zap } from 'lucide-react'
 import { api } from '../../api'
@@ -56,7 +56,7 @@ const ROLES: Array<{ key: RoleKey; label: string; hint: string; icon: ReactNode 
   { key: 'printer_invoice', label: 'Invoices & bills', hint: 'Sale and purchase invoices, orders, challans and returns', icon: <FileText /> },
   { key: 'printer_quotation', label: 'Quotations', hint: 'Customer quotations', icon: <ScrollText /> },
   { key: 'printer_report', label: 'Reports & statements', hint: 'Reports, stock lists, party statements, project sheets', icon: <Printer /> },
-  { key: 'printer_receipt', label: 'Payment receipts', hint: 'Receipts and payment vouchers — often a thermal printer', icon: <Receipt /> }
+  { key: 'printer_receipt', label: 'Payment receipts', hint: 'Receipts and payment vouchers - often a thermal printer', icon: <Receipt /> }
 ]
 
 const EMPTY: PrinterSettings = {
@@ -203,13 +203,13 @@ export function PrintersSection(): JSX.Element {
       <option key={p.name} value={p.name}>
         {p.displayName}
         {p.isDefault ? ` (${os} default)` : ''}
-        {p.status && !/ready|idle/i.test(p.status) ? ` — ${p.status}` : ''}
+        {p.status && !/ready|idle/i.test(p.status) ? ` - ${p.status}` : ''}
       </option>
     ))
     if (current && !listed.has(current)) {
       out.push(
         <option key={`missing:${current}`} value={current}>
-          {current} — not found
+          {current} - not found
         </option>
       )
     }
@@ -276,7 +276,7 @@ export function PrintersSection(): JSX.Element {
                       <Badge tone={statusTone(p.status)}>{p.status ?? 'Status not reported'}</Badge>
                     </div>
                     <div className="truncate text-[12px] text-muted">
-                      {[p.description, p.location, p.displayName !== p.name ? p.name : null].filter(Boolean).join(' · ') || 'No description reported'}
+                      {[p.description, p.location, p.displayName !== p.name ? p.name : null].filter(Boolean).join(', ') || 'No description reported'}
                     </div>
                   </div>
                   <Button size="sm" loading={testing === p.name} disabled={!!testing} icon={<Printer className="h-4 w-4" />} onClick={() => test(p.name)}>
@@ -344,7 +344,7 @@ export function PrintersSection(): JSX.Element {
                 {foundBadge(draft.printer_default)}
               </div>
               <Select aria-label="Default printer" value={draft.printer_default} disabled={readOnly} onChange={(e) => set('printer_default', e.target.value)}>
-                <option value="">Ask every time (print dialog){osDefault ? ` — ${os} default is ${osDefault.displayName}` : ''}</option>
+                <option value="">Ask every time (print dialog){osDefault ? ` - ${os} default is ${osDefault.displayName}` : ''}</option>
                 {options(draft.printer_default)}
               </Select>
               <div className="mt-1.5 text-[12px] text-muted">Used for anything without its own printer below.</div>
@@ -387,7 +387,7 @@ export function PrintersSection(): JSX.Element {
                 }
                 description={
                   draft.print_direct && !anyPrinterChosen
-                    ? 'Choose a printer above — without one, the print dialog still opens.'
+                    ? 'Choose a printer above - without one, the print dialog still opens.'
                     : 'Sends the job straight to the chosen printer. If that printer is not found, the print dialog opens instead.'
                 }
               />

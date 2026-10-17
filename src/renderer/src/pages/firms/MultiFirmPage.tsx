@@ -378,7 +378,7 @@ export function MultiFirmPage(): JSX.Element {
               You can create maximum {allowedFirms} firm{allowedFirms === 1 ? '' : 's'}.
             </div>
             <div className="text-[12.5px] text-muted">
-              {count} of {allowedFirms} firms used{L && L.inactive > 0 ? ` (${L.inactive} inactive not counted)` : ''} · license allows {licenseMax > 0 ? `up to ${licenseMax}` : 'unlimited'} firm{licenseMax === 1 ? '' : 's'}
+              {count} of {allowedFirms} firms used{L && L.inactive > 0 ? ` (${L.inactive} inactive not counted)` : ''}, license allows {licenseMax > 0 ? `up to ${licenseMax}` : 'unlimited'} firm{licenseMax === 1 ? '' : 's'}
             </div>
           </div>
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
@@ -458,7 +458,7 @@ export function MultiFirmPage(): JSX.Element {
                       {!f.is_active && <Badge tone="bad">Inactive</Badge>}
                       {isActiveNow && <Badge tone="ok">Active now</Badge>}
                     </div>
-                    <div className="truncate text-[12.5px] text-muted">{[f.city, f.phone, f.email].filter(Boolean).join(' · ') || f.tagline || 'No contact details yet'}</div>
+                    <div className="truncate text-[12.5px] text-muted">{[f.city, f.phone, f.email].filter(Boolean).join(', ') || f.tagline || 'No contact details yet'}</div>
                   </button>
                   {!f.is_default && !isActiveNow && (
                     <IconButton title={f.is_active ? 'Deactivate firm' : 'Reactivate firm'} tone={f.is_active ? 'bad' : undefined} onClick={() => toggleActive(f)}>
@@ -485,7 +485,7 @@ export function MultiFirmPage(): JSX.Element {
       <div className="mt-4 flex items-start gap-3 rounded-xl bg-info-soft px-4 py-3 text-[13px]">
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-info" />
         <div>
-          The selected radio button marks the <b>default firm</b>. To <b>switch the firm you are working in</b>, use the firm selector in the top bar — every new invoice, payment and report is recorded under the active firm.
+          The selected radio button marks the <b>default firm</b>. To <b>switch the firm you are working in</b>, use the firm selector in the top bar - every new invoice, payment and report is recorded under the active firm.
         </div>
       </div>
 
@@ -653,7 +653,7 @@ function FirmEditor({ open, firmId, onClose, onSaved }: { open: boolean; firmId?
       const inUse = activeFirm?.id === id
       const ok = await confirmDialog({
         title: `Deactivate ${f.name}?`,
-        message: `Users will no longer be able to switch to this firm. All of its documents, payments and history are kept and you can activate it again at any time.${inUse ? ' You are currently working in this firm — switch to another firm from the top bar afterwards.' : ''}`,
+        message: `Users will no longer be able to switch to this firm. All of its documents, payments and history are kept and you can activate it again at any time.${inUse ? ' You are currently working in this firm - switch to another firm from the top bar afterwards.' : ''}`,
         confirmLabel: 'Deactivate firm',
         danger: true
       })
@@ -715,7 +715,7 @@ function FirmEditor({ open, firmId, onClose, onSaved }: { open: boolean; firmId?
       open={open}
       onClose={requestClose}
       size="xl"
-      title={id ? `Edit firm — ${f.name || '…'}` : 'Add firm'}
+      title={id ? `Edit firm - ${f.name || '…'}` : 'Add firm'}
       subtitle={id ? (meta.isDefault ? 'Default firm' : undefined) : 'A new firm gets its own document numbering, cash account and (if inventory is not shared) its own store.'}
       footer={
         <>
@@ -865,7 +865,7 @@ function FirmEditor({ open, firmId, onClose, onSaved }: { open: boolean; firmId?
                     </table>
                   </div>
                 )}
-                {id && <div className="mt-2 text-[12px] text-muted">If a number already exists (for example after lowering the next number), the next free number is used automatically — numbers are never duplicated.</div>}
+                {id && <div className="mt-2 text-[12px] text-muted">If a number already exists (for example after lowering the next number), the next free number is used automatically - numbers are never duplicated.</div>}
               </div>
             </div>
           )}
@@ -918,7 +918,7 @@ function FirmEditor({ open, firmId, onClose, onSaved }: { open: boolean; firmId?
                 <div className="grid grid-cols-2 gap-4">
                   <Field label="Tax columns" className="col-span-2">
                     <Select value={f.printSettings.showTaxColumns} onChange={(e) => setPs({ showTaxColumns: e.target.value as PrintSettings['showTaxColumns'] })}>
-                      <option value="auto">Automatic — only when the document has tax</option>
+                      <option value="auto">Automatic - only when the document has tax</option>
                       <option value="always">Always show tax columns</option>
                       <option value="never">Never show tax columns</option>
                     </Select>
@@ -1119,7 +1119,7 @@ function InvoicePreview({ f, invoiceNo }: { f: FirmForm; invoiceNo: string }): J
                 {ps.showWarranty && <div className="text-[7.5px] text-[#4a5568]">Warranty: {l.w}</div>}
               </td>
               <td className="px-1.5 py-1 text-right">{l.q}</td>
-              {showTax && <td className="px-1.5 py-1 text-right">—</td>}
+              {showTax && <td className="px-1.5 py-1 text-right">-</td>}
               <td className="px-1.5 py-1 text-right">{money(l.a, { symbol: false })}</td>
             </tr>
           ))}

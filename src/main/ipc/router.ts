@@ -419,7 +419,7 @@ const coreRoutes: Record<string, Route> = {
       const check = validateDatabaseFile(file)
       if (!check.ok) throw new AppError(check.error ?? 'Invalid backup.', 'VALIDATION')
       if (a.confirm !== 'RESTORE') throw new AppError('Type RESTORE to confirm.', 'VALIDATION')
-      // Safety copy of the current data first — never lose the existing database.
+      // Safety copy of the current data first - never lose the existing database.
       const safety = await createBackup(c.ctx.db, join(runtime.paths.backups, 'safety'), 'pre-restore')
       audit(c.ctx, 'restore', 'system', null, `Restoring backup ${file}. Safety copy: ${safety.file}`)
       runtime.db!.close()

@@ -72,7 +72,7 @@ export function readZipEntry(buf: Buffer, e: ZipEntry): Buffer {
   else if (e.method === 8) data = inflateRawSync(raw)
   else throw new Error(`Unsupported ZIP compression method ${e.method} for ${e.name}.`)
   if (data.length !== e.size) throw new Error(`ZIP entry ${e.name} has the wrong size after extraction.`)
-  if (crc32(data) !== e.crc32) throw new Error(`ZIP entry ${e.name} failed its CRC check — the backup file is damaged.`)
+  if (crc32(data) !== e.crc32) throw new Error(`ZIP entry ${e.name} failed its CRC check - the backup file is damaged.`)
   return data
 }
 

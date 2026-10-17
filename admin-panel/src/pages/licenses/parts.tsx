@@ -10,7 +10,7 @@ import type { HeartbeatLocation } from '../../lib/types'
 /** Masked license key (lists); the copy button copies the full key. */
 export function MaskedKey({ value, className = '' }: { value: string; className?: string }) {
   const [done, setDone] = useState(false)
-  if (!value) return <span className="text-[#9a8fb0]">—</span>
+  if (!value) return <span className="text-[#9a8fb0]">-</span>
   return (
     <span className={`inline-flex items-center gap-1 whitespace-nowrap font-mono text-[12px] ${className}`}>
       {maskLicenseKey(value)}
@@ -34,7 +34,7 @@ export function MaskedKey({ value, className = '' }: { value: string; className?
 
 /** Device id shortened for lists (full id in the tooltip of the detail page only). */
 export function ShortDevice({ id }: { id: string }) {
-  return <code className="text-[11px] text-[#7a6d92]">{maskDeviceId(id)}</code>
+  return <code className="text-[12px] text-[#7a6d92]">{maskDeviceId(id)}</code>
 }
 
 /** Last known location with its SOURCE label, accuracy and last update; "Unavailable" when none was shared. */
@@ -49,10 +49,10 @@ export function LocationLine({ loc, compact = false }: { loc: HeartbeatLocation 
         <MapPin className="h-3.5 w-3.5 text-[#7c3aed]" />
         {loc.label || `${loc.lat.toFixed(src === 'device' ? 4 : 1)}, ${loc.lng.toFixed(src === 'device' ? 4 : 1)}`}
       </span>
-      <span className="text-[11.5px] text-[#7a6d92]">
+      <span className="text-[12px] text-[#7a6d92]">
         {LOCATION_SOURCE_LABEL[src]}
-        {acc && ` · ${acc}`}
-        {!compact && Number.isFinite(updated) && ` · updated ${fmtDateTime(updated)} (${timeAgo(updated)})`}
+        {acc && `, ${acc}`}
+        {!compact && Number.isFinite(updated) && `, updated ${fmtDateTime(updated)} (${timeAgo(updated)})`}
       </span>
     </span>
   )

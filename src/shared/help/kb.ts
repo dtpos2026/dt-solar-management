@@ -461,7 +461,7 @@ const D: Def[] = [
   ['trouble-slow', 'troubleshooting',
     { en: 'The app is slow', ur: 'ایپ آہستہ چل رہی ہے' },
     { en: 'Tips to make DT Solar Pro faster.', ur: 'DT Solar Pro کو تیز کرنے کے طریقے۔' },
-    { en: '—', ur: '—' }, undefined,
+    { en: '-', ur: '-' }, undefined,
     ['Close other heavy programs and browser tabs; restart the computer once a day.', 'Use date filters on lists and reports instead of "all time".', 'Keep the backup folder on a local disk, not a slow network drive.', 'The WhatsApp module uses memory while open; it stays linked even if you restart the app.'],
     ['دوسرے بھاری پروگرام اور براؤزر ٹیبز بند کریں؛ دن میں ایک بار کمپیوٹر ری اسٹارٹ کریں۔', 'فہرستوں اور رپورٹس میں تاریخ کا فلٹر لگائیں۔', 'بیک اپ فولڈر لوکل ڈسک پر رکھیں، سست نیٹ ورک ڈرائیو پر نہیں۔', 'واٹس ایپ ماڈیول کھلا ہو تو میموری لیتا ہے؛ ایپ دوبارہ کھولنے پر بھی لنک رہتا ہے۔'],
     'slow hang stuck app slow ahista chal raha speed fast karna performance سست آہستہ', ['trouble-database']],

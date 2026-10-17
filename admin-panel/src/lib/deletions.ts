@@ -111,7 +111,7 @@ async function commitOps(ops: Op[], extra?: (b: ReturnType<typeof writeBatch>) =
 }
 
 /**
- * Deletes a license and everything that belongs to it (owner only — the rules allow nobody else): devices, history,
+ * Deletes a license and everything that belongs to it (owner only - the rules allow nobody else): devices, history,
  * licenseStatus, the public activation pass and pending activation requests (answered as rejected). The client keeps
  * existing (the link lived on the license); invoices are kept. One 'license_deleted' audit entry is written with the
  * license removal. Computers that were activated keep their certificate but can no longer check in.
@@ -157,7 +157,7 @@ export async function deleteLicense(l: License, by: string, reason = '', opts: {
   const room = DELETE_BATCH_SIZE - 3
   const first = active.slice(0, room)
   const details =
-    `License ${l.licenseKey} (${l.businessName || l.customerName || '—'}) deleted: ${p.devices.length} computer record(s) (${active.length} active), ` +
+    `License ${l.licenseKey} (${l.businessName || l.customerName || '-'}) deleted: ${p.devices.length} computer record(s) (${active.length} active), ` +
     `${p.history.length} history entr${p.history.length === 1 ? 'y' : 'ies'}, ${p.requests.length} pending request(s) answered` +
     `${l.clientId ? `; unlinked from client ${l.clientId}` : ''}${p.invoices ? `; ${p.invoices} invoice(s) kept` : ''}` +
     `${activationPass ? '' : '; activation pass NOT removed'}${reason.trim() ? `. Reason: ${reason.trim()}` : ''}`
@@ -201,7 +201,7 @@ export async function deleteHeartbeatsOf(deviceId: string, licenseId: string | n
 
 /**
  * "Remove device" (devices.manage). A computer holding a slot (active / suspended / revoked) is released first with
- * the normal release flow — slot freed, added to licenseStatus.deactivatedDevices, history + audit. With
+ * the normal release flow - slot freed, added to licenseStatus.deactivatedDevices, history + audit. With
  * `deleteRecord` the released record is then deleted, dropped from license.devicesSummary, and its heartbeat for this
  * license is deleted so it disappears from the Devices list and the map. The computer stays in deactivatedDevices.
  */

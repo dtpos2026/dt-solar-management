@@ -103,7 +103,7 @@ function setupLicense(): void {
       if (r) setSetting(runtime.db, 'license_remote', r)
       else runtime.db.prepare("DELETE FROM settings WHERE key = 'license_remote'").run()
     },
-    // Old installations that used the former local trial (wording only — there is no local trial any more).
+    // Old installations that used the former local trial (wording only - there is no local trial any more).
     hasLegacyTrial: () => !!runtime.db?.prepare("SELECT 1 FROM app_meta WHERE key = 'trial_started_at'").get(),
     onChange: (s) => broadcast('dt:license', s),
     // Signed command published for this computer (Administrator password reset): verified, bound to this device, one-time.

@@ -145,7 +145,7 @@ export function DataTable<T>({ rows, columns, loading, onRowClick, searchable = 
                 <tr key={rowKey ? rowKey(row, i) : ((row as { id?: number }).id ?? i)} className={cx(onRowClick && 'clickable', rowClassName?.(row))} onClick={() => onRowClick?.(row)}>
                   {cols.map((c) => (
                     <td key={c.key} className={cx(dense && '!py-1.5', alignOf(c) === 'right' && 'num text-right', alignOf(c) === 'center' && 'text-center', ID_KEY.test(c.key) && 'nowrap', c.key === 'actions' && 'sticky-act', c.className)}>
-                      {c.render ? c.render(row) : ((rawValue(c, row) as ReactNode) ?? '—')}
+                      {c.render ? c.render(row) : ((rawValue(c, row) as ReactNode) ?? '-')}
                     </td>
                   ))}
                 </tr>

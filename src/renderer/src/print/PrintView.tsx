@@ -42,7 +42,7 @@ interface KindTemplates {
 /**
  * Print preview window: A4 sheets (or an 80 mm receipt) on a grey desk with a screen-only toolbar.
  * Customer documents get a template selector and a "Customise this print" panel. Template choices and temporary
- * changes only affect this print — the stored document never changes.
+ * changes only affect this print - the stored document never changes.
  */
 export function PrintView(): JSX.Element {
   const { kind = 'doc', id = '0' } = useParams()
@@ -140,7 +140,7 @@ export function PrintView(): JSX.Element {
   const ready = !!ctx && title !== 'Document' && (!designable || !!design)
 
   // Wide reports: when a portrait sheet cannot hold its content (a table wider than the page), turn it sideways
-  // automatically — unless the user picked the orientation.
+  // automatically - unless the user picked the orientation.
   useEffect(() => {
     if (!ready || thermal || userOriented.current || orientation === 'landscape') return
     const t = setTimeout(() => {
@@ -167,7 +167,7 @@ export function PrintView(): JSX.Element {
   }, [ready, thermal, kind, paper, orient, design, title]) // eslint-disable-line react-hooks/exhaustive-deps
   const options: Array<{ value: string; label: string }> = kt
     ? [
-        ...kt.templates.map((t) => ({ value: String(t.id), label: `${t.name} — ${LAYOUT_LABEL[t.layout]}${String(kt.defaultRef) === String(t.id) ? ' (default)' : ''}` })),
+        ...kt.templates.map((t) => ({ value: String(t.id), label: `${t.name} - ${LAYOUT_LABEL[t.layout]}${String(kt.defaultRef) === String(t.id) ? ' (default)' : ''}` })),
         ...builtinLayouts(kt.kind).map((l) => ({ value: `builtin:${l}`, label: `Built-in ${LAYOUT_LABEL[l]}${String(kt.defaultRef) === `builtin:${l}` ? ' (default)' : ''}` }))
       ]
     : []

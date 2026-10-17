@@ -162,7 +162,7 @@ export function StockPrint({ params, ctx, setTitle }: TemplateProps): JSX.Elemen
             {multiGroup && (
               <tr className="font-semibold">
                 <td colSpan={showCost ? 5 : 4} className="text-right" style={sub}>
-                  Subtotal — {g.name}
+                  Subtotal - {g.name}
                 </td>
                 {showCost && <td className="num text-right" style={sub}>{pm(ctx, g.value, 2)}</td>}
                 <td style={sub} />

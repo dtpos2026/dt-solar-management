@@ -34,7 +34,7 @@ export function SetupWizard({ onDone }: { onDone: () => void }): JSX.Element {
   const [opts, setOpts] = useState({ multiFirm: true, shareInventory: true, shareParties: true, currencySymbol: 'Rs.', extraFirms: ['LAZZAZ TRADERS', 'XAVIAR SOLUTIONS'] })
   const [owner, setOwner] = useState({ fullName: '', username: 'admin', password: '', confirm: '', phone: '', email: '' })
   const [demo, setDemo] = useState(false)
-  /** First the License step (online or offline activation — required, there is no local trial), then the business setup steps. */
+  /** First the License step (online or offline activation - required, there is no local trial), then the business setup steps. */
   const [licStage, setLicStage] = useState(true)
 
   useEffect(() => {
@@ -235,7 +235,7 @@ export function SetupWizard({ onDone }: { onDone: () => void }): JSX.Element {
                 <Field label="Mobile">
                   <Input value={owner.phone} onChange={(e) => setOwner({ ...owner, phone: e.target.value })} />
                 </Field>
-                <Field label="Password" required hint="At least 6 characters. Keep it safe — it protects your financial data.">
+                <Field label="Password" required hint="At least 6 characters. Keep it safe - it protects your financial data.">
                   <Input type="password" value={owner.password} onChange={(e) => setOwner({ ...owner, password: e.target.value })} />
                 </Field>
                 <Field label="Confirm password" required>
@@ -380,7 +380,7 @@ function LicenseStep({ defaults, onDone }: { defaults: { companyName: string; ph
           if ((e as ApiError).code === 'LICENSE_REJECTED') {
             setPhase('rejected')
             setNote((e as Error).message)
-          } else setNote(`Still waiting — ${(e as Error).message}`)
+          } else setNote(`Still waiting - ${(e as Error).message}`)
         } finally {
           polling.current = false
         }
@@ -483,7 +483,7 @@ function LicenseStep({ defaults, onDone }: { defaults: { companyName: string; ph
       <div>
         <div className="text-[22px] font-bold">License</div>
         <div className="text-muted">
-          Activate DT Solar Pro with the license key you received from Digital Target. Activation is required before you can set up your business — to try the software, ask Digital Target
+          Activate DT Solar Pro with the license key you received from Digital Target. Activation is required before you can set up your business - to try the software, ask Digital Target
           for a trial license.
         </div>
       </div>
@@ -529,7 +529,7 @@ function LicenseStep({ defaults, onDone }: { defaults: { companyName: string; ph
                 <Button variant="primary" icon={<KeyRound className="h-4 w-4" />} loading={busy === 'activate'} disabled={!lic?.onlineConfigured || !!busy} onClick={activate}>
                   Send activation request
                 </Button>
-                {lic && !lic.onlineConfigured && <span className="text-[12.5px] text-warn">Online activation is not available in this build — use offline activation.</span>}
+                {lic && !lic.onlineConfigured && <span className="text-[12.5px] text-warn">Online activation is not available in this build - use offline activation.</span>}
               </div>
             </div>
           )}
@@ -541,8 +541,8 @@ function LicenseStep({ defaults, onDone }: { defaults: { companyName: string; ph
               <Button size="sm" onClick={genCode} disabled={!KEY_RE.test(key)}>
                 Generate request code
               </Button>
-              {reqCode && <Textarea readOnly rows={3} value={reqCode} className="font-mono text-[11px]" onFocus={(e) => e.currentTarget.select()} />}
-              <Textarea rows={3} placeholder="Paste the activation code here" value={pasted} onChange={(e) => setPasted(e.target.value)} className="font-mono text-[11px]" data-testid="lic-code" />
+              {reqCode && <Textarea readOnly rows={3} value={reqCode} className="font-mono text-[12px]" onFocus={(e) => e.currentTarget.select()} />}
+              <Textarea rows={3} placeholder="Paste the activation code here" value={pasted} onChange={(e) => setPasted(e.target.value)} className="font-mono text-[12px]" data-testid="lic-code" />
               <Button size="sm" variant="primary" loading={busy === 'install'} onClick={installCode}>
                 Install activation code
               </Button>

@@ -82,7 +82,7 @@ export function buildDocView(d: any, ctx: PrintContext, o: TemplateOptions): Doc
     hasDisc,
     watermark,
     partyLabel: isSales ? (isChallan ? 'Deliver To' : isQuote ? 'Prepared For' : 'Bill To') : 'Supplier',
-    partyName: d.party_master_name ?? d.party_name ?? (isSales ? 'Walk-in Customer' : '—'),
+    partyName: d.party_master_name ?? d.party_name ?? (isSales ? 'Walk-in Customer' : '-'),
     partyAddr: [d.party_master_address ?? d.party_address, d.party_city].filter(Boolean).join(', '),
     partyPhone: d.party_master_phone ?? d.party_phone ?? null,
     meta,
@@ -100,7 +100,7 @@ export function ItemCell({ l, v, size = 'md' }: { l: any; v: DocView; size?: 'md
   return (
     <>
       <div className="font-bold">{l.description}</div>
-      {o.showBrandModel && (l.brand || l.model) && l.description !== l.product_name && <div className={`${sub} text-[#4a5568]`}>{[l.brand, l.model].filter(Boolean).join(' · ')}</div>}
+      {o.showBrandModel && (l.brand || l.model) && l.description !== l.product_name && <div className={`${sub} text-[#4a5568]`}>{[l.brand, l.model].filter(Boolean).join(', ')}</div>}
       {o.showDescription && l.details && (
         <div className={`${size === 'sm' ? 'text-[8.8px]' : 'text-[9.8px]'} leading-snug whitespace-pre-line text-[#2d3748]`} data-item-details="1">
           {l.details}
@@ -164,7 +164,7 @@ function SideNotes({ v, ctx, size = 'md' }: { v: DocView; ctx: PrintContext; siz
           {d.payments.map((p: any) => (
             <div key={p.payment_id}>
               {pd(p.date)} · {p.number} · {p.method?.replace('_', ' ')}
-              {p.reference ? ` (${p.reference})` : ''} — <b>{pm(ctx, p.amount)}</b>
+              {p.reference ? ` (${p.reference})` : ''} - <b>{pm(ctx, p.amount)}</b>
             </div>
           ))}
         </div>
@@ -235,7 +235,7 @@ function ItemsTable({ v, ctx, variant }: { v: DocView; ctx: PrintContext; varian
           <td className="num text-right">{pq(l.qty)}</td>
           {o.showUnit && <td>{l.unit ?? ''}</td>}
           {money && <td className="num text-right">{pm(ctx, l.rate, 2)}</td>}
-          {v.hasDisc && <td className="num text-right">{l.discount_amt > 0 ? pm(ctx, l.discount_amt, 2) : '—'}</td>}
+          {v.hasDisc && <td className="num text-right">{l.discount_amt > 0 ? pm(ctx, l.discount_amt, 2) : '-'}</td>}
           {v.hasTax && (
             <td className="num text-right">
               {l.tax_amt > 0 ? (
@@ -244,7 +244,7 @@ function ItemsTable({ v, ctx, variant }: { v: DocView; ctx: PrintContext; varian
                   <div className="text-[9px] text-[#718096]">@{l.tax_rate}%</div>
                 </>
               ) : (
-                '—'
+                '-'
               )}
             </td>
           )}
@@ -344,7 +344,7 @@ function PartyLines({ v }: { v: DocView }): JSX.Element {
       {v.partyPhone && <div>Phone: {v.partyPhone}</div>}
       {(d.party_ntn || d.party_strn || d.party_cnic) && (
         <div className="text-[10px] text-[#4a5568]">
-          {[d.party_ntn && `NTN: ${d.party_ntn}`, d.party_strn && `STRN: ${d.party_strn}`, d.party_cnic && `CNIC: ${d.party_cnic}`].filter(Boolean).join(' · ')}
+          {[d.party_ntn && `NTN: ${d.party_ntn}`, d.party_strn && `STRN: ${d.party_strn}`, d.party_cnic && `CNIC: ${d.party_cnic}`].filter(Boolean).join(', ')}
         </div>
       )}
     </>
@@ -369,7 +369,7 @@ function DetailsGrid({ v }: { v: DocView }): JSX.Element {
   return (
     <div className="grid grid-cols-[auto_1fr] gap-x-3">
       <span className="text-[#4a5568]">Prepared by</span>
-      <span>{d.created_by_name ?? '—'}</span>
+      <span>{d.created_by_name ?? '-'}</span>
       {d.warehouse_name && !v.isQuote && (
         <>
           <span className="text-[#4a5568]">Warehouse</span>

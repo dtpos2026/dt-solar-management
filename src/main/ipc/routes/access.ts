@@ -1,5 +1,5 @@
 /**
- * IPC routes — Login, PIN, users, lock screen, printers (owner: access area).
+ * IPC routes - Login, PIN, users, lock screen, printers (owner: access area).
  * Owns: auth.login, auth.unlock, auth.changePassword, auth.users, auth.pin*, users.*, printers.*, print.run, print.pdf.
  */
 import { BrowserWindow, shell } from 'electron'
@@ -79,7 +79,7 @@ export const accessRoutes: RouteMap = {
   /* ---------- sign-in ---------- */
   'auth.users': {
     public: true,
-    // Only safe fields of ACTIVE users (id, name, role, has_pin) — never usernames or hashes. Empty when turned off.
+    // Only safe fields of ACTIVE users (id, name, role, has_pin) - never usernames or hashes. Empty when turned off.
     handler: () => {
       const db = getDb()
       if (auth.userCount(db) === 0) return { showUsers: false, users: [] }
@@ -238,7 +238,7 @@ export const accessRoutes: RouteMap = {
         mkdirSync(dir, { recursive: true })
         const file = join(dir, 'page-view.pdf')
         writeFileSync(file, data)
-        await openPdfPageView(file, `${name} — page view`, BrowserWindow.fromWebContents(c.sender))
+        await openPdfPageView(file, `${name} - page view`, BrowserWindow.fromWebContents(c.sender))
         return { pages: countPdfPages(data) }
       }
       const file = await saveDialog(c.sender, `${name}.pdf`, [{ name: 'PDF', extensions: ['pdf'] }])

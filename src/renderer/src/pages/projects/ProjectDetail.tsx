@@ -54,7 +54,7 @@ export function ProjectDetail(): JSX.Element {
           </div>
           <div className="flex flex-wrap gap-4 text-[12.5px] text-muted">
             <span>{p.code}</span>
-            <span className="inline-flex items-center gap-1"><Zap className="h-3.5 w-3.5 text-sun" />{qty(p.capacity_kw)} kW · {SYSTEM_TYPE_LABELS[p.system_type]} · {label(p.project_type)}</span>
+            <span className="inline-flex items-center gap-1"><Zap className="h-3.5 w-3.5 text-sun" />{qty(p.capacity_kw)} kW, {SYSTEM_TYPE_LABELS[p.system_type]}, {label(p.project_type)}</span>
             {p.customer_name && <span className="inline-flex items-center gap-1"><User className="h-3.5 w-3.5" /><button type="button" className="text-brand hover:underline cursor-pointer" onClick={() => nav(`/party/${p.customer_id}`)}>{p.customer_name}</button></span>}
             {(p.contact_phone || p.customer_phone) && <span className="inline-flex items-center gap-1"><Phone className="h-3.5 w-3.5" />{p.contact_phone || p.customer_phone}</span>}
             {(p.site_address || p.city) && <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{[p.site_address, p.city].filter(Boolean).join(', ')}</span>}
@@ -130,7 +130,7 @@ export function ProjectDetail(): JSX.Element {
                     ]}
                   />
                   <div className="mt-4 rounded-xl bg-surface-2 p-3 text-[12px] text-muted">
-                    Profit is based on invoiced revenue and incurred costs — not on cash received or paid. Customer payments, supplier dues and profit are shown separately.
+                    Profit is based on invoiced revenue and incurred costs - not on cash received or paid. Customer payments, supplier dues and profit are shown separately.
                   </div>
                 </div>
               </div>
@@ -143,9 +143,9 @@ export function ProjectDetail(): JSX.Element {
             <Kv label={<span className="inline-flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" />Start</span>}>{date(p.start_date)}</Kv>
             <Kv label="Expected completion">{date(p.expected_end_date)}</Kv>
             {p.completed_date && <Kv label="Completed">{date(p.completed_date)}</Kv>}
-            <Kv label="Project manager">{p.manager_name ?? '—'}</Kv>
+            <Kv label="Project manager">{p.manager_name ?? '-'}</Kv>
             {p.quotation_number && <Kv label="Quotation"><button type="button" className="text-brand hover:underline cursor-pointer" onClick={() => nav(`/doc/${p.quotation_id}`)}>{p.quotation_number}</button></Kv>}
-            <Kv label="Created by">{p.created_by_name ?? '—'}</Kv>
+            <Kv label="Created by">{p.created_by_name ?? '-'}</Kv>
             {p.warranty_info && <div className="mt-3 rounded-lg bg-surface-2 p-3 text-[12.5px]"><div className="mb-1 font-semibold">Warranty</div><div className="whitespace-pre-wrap text-muted">{p.warranty_info}</div></div>}
             {p.notes && <div className="mt-3 rounded-lg bg-surface-2 p-3 text-[12.5px]"><div className="mb-1 font-semibold">Notes</div><div className="whitespace-pre-wrap text-muted">{p.notes}</div></div>}
           </Card>
@@ -217,10 +217,10 @@ function MaterialUsage({ id }: { id: number }): JSX.Element {
       exportName="Material usage"
       columns={[
         { key: 'product_name', header: 'Material' },
-        { key: 'issued', header: 'Issued from stock', align: 'right', render: (r: any) => (r.issued ? `${qty(r.issued)} ${r.unit}` : '—') },
-        { key: 'returned', header: 'Returned to stock', align: 'right', render: (r: any) => (r.returned ? `${qty(r.returned)} ${r.unit}` : '—') },
-        { key: 'invoiced', header: 'On invoices (stock)', align: 'right', render: (r: any) => (r.invoiced ? `${qty(r.invoiced)} ${r.unit}` : '—') },
-        { key: 'direct', header: 'Bought for site', align: 'right', render: (r: any) => (r.direct ? `${qty(r.direct)} ${r.unit}` : '—') },
+        { key: 'issued', header: 'Issued from stock', align: 'right', render: (r: any) => (r.issued ? `${qty(r.issued)} ${r.unit}` : '-') },
+        { key: 'returned', header: 'Returned to stock', align: 'right', render: (r: any) => (r.returned ? `${qty(r.returned)} ${r.unit}` : '-') },
+        { key: 'invoiced', header: 'On invoices (stock)', align: 'right', render: (r: any) => (r.invoiced ? `${qty(r.invoiced)} ${r.unit}` : '-') },
+        { key: 'direct', header: 'Bought for site', align: 'right', render: (r: any) => (r.direct ? `${qty(r.direct)} ${r.unit}` : '-') },
         { key: 'net_used', header: 'Net used', align: 'right', render: (r: any) => <b>{qty(r.net_used)} {r.unit}</b> },
         { key: 'cost', header: 'Cost', align: 'right', hidden: !showCost, render: (r: any) => money(r.cost) }
       ]}
@@ -243,7 +243,7 @@ function MaterialMoves({ projectId, onChanged }: { projectId: number; onChanged:
         { key: 'date', header: 'Date', render: (r: any) => date(r.date) },
         { key: 'direction', header: 'Type', render: (r: any) => <Badge tone={r.direction === 'issue' ? 'warn' : 'ok'}>{r.direction === 'issue' ? 'Issued to site' : 'Returned to stock'}</Badge> },
         { key: 'warehouse_name', header: 'Warehouse' },
-        { key: 'total_cost', header: 'Cost', align: 'right', render: (r: any) => (r.total_cost === null ? '—' : money(r.total_cost)) },
+        { key: 'total_cost', header: 'Cost', align: 'right', render: (r: any) => (r.total_cost === null ? '-' : money(r.total_cost)) },
         { key: 'notes', header: 'Notes' },
         { key: 'status', header: 'Status', render: (r: any) => (r.status === 'cancelled' ? <Badge tone="bad">Cancelled</Badge> : <Badge tone="ok">Posted</Badge>) },
         {
@@ -307,7 +307,7 @@ function MaterialMoveForm({ open, direction, projectId, onClose, onSaved }: { op
               <tr key={l.k}>
                 <td>
                   <Combobox sm options={goods} value={l.productId} onChange={(v) => setLines(lines.map((x, j) => (j === i ? { ...x, productId: v } : x)))} />
-                  {p && <div className={cx('mt-1 text-[12px]', direction === 'issue' && l.qty > p.stock ? 'font-semibold text-bad' : 'text-muted')}>In stock: {qty(p.stock)} {p.unit}{p.avg_cost !== null && ` · avg cost ${money(p.avg_cost)}`}</div>}
+                  {p && <div className={cx('mt-1 text-[12px]', direction === 'issue' && l.qty > p.stock ? 'font-semibold text-bad' : 'text-muted')}>In stock: {qty(p.stock)} {p.unit}{p.avg_cost !== null && `, avg cost ${money(p.avg_cost)}`}</div>}
                   {p?.track_serial ? <Input sm className="mt-1" placeholder="Serial numbers (comma separated)" value={l.serials} onChange={(e) => setLines(lines.map((x, j) => (j === i ? { ...x, serials: e.target.value } : x)))} /> : null}
                 </td>
                 <td><NumberInput sm value={l.qty} onChange={(v) => setLines(lines.map((x, j) => (j === i ? { ...x, qty: v } : x)))} /></td>

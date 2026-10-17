@@ -23,7 +23,7 @@ export interface Series {
   color: string
 }
 
-/** Grouped bar chart (pure SVG — works offline, prints well). */
+/** Grouped bar chart (pure SVG - works offline, prints well). */
 export function BarChart({ data, series, height = 240 }: { data: Array<Record<string, number | string>>; series: Series[]; height?: number }): JSX.Element {
   const [hover, setHover] = useState<number | null>(null)
   const W = 640

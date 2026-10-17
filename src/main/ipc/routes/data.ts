@@ -1,4 +1,4 @@
-/** IPC routes — Backup, day/month closing, imports (owner: data area). Owns: backup.*, closing.*, import.*. */
+/** IPC routes - Backup, day/month closing, imports (owner: data area). Owns: backup.*, closing.*, import.*. */
 import { BrowserWindow, dialog } from 'electron'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { basename, join } from 'path'
@@ -113,7 +113,7 @@ export const dataRoutes: RouteMap = {
       const check = validateDatabaseFile(file)
       if (!check.ok) throw new AppError(check.error ?? 'Invalid backup.', 'VALIDATION')
       if (a.confirm !== 'RESTORE') throw new AppError('Type RESTORE to confirm.', 'VALIDATION')
-      // Safety copy of the current data first — never lose the existing database.
+      // Safety copy of the current data first - never lose the existing database.
       const safety = await createBackup(c.ctx.db, safetyDir(), 'pre-restore', whoFromCtx(c.ctx, `Before restoring ${basename(file)}`))
       audit(c.ctx, 'restore', 'system', null, `Restoring backup ${file}. Safety copy: ${safety.file}`)
       runtime.db!.close()

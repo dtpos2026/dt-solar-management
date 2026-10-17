@@ -11,7 +11,7 @@ import { toDate } from '../../lib/format'
 import type { Branding, Client, Invoice, InvoicePayment } from '../../lib/types'
 import { cx } from '../../components/ui'
 
-/** All invoices, newest first — one shared live listener (also used by the Dashboard), so nothing is re-read on navigation. */
+/** All invoices, newest first - one shared live listener (also used by the Dashboard), so nothing is re-read on navigation. */
 export function useInvoices(): { invoices: Invoice[]; loading: boolean; error: string | null; retry: () => void } {
   const s = useSharedDocs('invoices', () => collection(db, 'invoices'))
   const invoices = useMemo(() => s.docs.map(invoiceFromSnap).sort((a, b) => (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0)), [s.docs])
@@ -69,7 +69,7 @@ const STATUS_TONE: Record<string, string> = {
   cancelled: 'bg-slate-200 text-slate-600'
 }
 export function StatusPill({ status }: { status: string }) {
-  return <span className={cx('inline-block rounded-md px-2 py-0.5 text-[11.5px] font-bold capitalize', STATUS_TONE[status] ?? 'bg-[#f1e9fb] text-[#3d096d]')}>{status}</span>
+  return <span className={cx('inline-block rounded-md px-2 py-0.5 text-[12px] font-bold capitalize', STATUS_TONE[status] ?? 'bg-[#f1e9fb] text-[#3d096d]')}>{status}</span>
 }
 
 export function ErrorBox({ children }: { children: ReactNode }) {
@@ -134,7 +134,7 @@ export async function copyText(text: string): Promise<void> {
     ta.select()
     const ok = document.execCommand('copy')
     ta.remove()
-    if (!ok) throw new Error('Copy is blocked by this browser — select the link and copy it manually.')
+    if (!ok) throw new Error('Copy is blocked by this browser - select the link and copy it manually.')
   }
 }
 

@@ -167,7 +167,7 @@ export function SettingsPage(): JSX.Element {
       {!canEdit && (
         <Notice tone="info">You can view these settings but you do not have permission to change them. Ask the owner or an administrator (permission: “Change application settings”).</Notice>
       )}
-      {canEdit && !licenseWritable && <Notice tone="warn">The license is currently read-only, so settings cannot be saved. Open Settings → “License &amp; About” to resolve the license problem — your data is safe.</Notice>}
+      {canEdit && !licenseWritable && <Notice tone="warn">The license is currently read-only, so settings cannot be saved. Open Settings → “License &amp; About” to resolve the license problem - your data is safe.</Notice>}
 
       {tabsBar}
 
@@ -231,9 +231,9 @@ function GeneralTab({ draft, set, editable }: TabProps): JSX.Element {
           </Field>
           <Field label="Decimal places for money" hint="0 is typical for PKR; calculations are always exact to 2 decimals">
             <Select value={String(dec)} disabled={!editable} onChange={(e) => set('money_decimals', Number(e.target.value))}>
-              <option value="0">0 — 1,250,751</option>
-              <option value="1">1 — 1,250,750.5</option>
-              <option value="2">2 — 1,250,750.50</option>
+              <option value="0">0 - 1,250,751</option>
+              <option value="1">1 - 1,250,750.5</option>
+              <option value="2">2 - 1,250,750.50</option>
             </Select>
           </Field>
         </div>
@@ -249,7 +249,7 @@ function GeneralTab({ draft, set, editable }: TabProps): JSX.Element {
             <div className="font-medium">{amountInWords(sample, word)}</div>
           </div>
           <div className="text-[12px] text-muted">
-            Code: <b className="text-ink">{String(draft.currency_code ?? '') || '—'}</b>
+            Code: <b className="text-ink">{String(draft.currency_code ?? '') || '-'}</b>
           </div>
         </div>
       </Card>
@@ -286,7 +286,7 @@ function InventoryTab({ draft, set, editable, canEdit, licenseWritable }: TabPro
               disabled={!editable}
               onChange={(v) => set('purchase_tax_is_cost', v)}
               label="Purchase tax is a cost (not recoverable)"
-              description="Turn on if you cannot claim back the sales tax paid on purchases (e.g. not registered for input tax). The tax is then added to the item cost, so profit is calculated correctly. Turn off if purchase tax is recoverable — it is then kept separately in the tax report."
+              description="Turn on if you cannot claim back the sales tax paid on purchases (e.g. not registered for input tax). The tax is then added to the item cost, so profit is calculated correctly. Turn off if purchase tax is recoverable - it is then kept separately in the tax report."
             />
             <div className="mt-2 text-[12px] text-muted">Applies to purchases recorded after the change. Existing purchases keep the cost they were recorded with.</div>
           </div>
@@ -564,7 +564,7 @@ function SecurityTab({ draft, set, editable }: TabProps): JSX.Element {
     <Card title={<SectionTitle icon={<Lock />} title="Automatic screen lock" subtitle="Protects your data when the computer is left unattended" />}>
       <div className="space-y-4">
         <div className="flex flex-wrap items-end gap-4">
-          <Field label="Lock after (minutes of inactivity)" hint="0 = never lock automatically · maximum 240" className="w-56">
+          <Field label="Lock after (minutes of inactivity)" hint="0 = never lock automatically, maximum 240" className="w-56">
             <NumberInput value={minutes} disabled={!editable} onChange={(v) => set('lock_minutes', Math.floor(v))} />
           </Field>
           <div className="flex flex-wrap gap-1.5 pb-5">

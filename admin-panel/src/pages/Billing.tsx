@@ -1,4 +1,4 @@
-/** Billing — software sales invoices, payments, receipts and reports (Modules 1.6 / 3). */
+/** Billing - software sales invoices, payments, receipts and reports (Modules 1.6 / 3). */
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { AlertTriangle, BarChart3, Building2, CalendarClock, CheckCircle2, CircleDollarSign, CreditCard, FileText, Layers, Plus, Receipt, Wallet } from 'lucide-react'
@@ -128,7 +128,7 @@ function BillingHome({ clients, branding, onOpen }: { clients: ReturnType<typeof
                   {paged.slice.map((i) => (
                     <tr key={i.id} className="click" onClick={() => onOpen(i.id)}>
                       <td className="font-mono font-bold">{i.number}</td>
-                      <td className="font-semibold">{i.clientName}{i.planType && <div className="text-[11.5px] font-normal capitalize text-[#7a6d92]">{i.planType}</div>}</td>
+                      <td className="font-semibold">{i.clientName}{i.planType && <div className="text-[12px] font-normal capitalize text-[#7a6d92]">{i.planType}</div>}</td>
                       <td>{fmtDate(i.issueDate)}</td>
                       <td>{fmtDate(i.dueDate)}</td>
                       <td className="num">{money(i.total, i.currency)}</td>
@@ -181,7 +181,7 @@ function ClientTable({ invoices, currency, loading }: { invoices: Invoice[]; cur
               {paged.slice.map((r) => (
                 <tr key={r.clientId || r.clientName}>
                   <td className="font-semibold">{r.clientName}</td>
-                  <td className="capitalize">{r.planTypes.join(', ') || '—'}</td>
+                  <td className="capitalize">{r.planTypes.join(', ') || '-'}</td>
                   <td className="text-[12.5px] whitespace-nowrap">{fmtDate(r.firstIssueMs)} – {fmtDate(r.lastIssueMs)}</td>
                   <td className="num">{r.invoices}</td>
                   <td className="num">{money(r.total, currency)}</td>
@@ -252,11 +252,11 @@ function PaymentHistory({ invoices, loading, onOpen }: { invoices: Invoice[]; lo
               {paged.slice.map((p) => (
                 <tr key={`${p.invoiceId}/${p.id}`} className={p.cancelled ? 'click opacity-60' : 'click'} onClick={() => onOpen(p.invoiceId)}>
                   <td className="whitespace-nowrap">{fmtDate(p.date)}</td>
-                  <td className="font-mono text-[12.5px]">{p.receiptNo || '—'}</td>
+                  <td className="font-mono text-[12.5px]">{p.receiptNo || '-'}</td>
                   <td className="font-mono text-[12.5px] font-bold">{p.invoiceNumber}</td>
                   <td>{p.clientName}</td>
-                  <td className="capitalize">{p.method || '—'}</td>
-                  <td className="max-w-[160px] truncate">{p.reference || '—'}</td>
+                  <td className="capitalize">{p.method || '-'}</td>
+                  <td className="max-w-[160px] truncate">{p.reference || '-'}</td>
                   <td className="num font-semibold">{money(p.amount, p.currency)}</td>
                   <td><StatusPill status={p.cancelled ? 'cancelled' : 'paid'} /></td>
                 </tr>

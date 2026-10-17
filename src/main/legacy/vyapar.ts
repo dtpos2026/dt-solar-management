@@ -9,7 +9,7 @@
  *     had to change in legacy_id_map;
  *  4. posts stock through the app's own stock engine (moving average cost) in chronological order;
  *  5. copies EVERY source row verbatim into legacy_records (JSON), so fields the new schema cannot represent are kept;
- *  6. returns a reconciliation report (counts, totals, balances, outstanding amounts, stock) — see validateConversion.
+ *  6. returns a reconciliation report (counts, totals, balances, outstanding amounts, stock) - see validateConversion.
  *
  * Vyapar transaction types used here (from the data and Vyapar's TxnType constants):
  *   1 sale, 2 purchase, 3 payment-in, 4 payment-out, 5 party opening (receivable), 6 party opening (payable),
@@ -658,7 +658,7 @@ export function convertVyapar(src: DB, out: DB, meta: { sourceFile: string; sour
     }
     const ls = (linesByTxn.get(t.txn_id) ?? []).map((l) => {
       const item = itemById.get(l.item_id)
-      return `• ${item?.item_name ?? 'Item'}${str(l.lineitem_description) ? ` — ${String(l.lineitem_description).trim()}` : ''}: ${l.quantity} × ${l.priceperunit} = ${l.total_amount}`
+      return `• ${item?.item_name ?? 'Item'}${str(l.lineitem_description) ? ` - ${String(l.lineitem_description).trim()}` : ''}: ${l.quantity} × ${l.priceperunit} = ${l.total_amount}`
     })
     const original = vyNumber(t)
     const number = original

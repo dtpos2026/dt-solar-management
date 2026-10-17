@@ -117,7 +117,7 @@ export function InvoiceDetail({ id, clients, branding }: { id: string; clients: 
     <div>
       <PageTitle
         title={`Invoice ${inv.number}`}
-        sub={`${inv.clientName} · issued ${fmtDate(inv.issueDate)} · created by ${inv.createdBy || '—'}`}
+        sub={`${inv.clientName}, issued ${fmtDate(inv.issueDate)}, created by ${inv.createdBy || '-'}`}
         actions={<>
           <Link className="btn btn-secondary" to="/billing"><ArrowLeft className="h-4 w-4" /> All invoices</Link>
           {can('billing.create') && !cancelled && inv.paid === 0 && <button className="btn btn-secondary" onClick={() => setEdit(true)}><Pencil className="h-4 w-4" /> Edit</button>}
@@ -131,7 +131,7 @@ export function InvoiceDetail({ id, clients, branding }: { id: string; clients: 
         </>}
       />
       {msg && <Notice tone={msg.tone} className="mb-3" onClose={() => setMsg(null)}>{msg.text}</Notice>}
-      {cancelled && <Notice tone="warn" className="mb-3">Cancelled {fmtDateTime(inv.cancelledAt)} — {inv.cancelReason || 'no reason given'}. The public verification page shows this invoice as cancelled.</Notice>}
+      {cancelled && <Notice tone="warn" className="mb-3">Cancelled {fmtDateTime(inv.cancelledAt)} - {inv.cancelReason || 'no reason given'}. The public verification page shows this invoice as cancelled.</Notice>}
 
       <div className="grid grid-cols-[minmax(0,1fr)_340px] gap-4">
         <div className="card overflow-auto bg-[#efeaf6] p-4">
@@ -157,8 +157,8 @@ export function InvoiceDetail({ id, clients, branding }: { id: string; clients: 
                   <li key={p.id} className={p.cancelled ? 'px-4 py-2.5 text-[13px] opacity-60' : 'px-4 py-2.5 text-[13px]'}>
                     <div className="flex items-center justify-between gap-2">
                       <div>
-                        <div className="font-semibold">{money(p.amount, inv.currency)} {p.cancelled && <span className="ml-1 rounded bg-red-100 px-1.5 text-[11px] font-bold text-red-700">VOID</span>}</div>
-                        <div className="text-[12px] text-[#7a6d92]">{p.receiptNo} · {fmtDate(p.date)} · {p.method}{p.reference ? ` · ${p.reference}` : ''}</div>
+                        <div className="font-semibold">{money(p.amount, inv.currency)} {p.cancelled && <span className="ml-1 rounded bg-red-100 px-1.5 text-[12px] font-bold text-red-700">VOID</span>}</div>
+                        <div className="text-[12px] text-[#7a6d92]">{p.receiptNo}, {fmtDate(p.date)}, {p.method}{p.reference ? `, ${p.reference}` : ''}</div>
                         {p.cancelled && p.cancelReason && <div className="text-[12px] text-red-700">Void: {p.cancelReason}</div>}
                       </div>
                       <div className="flex shrink-0">
@@ -182,7 +182,7 @@ export function InvoiceDetail({ id, clients, branding }: { id: string; clients: 
       </PrintPortal>
 
       {edit && <InvoiceForm open invoice={inv} clients={clients} branding={branding} onClose={() => setEdit(false)} onSaved={() => setMsg({ tone: 'success', text: 'Invoice updated; public verification copy re-synced.' })} />}
-      {payOpen && <PaymentModal inv={inv} branding={branding} by={by} onClose={() => setPayOpen(false)} onDone={(r) => setMsg({ tone: 'success', text: `Payment recorded — receipt ${r}.` })} />}
+      {payOpen && <PaymentModal inv={inv} branding={branding} by={by} onClose={() => setPayOpen(false)} onDone={(r) => setMsg({ tone: 'success', text: `Payment recorded - receipt ${r}.` })} />}
       <ConfirmDialog open={cancelOpen} title={`Cancel invoice ${inv.number}?`} confirmLabel="Cancel invoice" danger busy={busy} disabled={!reason.trim()} error={dlgErr} onConfirm={doCancel} onClose={() => setCancelOpen(false)}>
         <p>The invoice is kept (never deleted) and marked cancelled. Anyone scanning its QR code will see “Cancelled”.</p>
         <Field label="Reason *"><textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} autoFocus /></Field>
@@ -221,7 +221,7 @@ function PaymentModal({ inv, branding, by, onClose, onDone }: { inv: Invoice; br
     try { const r = await recordPayment(inv, { amount: a, method, reference: reference.trim(), date: d }, branding, by); onDone(r.receiptNo); onClose() } catch (e) { setErr(errorMessage(e)) } finally { setBusy(false) }
   }
   return (
-    <Modal open onClose={() => !busy && onClose()} title={`Record payment — ${inv.number}`}
+    <Modal open onClose={() => !busy && onClose()} title={`Record payment - ${inv.number}`}
       footer={<><button className="btn btn-secondary" onClick={onClose} disabled={busy}>Cancel</button><button className="btn btn-success" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Record payment'}</button></>}>
       <div className="mb-3 rounded-xl bg-[#f7f2fd] p-3 text-[13px]">Outstanding balance: <b>{money(inv.balance, inv.currency)}</b></div>
       <div className="grid grid-cols-2 gap-3">

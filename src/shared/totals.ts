@@ -11,7 +11,7 @@ export interface ComputedTotals {
   grandTotal: number
 }
 
-/** Pure totals calculation — also used by tests and mirrored in the UI. */
+/** Pure totals calculation - also used by tests and mirrored in the UI. */
 export function computeTotals(
   lines: Array<{ qty: number; rate: number; discountPct?: number; discountAmt?: number; taxRate?: number }>,
   docDiscount = 0,

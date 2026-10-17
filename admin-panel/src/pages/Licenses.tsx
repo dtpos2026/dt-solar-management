@@ -97,7 +97,7 @@ export function Licenses() {
     <div>
       <PageTitle
         title="Licenses"
-        sub={licenses.loading ? 'Loading…' : `${licenses.data.length} license(s) · keys are generated with a cryptographically secure random source`}
+        sub={licenses.loading ? 'Loading…' : `${licenses.data.length} license(s), keys are generated with a cryptographically secure random source`}
         actions={
           canCreate && (
             <>
@@ -120,7 +120,7 @@ export function Licenses() {
           { id: 'list', label: <><BadgeCheck className="h-4 w-4" />Licenses</> },
           ...(canRequests
             ? [
-                { id: 'requests' as Tab, label: <><Inbox className="h-4 w-4" />Activation requests{pendingCount > 0 && <span className="ml-1 rounded-full bg-amber-400 px-1.5 text-[11px] text-[#2b0750]">{pendingCount}</span>}</> },
+                { id: 'requests' as Tab, label: <><Inbox className="h-4 w-4" />Activation requests{pendingCount > 0 && <span className="ml-1 rounded-full bg-amber-400 px-1.5 text-[12px] text-[#2b0750]">{pendingCount}</span>}</> },
                 { id: 'offline' as Tab, label: <><WifiOff className="h-4 w-4" />Offline activation</> }
               ]
             : [])
@@ -146,7 +146,7 @@ export function Licenses() {
                     <Link className="font-bold underline" to={`/licenses/${created.id}`}>
                       open license
                     </Link>
-                    {created.client && <> · client {created.client.label}{created.client.created ? ' (new)' : ''}</>}
+                    {created.client && <>, client {created.client.label}{created.client.created ? ' (new)' : ''}</>}
                   </span>
                 )
               }}
@@ -179,10 +179,10 @@ export function Licenses() {
             {can('clients.view') && (
               <select className="input w-56" value={clientId} onChange={(e) => setClientId(e.target.value)} aria-label="Client filter">
                 <option value="">All clients</option>
-                <option value="__none">— Without client —</option>
+                <option value="__none">Without client</option>
                 {clients.data.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.code} · {c.company}
+                    {c.code}, {c.company}
                   </option>
                 ))}
               </select>
@@ -226,7 +226,7 @@ export function Licenses() {
                                 ) : l.clientId ? null : can('clients.view') ? (
                                   <span className="mr-1 text-amber-700">no client ·</span>
                                 ) : null}
-                                {[l.customerName, l.phone, l.city].filter(Boolean).join(' · ')}
+                                {[l.customerName, l.phone, l.city].filter(Boolean).join(', ')}
                               </div>
                             </td>
                             <td>
@@ -244,7 +244,7 @@ export function Licenses() {
                             </td>
                             <td className="whitespace-nowrap">
                               {expiryLabel(l)}
-                              {d !== null && d >= 0 && d <= 30 && <div className="text-[11.5px] font-semibold text-amber-700">in {d} day(s)</div>}
+                              {d !== null && d >= 0 && d <= 30 && <div className="text-[12px] font-semibold text-amber-700">in {d} day(s)</div>}
                             </td>
                             {billing && (
                               <td>

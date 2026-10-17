@@ -25,7 +25,7 @@ const ACCOUNT_TYPES: Record<string, { label: string; icon: ReactNode; tone: stri
 }
 const accountType = (t: string): { label: string; icon: ReactNode; tone: string } => ACCOUNT_TYPES[t] ?? ACCOUNT_TYPES.cash
 
-const methodLabel = (m: string | null | undefined): string => (m ? PAYMENT_METHOD_LABELS[m] ?? label(m) : '—')
+const methodLabel = (m: string | null | undefined): string => (m ? PAYMENT_METHOD_LABELS[m] ?? label(m) : '-')
 
 /* ================================ Page ================================ */
 
@@ -168,7 +168,7 @@ function CashBankTab({ tick }: { tick: number }): JSX.Element {
                     </div>
                     <div className="text-[12px] text-muted">
                       {t.label}
-                      {a.bank_name ? ` · ${a.bank_name}` : ''}
+                      {a.bank_name ? `, ${a.bank_name}` : ''}
                     </div>
                   </div>
                 </div>
@@ -265,8 +265,8 @@ function AccountLedgerModal({ account, onClose }: { account: any; onClose: () =>
       open
       onClose={onClose}
       size="xl"
-      title={`${account.name} — cash book`}
-      subtitle={`${accountType(account.type).label}${account.bank_name ? ` · ${account.bank_name}` : ''}${account.account_no ? ` · ${account.account_no}` : ''}`}
+      title={`${account.name} - cash book`}
+      subtitle={`${accountType(account.type).label}${account.bank_name ? `, ${account.bank_name}` : ''}${account.account_no ? `, ${account.account_no}` : ''}`}
       footer={
         <>
           <Button icon={<Download className="h-4 w-4" />} onClick={exportCsv} disabled={!L}>
@@ -585,20 +585,20 @@ function PaymentsTab({ direction, tick, onChanged }: { direction: 'in' | 'out'; 
             r.party_name
           )
         ) : (
-          <span className="text-muted">General{r.notes ? ` — ${r.notes}` : ''}</span>
+          <span className="text-muted">General{r.notes ? ` - ${r.notes}` : ''}</span>
         )
     },
     { key: 'account_name', header: 'Account' },
     { key: 'method', header: 'Method', value: (r) => methodLabel(r.method) },
-    { key: 'reference', header: 'Reference', render: (r) => r.reference || <span className="text-muted">—</span> },
-    { key: 'project_name', header: 'Project', render: (r) => r.project_name || <span className="text-muted">—</span> },
+    { key: 'reference', header: 'Reference', render: (r) => r.reference || <span className="text-muted">-</span> },
+    { key: 'project_name', header: 'Project', render: (r) => r.project_name || <span className="text-muted">-</span> },
     { key: 'amount', header: 'Amount', align: 'right', render: (r) => <span className={cx('font-semibold', r.status !== 'cancelled' && (isIn ? 'text-ok' : 'text-bad'))}>{money(r.amount)}</span> },
     {
       key: 'unallocated',
       header: 'Advance',
       align: 'right',
       value: (r) => (r.status === 'cancelled' ? 0 : Number(r.unallocated) || 0),
-      render: (r) => (r.status !== 'cancelled' && r.unallocated > EPS ? <span className="text-info" title="Not yet applied to any invoice / bill (on-account)">{money(r.unallocated)}</span> : <span className="text-muted">—</span>)
+      render: (r) => (r.status !== 'cancelled' && r.unallocated > EPS ? <span className="text-info" title="Not yet applied to any invoice / bill (on-account)">{money(r.unallocated)}</span> : <span className="text-muted">-</span>)
     },
     {
       key: 'status',
@@ -686,7 +686,7 @@ function PaymentDetailModal({ id, onClose, onChanged }: { id: number; onClose: (
       onClose={onClose}
       size="lg"
       title={p ? `${isIn ? 'Receipt' : 'Payment'} ${p.number}` : 'Payment'}
-      subtitle={p ? `${date(p.date)} · ${isIn ? 'Money in' : 'Money out'}` : undefined}
+      subtitle={p ? `${date(p.date)}, ${isIn ? 'Money in' : 'Money out'}` : undefined}
       footer={
         p && (
           <>
@@ -719,7 +719,7 @@ function PaymentDetailModal({ id, onClose, onChanged }: { id: number; onClose: (
           {cancelled && (
             <div className="rounded-lg bg-bad-soft px-3 py-2 text-[13px] text-bad">
               Cancelled{p.cancelled_at ? ` on ${dateTime(p.cancelled_at)}` : ''}
-              {p.cancel_reason ? ` — ${p.cancel_reason}` : ''}. It no longer affects balances.
+              {p.cancel_reason ? ` - ${p.cancel_reason}` : ''}. It no longer affects balances.
             </div>
           )}
           <div className="grid grid-cols-1 gap-x-8 md:grid-cols-2">
@@ -742,8 +742,8 @@ function PaymentDetailModal({ id, onClose, onChanged }: { id: number; onClose: (
               </Kv>
               <Kv label="Account">{p.account_name}</Kv>
               <Kv label="Method">{methodLabel(p.method)}</Kv>
-              <Kv label="Reference">{p.reference || '—'}</Kv>
-              <Kv label="Project">{p.project_name ? `${p.project_code ? p.project_code + ' — ' : ''}${p.project_name}` : '—'}</Kv>
+              <Kv label="Reference">{p.reference || '-'}</Kv>
+              <Kv label="Project">{p.project_name ? `${p.project_code ? p.project_code + ' - ' : ''}${p.project_name}` : '-'}</Kv>
             </div>
             <div className="text-[13.5px]">
               <Kv label="Amount">
@@ -759,7 +759,7 @@ function PaymentDetailModal({ id, onClose, onChanged }: { id: number; onClose: (
                 </Kv>
               )}
               <Kv label="Recorded by">
-                {p.created_by_name ?? '—'}
+                {p.created_by_name ?? '-'}
                 {p.created_at ? <span className="ml-1 text-[12px] font-normal text-muted">{dateTime(p.created_at)}</span> : null}
               </Kv>
             </div>
@@ -768,7 +768,7 @@ function PaymentDetailModal({ id, onClose, onChanged }: { id: number; onClose: (
           <div>
             <div className="mb-2 font-semibold">Settled items</div>
             {p.allocations.length === 0 ? (
-              <div className="rounded-lg bg-surface-2 px-3 py-3 text-[13px] text-muted">{cancelled ? 'Allocations were released when this was cancelled.' : 'Not applied to any invoice, bill or expense — the full amount is an advance / on-account balance.'}</div>
+              <div className="rounded-lg bg-surface-2 px-3 py-3 text-[13px] text-muted">{cancelled ? 'Allocations were released when this was cancelled.' : 'Not applied to any invoice, bill or expense - the full amount is an advance / on-account balance.'}</div>
             ) : (
               <div className="overflow-hidden rounded-lg border border-line">
                 <table className="tbl">
@@ -792,10 +792,10 @@ function PaymentDetailModal({ id, onClose, onChanged }: { id: number; onClose: (
                           nav(`/doc/${a.document_id}`)
                         }}
                       >
-                        <td className="font-medium">{a.document_number ?? a.expense_number ?? '—'}</td>
+                        <td className="font-medium">{a.document_number ?? a.expense_number ?? '-'}</td>
                         <td>{a.document_id ? DOC_TYPES[a.doc_type as keyof typeof DOC_TYPES]?.label ?? label(a.doc_type) : 'Expense'}</td>
-                        <td>{a.document_date ? date(a.document_date) : '—'}</td>
-                        <td className="num text-right">{a.document_total !== null && a.document_total !== undefined ? money(a.document_total) : '—'}</td>
+                        <td>{a.document_date ? date(a.document_date) : '-'}</td>
+                        <td className="num text-right">{a.document_total !== null && a.document_total !== undefined ? money(a.document_total) : '-'}</td>
                         <td className="num text-right font-semibold">{money(a.amount)}</td>
                       </tr>
                     ))}
@@ -844,7 +844,7 @@ function TransfersTab({ tick, onNew, onChanged }: { tick: number; onNew?: () => 
     { key: 'arrow', header: '', sortable: false, csv: false, width: 28, render: () => <ArrowRight className="h-4 w-4 text-muted" /> },
     { key: 'to_name', header: 'To account' },
     { key: 'amount', header: 'Amount', align: 'right', render: (r) => <span className="font-semibold">{money(r.amount)}</span> },
-    { key: 'notes', header: 'Notes', render: (r) => (r.notes ? <span className="text-muted">{r.notes}</span> : <span className="text-muted">—</span>) },
+    { key: 'notes', header: 'Notes', render: (r) => (r.notes ? <span className="text-muted">{r.notes}</span> : <span className="text-muted">-</span>) },
     {
       key: 'status',
       header: 'Status',
@@ -878,7 +878,7 @@ function TransfersTab({ tick, onNew, onChanged }: { tick: number; onNew?: () => 
       rowClassName={(r: any) => (r.status === 'cancelled' ? 'opacity-50' : undefined)}
       empty={
         <Empty icon={<ArrowLeftRight className="h-6 w-6" />} title="No transfers in this period" action={onNew && <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={onNew}>New transfer</Button>}>
-          Move money between cash, bank and wallet accounts — e.g. cash deposited into the bank.
+          Move money between cash, bank and wallet accounts - e.g. cash deposited into the bank.
         </Empty>
       }
       toolbar={
@@ -1068,7 +1068,7 @@ function AdjustmentsTab({ tick }: { tick: number }): JSX.Element {
       )
     },
     { key: 'amount', header: 'Amount', align: 'right', render: (r) => <span className="font-semibold">{money(r.amount)}</span> },
-    { key: 'reason', header: 'Reason', render: (r) => (r.reason ? <span className="text-muted">{r.reason}</span> : <span className="text-muted">—</span>) },
+    { key: 'reason', header: 'Reason', render: (r) => (r.reason ? <span className="text-muted">{r.reason}</span> : <span className="text-muted">-</span>) },
     { key: 'created_by_name', header: 'Recorded by' },
     {
       key: 'status',

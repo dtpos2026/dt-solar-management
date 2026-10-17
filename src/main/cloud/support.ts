@@ -43,7 +43,7 @@ export class SupportError extends Error {
   }
 }
 
-export const OFFLINE_NOTE = 'Waiting for an internet connection — it will be sent automatically.'
+export const OFFLINE_NOTE = 'Waiting for an internet connection - it will be sent automatically.'
 
 /**
  * Firestore returns timestamps with a variable number of fraction digits ("…:05Z", "…:05.1Z", "…:05.123456Z"), which
@@ -322,7 +322,7 @@ export function repliesQuery(since: string | null): Record<string, unknown> {
 
 /**
  * One sync round: sends queued messages (oldest first), pulls admin replies, reports "read".
- * Never throws for network problems — the result says what happened.
+ * Never throws for network problems - the result says what happened.
  */
 export async function syncSupport(d: SyncDeps): Promise<SyncResult> {
   const now = d.now ?? Date.now
@@ -390,7 +390,7 @@ export async function syncSupport(d: SyncDeps): Promise<SyncResult> {
             continue
           }
           // The thread summary itself was refused (e.g. the thread holds fields the customer may not keep):
-          // the message is what matters — deliver it on its own.
+          // the message is what matters - deliver it on its own.
           if (fe?.code === 'PERMISSION_DENIED' && fresh) {
             try {
               const r = await d.client.commit([messageWrite(d.token, m)])

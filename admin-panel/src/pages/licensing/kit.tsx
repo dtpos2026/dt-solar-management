@@ -68,11 +68,11 @@ const PILL: Record<string, string> = {
   yearly: 'bg-[#efe4fb] text-[#3d096d]'
 }
 
-const PILL_LABEL: Record<string, string> = { deactivated: 'released', unregistered: 'not activated', never: 'no heartbeat', none: '—' }
+const PILL_LABEL: Record<string, string> = { deactivated: 'released', unregistered: 'not activated', never: 'no heartbeat', none: '-' }
 
 export function Pill({ value, label, title }: { value: string; label?: string; title?: string }) {
   return (
-    <span title={title} className={cx('inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-0.5 text-[11.5px] font-bold capitalize', PILL[value] ?? 'bg-[#f1e9fb] text-[#3d096d]')}>
+    <span title={title} className={cx('inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-0.5 text-[12px] font-bold capitalize', PILL[value] ?? 'bg-[#f1e9fb] text-[#3d096d]')}>
       {(value === 'online' || value === 'recent' || value === 'offline') && (
         <span className={cx('inline-block h-1.5 w-1.5 rounded-full', value === 'online' ? 'bg-green-500' : value === 'recent' ? 'bg-amber-500' : 'bg-slate-400')} />
       )}
@@ -201,7 +201,7 @@ export function ConfirmDialog({ opts, onClose }: { opts: ConfirmOptions | null; 
   const [typed, setTyped] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  // Reset when a dialog opens / closes / switches — not on every re-render of the parent (opts is rebuilt each render,
+  // Reset when a dialog opens / closes / switches - not on every re-render of the parent (opts is rebuilt each render,
   // which used to wipe the typed confirmation and re-enable the button while an action was running).
   const openKey = opts ? opts.title : null
   useEffect(() => {
@@ -273,12 +273,12 @@ export function ConfirmDialog({ opts, onClose }: { opts: ConfirmOptions | null; 
 /* ------------------------------------------------ formatting ------------------------------------------------ */
 
 export function fmtMoney(v: number | null | undefined, currency = 'PKR'): string {
-  if (v === null || v === undefined || !Number.isFinite(v)) return '—'
+  if (v === null || v === undefined || !Number.isFinite(v)) return '-'
   return `${currency} ${v.toLocaleString('en-PK', { maximumFractionDigits: 0 })}`
 }
 
 export function fmtCount(v: number | null | undefined): string {
-  return v === null || v === undefined || !Number.isFinite(v) ? '—' : v.toLocaleString('en-PK')
+  return v === null || v === undefined || !Number.isFinite(v) ? '-' : v.toLocaleString('en-PK')
 }
 
 /** Shows the last 6 characters of a long id (device ids / tokens are never shown in full in lists). */

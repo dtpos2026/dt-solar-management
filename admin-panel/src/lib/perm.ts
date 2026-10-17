@@ -85,7 +85,7 @@ export function sanitisePermissions(perms: readonly unknown[] | null | undefined
   return ALL_ADMIN_PERMISSIONS.filter((p) => set.has(p))
 }
 
-/** Permissions stored for a role preset (owners store [] — they have every permission implicitly). */
+/** Permissions stored for a role preset (owners store [] - they have every permission implicitly). */
 export function presetPermissions(role: AdminRole): string[] {
   if (role === 'owner') return []
   return sanitisePermissions(ROLE_PRESETS[role].permissions)

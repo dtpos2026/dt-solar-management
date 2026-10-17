@@ -54,7 +54,7 @@ export function CsvExportCard(): JSX.Element {
         </Button>
       </div>
       <p className="mt-3 text-[12.5px] text-muted">
-        Opens in Excel (UTF-8, Urdu text kept). Dates are yyyy-mm-dd, decimals use a dot. The columns are the same as the CSV import, so the file can be imported again — into
+        Opens in Excel (UTF-8, Urdu text kept). Dates are yyyy-mm-dd, decimals use a dot. The columns are the same as the CSV import, so the file can be imported again - into
         another firm or a new computer. {CSV_KINDS.find((k) => k.key === kind)?.exportNote}
       </p>
     </Card>

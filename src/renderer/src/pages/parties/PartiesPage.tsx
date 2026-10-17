@@ -67,7 +67,7 @@ export function PartiesPage({ type }: { type: 'customer' | 'supplier' }): JSX.El
               <option value="all">All</option>
             </Select>
             <span className="ml-auto text-[12.5px] text-muted">
-              {rows.length} {isCust ? 'customers' : 'suppliers'} · Net {isCust ? 'receivable' : 'payable'} <b className="text-ink">{money(isCust ? total : -total)}</b>
+              {rows.length} {isCust ? 'customers' : 'suppliers'}, Net {isCust ? 'receivable' : 'payable'} <b className="text-ink">{money(isCust ? total : -total)}</b>
             </span>
           </>
         }

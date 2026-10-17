@@ -120,7 +120,7 @@ export function ClientDetail({ id }: { id: string }) {
         title: `Delete ${client.code} permanently`, confirmLabel: 'Delete client', tone: 'danger', typeToConfirm: 'DELETE',
         body: (
           <div className="space-y-2">
-            <p>The client record <b>{client.code} · {client.company}</b> is removed permanently. This cannot be undone — <b>Archive</b> keeps the record instead.</p>
+            <p>The client record <b>{client.code}, {client.company}</b> is removed permanently. This cannot be undone - <b>Archive</b> keeps the record instead.</p>
             {delErr ? <div className="rounded-lg bg-red-50 p-2.5 text-[13px] text-red-700">{delErr}</div> : !delPrev || !delCheck ? <Loading label="Checking linked licenses and invoices…" /> : (
               <>
                 {delCheck.blockers.length > 0 && (
@@ -147,7 +147,7 @@ export function ClientDetail({ id }: { id: string }) {
           </div>
         ),
         run: async () => {
-          if (!delPrev || !delCheck) throw new Error('Still checking what is linked to this client — try again in a moment.')
+          if (!delPrev || !delCheck) throw new Error('Still checking what is linked to this client - try again in a moment.')
           if (!delCheck.ok) throw new Error(delCheck.blockers.join(' '))
           deleting.current = true
           try {
@@ -181,7 +181,7 @@ export function ClientDetail({ id }: { id: string }) {
       <button className="mb-3 flex items-center gap-1 text-[13px] text-[#6b5d85] hover:underline" onClick={() => nav('/clients')}><ArrowLeft className="h-4 w-4" />All clients</button>
       <PageTitle
         title={`${client.company}`}
-        sub={`${client.code} · ${client.ownerName}${client.city ? ` · ${client.city}` : ''}`}
+        sub={`${client.code}, ${client.ownerName}${client.city ? `, ${client.city}` : ''}`}
         actions={manage && <>
           <button className="btn btn-secondary" onClick={() => setEdit(true)}><Pencil className="h-4 w-4" />Edit</button>
           {client.status === 'active' && <button className="btn btn-secondary" onClick={() => setDlg('suspended')}><Pause className="h-4 w-4" />Suspend</button>}
@@ -194,17 +194,17 @@ export function ClientDetail({ id }: { id: string }) {
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Stat label="Status" value={<Pill value={client.status} />} />
         <Stat label="Licenses" value={licenses.length} />
-        <Stat label="Computers" value={devices ? devices.filter((d) => d.deviceStatus === 'active').length : '—'} />
-        <Stat label="Invoiced" value={billing ? fmtMoney(sum.sales) : '—'} />
-        <Stat label="Outstanding" value={billing ? fmtMoney(sum.outstanding) : '—'} />
+        <Stat label="Computers" value={devices ? devices.filter((d) => d.deviceStatus === 'active').length : '-'} />
+        <Stat label="Invoiced" value={billing ? fmtMoney(sum.sales) : '-'} />
+        <Stat label="Outstanding" value={billing ? fmtMoney(sum.outstanding) : '-'} />
       </div>
 
       <div className="mb-4 grid gap-4 lg:grid-cols-[1fr_2fr]">
         <Panel title="Profile">
           <div className="space-y-1.5 px-4 py-3 text-[13px]">
             {client.logo && <img src={client.logo} alt="logo" className="mb-2 h-16 max-w-[200px] object-contain" />}
-            {([['Owner', client.ownerName], ['Phone', client.phone], ['Email', client.email], ['Address', client.address], ['City', client.city], ['Plan', `${client.plan || '—'} · ${PLAN_TYPE_LABEL[client.planType]}`], ['Firms allowed', limitText(licenses.map((l) => l.maxFirms), client.allowedFirms)], ['Computers allowed', limitText(licenses.map((l) => l.maxDevices), client.allowedDevices)], ['Registered', fmtDate(client.registeredAt)], ['Created', `${fmtDateTime(client.createdAt)}${client.createdBy ? ` by ${client.createdBy}` : ''}`]] as [string, unknown][]).map(([k, v]) => (
-              <div key={k} className="flex gap-2"><span className="w-32 shrink-0 text-[#7a6d92]">{k}</span><span>{String(v || '—')}</span></div>
+            {([['Owner', client.ownerName], ['Phone', client.phone], ['Email', client.email], ['Address', client.address], ['City', client.city], ['Plan', `${client.plan || '-'}, ${PLAN_TYPE_LABEL[client.planType]}`], ['Firms allowed', limitText(licenses.map((l) => l.maxFirms), client.allowedFirms)], ['Computers allowed', limitText(licenses.map((l) => l.maxDevices), client.allowedDevices)], ['Registered', fmtDate(client.registeredAt)], ['Created', `${fmtDateTime(client.createdAt)}${client.createdBy ? ` by ${client.createdBy}` : ''}`]] as [string, unknown][]).map(([k, v]) => (
+              <div key={k} className="flex gap-2"><span className="w-32 shrink-0 text-[#7a6d92]">{k}</span><span>{String(v || '-')}</span></div>
             ))}
             {client.notes && <div className="pt-2 text-[#5d4f78]">{client.notes}</div>}
           </div>
@@ -215,7 +215,7 @@ export function ClientDetail({ id }: { id: string }) {
               {licenses.map((l) => (
                 <tr key={l.id} className="border-t border-[#f1ecf7] first:border-t-0">
                   <td className="px-4 py-2"><Link className="font-mono font-semibold text-[#3d096d] underline" to={`/licenses/${l.id}`}>{l.licenseKey}</Link></td>
-                  <td className="px-4 py-2">{l.plan} · {PLAN_TYPE_LABEL[l.planType]}</td>
+                  <td className="px-4 py-2">{l.plan}, {PLAN_TYPE_LABEL[l.planType]}</td>
                   <td className="px-4 py-2">{expiryLabel(l)}</td>
                   <td className="px-4 py-2">{l.activeDevices}/{l.maxDevices}</td>
                   <td className="px-4 py-2"><Pill value={licenseDisplayStatus(l)} /></td>
@@ -231,9 +231,9 @@ export function ClientDetail({ id }: { id: string }) {
           <table className="w-full text-[13px]"><tbody>
             {devices.map((d) => (
               <tr key={d.key} className="border-t border-[#f1ecf7] first:border-t-0">
-                <td className="px-4 py-2"><b>{d.deviceName || '—'}</b> <code className="text-[11px] text-[#7a6d92]">{d.deviceId}</code></td>
-                <td className="px-4 py-2">{d.os} · {d.appVersion}</td>
-                <td className="px-4 py-2"><Pill value={d.online} /> <span className="text-[11.5px] text-[#7a6d92]">{d.lastSeenMs ? timeAgo(d.lastSeenMs) : ''}</span></td>
+                <td className="px-4 py-2"><b>{d.deviceName || '-'}</b> <code className="text-[12px] text-[#7a6d92]">{d.deviceId}</code></td>
+                <td className="px-4 py-2">{d.os}, {d.appVersion}</td>
+                <td className="px-4 py-2"><Pill value={d.online} /> <span className="text-[12px] text-[#7a6d92]">{d.lastSeenMs ? timeAgo(d.lastSeenMs) : ''}</span></td>
                 <td className="px-4 py-2"><Pill value={d.deviceStatus} /></td>
               </tr>
             ))}
@@ -243,7 +243,7 @@ export function ClientDetail({ id }: { id: string }) {
 
       <div className="grid gap-4 lg:grid-cols-2">
         {billing && (
-          <Panel title="Billing history" sub="Read-only — manage invoices on the Billing page">
+          <Panel title="Billing history" sub="Read-only - manage invoices on the Billing page">
             {invoices.loading ? <Loading /> : invoices.data.length === 0 ? <Empty title="No invoices" /> : (
               <table className="w-full text-[13px]"><tbody>
                 {invoices.data.map((i) => (
@@ -259,14 +259,14 @@ export function ClientDetail({ id }: { id: string }) {
           </Panel>
         )}
         {can('support.manage') && (
-          <Panel title="Support conversations" sub="Read-only — reply on the Support page">
+          <Panel title="Support conversations" sub="Read-only - reply on the Support page">
             {threads === null ? <Loading /> : threads.length === 0 ? <Empty title="No conversations" /> : (
               <ul className="divide-y divide-[#f1ecf7] text-[13px]">
                 {threads.map((t) => (
                   <li key={t.id} className="px-4 py-2">
                     <div className="flex justify-between gap-2"><Link className="font-semibold text-[#3d096d] underline" to={`/support/${t.id}`}>{t.contactName || t.companyName || t.id}</Link><Pill value={t.status} /></div>
                     <div className="truncate text-[#5d4f78]">{t.lastMessagePreview}</div>
-                    <div className="text-[11.5px] text-[#7a6d92]">{fmtDateTime(t.lastMessageAtMs)}{t.unreadByAdmin ? ' · unread' : ''}</div>
+                    <div className="text-[12px] text-[#7a6d92]">{fmtDateTime(t.lastMessageAtMs)}{t.unreadByAdmin ? ', unread' : ''}</div>
                   </li>
                 ))}
               </ul>
@@ -278,7 +278,7 @@ export function ClientDetail({ id }: { id: string }) {
             {activity === null ? <Loading /> : activity.length === 0 ? <Empty title="No activity recorded" /> : (
               <ul className="divide-y divide-[#f1ecf7] text-[13px]">
                 {activity.map((a) => (
-                  <li key={a.id} className="px-4 py-2"><b>{a.action.replace(/_/g, ' ')}</b> <span className="text-[#7a6d92]">· {fmtDateTime(a.at)} · {a.by}</span><div className="text-[#5d4f78]">{a.details}</div></li>
+                  <li key={a.id} className="px-4 py-2"><b>{a.action.replace(/_/g, ' ')}</b> <span className="text-[#7a6d92]">· {fmtDateTime(a.at)}, {a.by}</span><div className="text-[#5d4f78]">{a.details}</div></li>
                 ))}
               </ul>
             )}

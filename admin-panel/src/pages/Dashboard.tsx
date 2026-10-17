@@ -1,7 +1,7 @@
 /**
  * Dashboard: summary cards, recent activity (searchable) and on-demand trends.
  *
- * Reads are kept small: licenses / clients / invoices come from shared live listeners (lib/liveData — one listener per
+ * Reads are kept small: licenses / clients / invoices come from shared live listeners (lib/liveData - one listener per
  * collection for every page, so status changes appear at once and moving between pages does not re-read), online
  * computers are aggregation counts on heartbeats, the activity table reads the latest 100 entries, and payment
  * sub-collections are only read for the charts when the admin opens them.
@@ -119,7 +119,7 @@ async function loadRecent(): Promise<AuditRow[]> {
 export function Dashboard() {
   const can = useCan()
   const any = (p: string[]) => p.some(can)
-  const { key } = useSigningKey()
+  const { key, restoring } = useSigningKey()
   const branding = useSharedBranding()
   const canLic = any(LICENSE_READ_PERMS)
   const canBilling = any(BILLING_READ_PERMS)
@@ -162,9 +162,9 @@ export function Dashboard() {
 
   return (
     <div>
-      <PageTitle icon={<LayoutDashboard />} title="Dashboard" sub={`Live overview · ${new Date(thisMonth).toLocaleString(undefined, { month: 'long', year: 'numeric' })}`} />
-      {!key && canRequests && (
-        <Notice tone="warn" className="mb-4">No signing key loaded on this computer — load it once (remembered) so new licenses get instant activation and approvals work. <Link className="font-semibold underline" to="/key">Load key</Link></Notice>
+      <PageTitle icon={<LayoutDashboard />} title="Dashboard" sub={`Live overview, ${new Date(thisMonth).toLocaleString(undefined, { month: 'long', year: 'numeric' })}`} />
+      {!key && !restoring && canRequests && (
+        <Notice tone="warn" className="mb-4">No signing key loaded on this computer - load it once (remembered) so new licenses get instant activation and approvals work. <Link className="font-semibold underline" to="/key">Load key</Link></Notice>
       )}
       {[lic.error, cli.error, inv.error].filter(Boolean).map((e) => <Notice key={e} tone="error" className="mb-3">{e}</Notice>)}
 
@@ -179,10 +179,10 @@ export function Dashboard() {
             tone="sky"
             label="Approved devices"
             value={fmtCount(approvedDevices)}
-            sub={hb.value ? `${hb.value.online} online now · ${hb.value.recent} in 24 h` : canHb ? (hb.error ? 'online status unavailable' : '…') : 'online status needs Devices'}
+            sub={hb.value ? `${hb.value.online} online now, ${hb.value.recent} in 24 h` : canHb ? (hb.error ? 'online status unavailable' : '…') : 'online status needs Devices'}
             loading={lic.loading}
             to="/devices"
-            title="Active computers on non-revoked licenses (from the licenses’ device counters) · online = heartbeat in the last 30 minutes"
+            title="Active computers on non-revoked licenses (from the licenses’ device counters), online = heartbeat in the last 30 minutes"
           />
         )}
         {canRequests && <StatCard icon={<Inbox />} tone={req.docs.length ? 'amber' : 'slate'} label="Pending device requests" value={fmtCount(req.docs.length)} sub="activation requests to approve" loading={req.loading} to="/licenses?tab=requests" />}
@@ -190,10 +190,10 @@ export function Dashboard() {
 
       {(canAudit || canBilling) && (
         <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-          {canAudit && <StatCard icon={<Zap />} tone="green" label="Activations · 7 days" value={plus(events.activations, events.truncated)} sub="device activations & requests" loading={recent.loading && !recent.value.length} to="/activity" />}
-          {canAudit && <StatCard icon={<ShieldAlert />} tone="red" label="Security events · 7 days" value={plus(events.security, events.truncated)} sub={`${events.failures} failed action(s)`} loading={recent.loading && !recent.value.length} to="/activity" />}
+          {canAudit && <StatCard icon={<Zap />} tone="green" label="Activations, 7 days" value={plus(events.activations, events.truncated)} sub="device activations & requests" loading={recent.loading && !recent.value.length} to="/activity" />}
+          {canAudit && <StatCard icon={<ShieldAlert />} tone="red" label="Security events, 7 days" value={plus(events.security, events.truncated)} sub={`${events.failures} failed action(s)`} loading={recent.loading && !recent.value.length} to="/activity" />}
           {canBilling && <StatCard icon={<CircleDollarSign />} label="Total sales" value={fmtMoney(sum.sales, cur)} sub={`${sum.invoiceCount} invoice(s)`} loading={inv.loading} to="/billing" />}
-          {canBilling && <StatCard icon={<CircleDollarSign />} tone="green" label="Revenue this month" value={sum.revenueThisMonth === null ? '—' : fmtMoney(sum.revenueThisMonth, cur)} sub="payments received" loading={inv.loading || monthPay.loading} to="/billing" />}
+          {canBilling && <StatCard icon={<CircleDollarSign />} tone="green" label="Revenue this month" value={sum.revenueThisMonth === null ? '-' : fmtMoney(sum.revenueThisMonth, cur)} sub="payments received" loading={inv.loading || monthPay.loading} to="/billing" />}
           {canBilling && <StatCard icon={<Clock />} tone="amber" label="Outstanding" value={fmtMoney(sum.outstanding, cur)} sub={`${sum.outstandingCount} open invoice(s)`} loading={inv.loading} to="/billing" />}
           {canBilling && <StatCard icon={<Clock />} tone="red" label="Overdue" value={fmtMoney(sum.overdue, cur)} sub={`${sum.overdueCount} invoice(s) past due`} loading={inv.loading} to="/billing" />}
         </div>
@@ -274,16 +274,16 @@ function RecentActivity({ rows, loading, error, onRefresh, licenses, clients }: 
                     <td>
                       <div className="flex items-center gap-2">
                         <span className="font-semibold">{actionLabel(r.action)}</span>
-                        <span className={cx('rounded-md px-1.5 py-0.5 text-[10.5px] font-bold capitalize', CATEGORY_TONE[r.category] ?? CATEGORY_TONE.general)}>{r.category}</span>
+                        <span className={cx('rounded-md px-1.5 py-0.5 text-[12px] font-bold capitalize', CATEGORY_TONE[r.category] ?? CATEGORY_TONE.general)}>{r.category}</span>
                         {r.status === 'failure' && <Pill value="rejected" label="failed" />}
                       </div>
                       <div className="max-w-[420px] truncate text-[12px] text-[#7a6d92]" title={r.details}>{r.details}</div>
                     </td>
                     <td className="max-w-[200px]">
-                      <div className="truncate">{who(r) || '—'}</div>
-                      {(r.licenseId || r.target) && <div className="truncate font-mono text-[11px] text-[#7a6d92]">{r.licenseId || r.target}</div>}
+                      <div className="truncate">{who(r) || '-'}</div>
+                      {(r.licenseId || r.target) && <div className="truncate font-mono text-[12px] text-[#7a6d92]">{r.licenseId || r.target}</div>}
                     </td>
-                    <td className="max-w-[180px] truncate text-[12.5px]" title={r.by}>{r.by || '—'}</td>
+                    <td className="max-w-[180px] truncate text-[12.5px]" title={r.by}>{r.by || '-'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -318,7 +318,7 @@ function Trends({ canBilling, canLic, invoices, licenses, currency }: { canBilli
     <Section
       className="mt-4"
       title={<button className="flex items-center gap-2" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? <ChevronDown /> : <ChevronRight />}<BarChart3 />Trends</button>}
-      sub={open ? undefined : 'Monthly revenue and new licenses — opens on demand (reads payment records).'}
+      sub={open ? undefined : 'Monthly revenue and new licenses - opens on demand (reads payment records).'}
       actions={open && <div className="flex items-center gap-2 text-[12.5px]">From <input type="month" className="input h-8 w-auto" value={from} onChange={(e) => setFrom(e.target.value)} /> to <input type="month" className="input h-8 w-auto" value={to} onChange={(e) => setTo(e.target.value)} /></div>}
     >
       {open && (

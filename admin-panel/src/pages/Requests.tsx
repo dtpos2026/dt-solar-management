@@ -140,7 +140,7 @@ export function Requests({ embedded = false }: { embedded?: boolean }) {
           {r.licenseKey ? (
             <>
               {' '}
-              · key <MaskedKey value={r.licenseKey} />
+             , key <MaskedKey value={r.licenseKey} />
             </>
           ) : null}
           .
@@ -177,7 +177,7 @@ export function Requests({ embedded = false }: { embedded?: boolean }) {
     <div>
       {!embedded && <PageTitle title="Activation requests" sub="Customers’ DT Solar Pro sends a request when they activate online. Approve to issue a signed license." />}
       <p className="mb-3 text-[12.5px] text-[#6b5d85]">
-        Every new computer needs your explicit approval — a valid license key alone never grants access. A computer that already holds an active slot is re-issued its certificate (no new slot); a new computer on a full license needs a reassignment.
+        Every new computer needs your explicit approval - a valid license key alone never grants access. A computer that already holds an active slot is re-issued its certificate (no new slot); a new computer on a full license needs a reassignment.
         {!canApprove && <b> Approving needs the “devices.manage” permission.</b>}
       </p>
       {!key && (
@@ -186,7 +186,7 @@ export function Requests({ embedded = false }: { embedded?: boolean }) {
             tone: 'warn',
             text: (
               <>
-                Signing key not loaded — requests cannot be approved. <Link className="font-bold underline" to="/key">Load the signing key</Link>.
+                Signing key not loaded - requests cannot be approved. <Link className="font-bold underline" to="/key">Load the signing key</Link>.
               </>
             )
           }}
@@ -223,23 +223,23 @@ export function Requests({ embedded = false }: { embedded?: boolean }) {
                       <Pill value={r.type === 'activate' ? 'active' : 'suspended'} label={r.type === 'activate' ? 'activate' : 'release'} />
                       {plan && <div className="mt-1"><Pill value={PLAN_PILL[plan.kind].value} label={PLAN_PILL[plan.kind].label} title={plan.kind === 'invalid' ? plan.reason : undefined} /></div>}
                     </td>
-                    <td>{r.licenseKey ? <MaskedKey value={r.licenseKey} /> : <span className="font-mono text-[12px]">{r.licenseId ? shortId(r.licenseId) : '—'}</span>}</td>
+                    <td>{r.licenseKey ? <MaskedKey value={r.licenseKey} /> : <span className="font-mono text-[12px]">{r.licenseId ? shortId(r.licenseId) : '-'}</span>}</td>
                     <td>
-                      <div className="font-semibold">{r.deviceName || '—'}</div>
+                      <div className="font-semibold">{r.deviceName || '-'}</div>
                       <ShortDevice id={r.deviceId} />
-                      <div className="text-[11.5px] text-[#7a6d92]">
-                        {r.appVersion} · {r.os}
+                      <div className="text-[12px] text-[#7a6d92]">
+                        {r.appVersion}, {r.os}
                       </div>
                     </td>
                     <td className="text-[12.5px]">
                       {hasRegistration(r) ? (
                         <div>
-                          <div className="font-semibold">{r.companyName || '—'}</div>
-                          <div className="text-[#6b5d85]">{[r.ownerName, r.phone].filter(Boolean).join(' · ')}</div>
+                          <div className="font-semibold">{r.companyName || '-'}</div>
+                          <div className="text-[#6b5d85]">{[r.ownerName, r.phone].filter(Boolean).join(', ')}</div>
                           {r.address && <div className="max-w-[220px] truncate text-[#7a6d92]" title={r.address}>{r.address}</div>}
                         </div>
                       ) : (
-                        <span className="text-[#9a8fb0]">—</span>
+                        <span className="text-[#9a8fb0]">-</span>
                       )}
                     </td>
                     <td className="text-right">
@@ -424,9 +424,9 @@ function ApproveDialog({ req, onClose, onDone }: { req: ActivationRequest | null
       onDone({
         tone: ok ? 'success' : res === 'rejected' ? 'warn' : 'info',
         text:
-          res === 'approved' ? `Activation approved — the certificate was sent to ${name}.${extra}`
+          res === 'approved' ? `Activation approved - the certificate was sent to ${name}.${extra}`
             : res === 'reissued' ? `Certificate re-issued to ${name} (it already held an active slot; no new slot used).${extra}`
-              : res === 'reassigned' ? `Computer replaced — ${name} took the released slot and received its certificate.${extra}`
+              : res === 'reassigned' ? `Computer replaced - ${name} took the released slot and received its certificate.${extra}`
                 : res === 'rejected' ? 'The request could not be approved and was rejected (see the message in the list).'
                   : 'This request was already processed.'
       })
@@ -459,10 +459,10 @@ function ApproveDialog({ req, onClose, onDone }: { req: ActivationRequest | null
       <div className="grid grid-cols-2 gap-4 text-[13.5px]">
         <div className="rounded-xl border border-[#ece6f4] bg-[#faf8fd] p-3">
           <div className="label">Computer</div>
-          <div className="font-semibold">{req.deviceName || '—'}</div>
-          <div className="font-mono text-[11.5px] text-[#6b5d85]" title="Device id">{req.deviceId}</div>
+          <div className="font-semibold">{req.deviceName || '-'}</div>
+          <div className="font-mono text-[12px] text-[#6b5d85]" title="Device id">{req.deviceId}</div>
           <div className="text-[12px] text-[#7a6d92]">
-            {req.appVersion} · {req.os}
+            {req.appVersion}, {req.os}
           </div>
           <div className="mt-1 text-[12px] text-[#7a6d92]">Received {fmtDateTime(req.createdAt)}</div>
         </div>
@@ -479,18 +479,18 @@ function ApproveDialog({ req, onClose, onDone }: { req: ActivationRequest | null
                 {license.businessName || license.customerName}
               </Link>
               <div className="text-[12px] text-[#6b5d85]">
-                {license.activeDevices} of {license.maxDevices} computer(s) used · {license.status}
+                {license.activeDevices} of {license.maxDevices} computer(s) used, {license.status}
               </div>
             </>
           ) : (
-            <div className="mt-1 text-[12.5px] text-red-700">No license with this key — reject the request.</div>
+            <div className="mt-1 text-[12.5px] text-red-700">No license with this key - reject the request.</div>
           )}
         </div>
         {plan && (
           <div className={`col-span-2 rounded-xl border p-3 ${plan.kind === 'invalid' ? 'border-red-200 bg-red-50 text-red-800' : plan.kind === 'reassign' ? 'border-amber-200 bg-amber-50' : 'border-[#ece6f4] bg-[#faf8fd]'}`}>
             <div className="mb-1 flex items-center gap-2 font-semibold">
               <Pill value={PLAN_PILL[plan.kind].value} label={PLAN_PILL[plan.kind].label} />
-              {plan.kind === 'reissue' && 'This computer already holds an active slot on this license — its certificate is re-issued, no new slot is used.'}
+              {plan.kind === 'reissue' && 'This computer already holds an active slot on this license - its certificate is re-issued, no new slot is used.'}
               {plan.kind === 'new' && `Takes a free slot (${plan.slotsUsed + 1} of ${plan.maxDevices} after approval).`}
               {plan.kind === 'reassign' && `Device limit full (${plan.slotsUsed} of ${plan.maxDevices}).`}
               {plan.kind === 'invalid' && plan.reason}
@@ -502,7 +502,7 @@ function ApproveDialog({ req, onClose, onDone }: { req: ActivationRequest | null
                   {replaceable.map((d) => (
                     <label key={d.deviceId} className="flex items-center gap-2 text-[13px]">
                       <input type="radio" name="replace" checked={replaceId === d.deviceId} onChange={() => setReplaceId(d.deviceId)} />
-                      Replace <b>{d.deviceName || 'Device'}</b> <ShortDevice id={d.deviceId} /> <Pill value={d.status} /> <span className="text-[12px] text-[#7a6d92]">activated {fmtDateTime(d.activatedAt)} · {d.os || '—'}</span>
+                      Replace <b>{d.deviceName || 'Device'}</b> <ShortDevice id={d.deviceId} /> <Pill value={d.status} /> <span className="text-[12px] text-[#7a6d92]">activated {fmtDateTime(d.activatedAt)}, {d.os || '-'}</span>
                     </label>
                   ))}
                   {replaceable.length === 0 && <div className="text-[12.5px] text-[#7a6d92]">No computer can be replaced.</div>}
@@ -521,16 +521,16 @@ function ApproveDialog({ req, onClose, onDone }: { req: ActivationRequest | null
           {hasRegistration(req) ? (
             <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[13px]">
               <div>
-                <span className="text-[#7a6d92]">Company:</span> {req.companyName || '—'}
+                <span className="text-[#7a6d92]">Company:</span> {req.companyName || '-'}
               </div>
               <div>
-                <span className="text-[#7a6d92]">Owner:</span> {req.ownerName || '—'}
+                <span className="text-[#7a6d92]">Owner:</span> {req.ownerName || '-'}
               </div>
               <div>
-                <span className="text-[#7a6d92]">Phone:</span> {req.phone || '—'}
+                <span className="text-[#7a6d92]">Phone:</span> {req.phone || '-'}
               </div>
               <div>
-                <span className="text-[#7a6d92]">Address:</span> {req.address || '—'}
+                <span className="text-[#7a6d92]">Address:</span> {req.address || '-'}
               </div>
             </div>
           ) : (
@@ -555,12 +555,12 @@ function ApproveDialog({ req, onClose, onDone }: { req: ActivationRequest | null
                   <input type="radio" checked={choice === 'link'} onChange={() => setChoice('link')} disabled={!clients.data.length} />
                   Link to an existing client
                   <select className="input h-8 w-72" value={linkId} onChange={(e) => { setLinkId(e.target.value); setChoice('link') }} disabled={!clients.data.length}>
-                    <option value="">— choose —</option>
+                    <option value="">choose</option>
                     {clients.data
                       .filter((c) => c.status !== 'archived')
                       .map((c) => (
                         <option key={c.id} value={c.id}>
-                          {c.code} · {c.company}
+                          {c.code}, {c.company}
                           {match?.id === c.id ? ' (suggested match)' : ''}
                         </option>
                       ))}

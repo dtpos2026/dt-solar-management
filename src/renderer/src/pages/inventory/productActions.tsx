@@ -59,7 +59,7 @@ export async function deleteProductFlow(p: { id: number; name: string }): Promis
     return false
   } else {
     const ok = await confirmDialog({
-      title: `“${u.name}” cannot be deleted — archive it instead?`,
+      title: `“${u.name}” cannot be deleted - archive it instead?`,
       message: (
         <>
           {u.reason}
@@ -102,7 +102,7 @@ export async function archiveProductsFlow(ids: number[], label: string): Promise
   if (!ok) return false
   try {
     const r = await api<{ archived: number; withStock: Array<{ id: number; name: string; qty: number }> }>('products.archive', { ids })
-    toast.ok(r.archived ? `${plural(r.archived, 'product')} archived.` : 'Nothing to archive — already archived.')
+    toast.ok(r.archived ? `${plural(r.archived, 'product')} archived.` : 'Nothing to archive - already archived.')
     if (r.withStock.length) {
       const names = r.withStock.slice(0, 3).map((s) => `${s.name} (${s.qty})`).join(', ')
       toast.warn(`${plural(r.withStock.length, 'archived product')} still ${r.withStock.length === 1 ? 'has' : 'have'} stock: ${names}${r.withStock.length > 3 ? '…' : ''}. It stays in your stock value; restore to sell it.`)
@@ -117,7 +117,7 @@ export async function archiveProductsFlow(ids: number[], label: string): Promise
 export async function restoreProductsFlow(ids: number[]): Promise<boolean> {
   try {
     const r = await api<{ restored: number }>('products.restore', { ids })
-    toast.ok(r.restored ? `${plural(r.restored, 'product')} restored — available on new documents again.` : 'Nothing to restore.')
+    toast.ok(r.restored ? `${plural(r.restored, 'product')} restored - available on new documents again.` : 'Nothing to restore.')
     return true
   } catch (e) {
     toast.error(e)
@@ -165,7 +165,7 @@ export function CategoryPickModal({ open, ids, categories, onClose, onDone }: { 
       <Field label="New category">
         <Select autoFocus value={target} onChange={(e) => setTarget(e.target.value)}>
           <option value="">Choose a category…</option>
-          <option value="none">— No category —</option>
+          <option value="none">No category</option>
           {categories.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
@@ -222,7 +222,7 @@ export function DeleteCategoryModal({ category, categories, onClose, onDone }: {
         <div className="space-y-3 text-[13.5px]">
           <p className="text-muted">
             <b className="text-ink">{plural(count, 'product')}</b>
-            {archived > 0 ? ` (${archived} archived)` : ''} {count === 1 ? 'is' : 'are'} in this category. Choose where to move {count === 1 ? 'it' : 'them'} — the
+            {archived > 0 ? ` (${archived} archived)` : ''} {count === 1 ? 'is' : 'are'} in this category. Choose where to move {count === 1 ? 'it' : 'them'} - the
             products are moved and the category is deleted in one step.
           </p>
           <Field label="Move products to">
@@ -233,10 +233,10 @@ export function DeleteCategoryModal({ category, categories, onClose, onDone }: {
                   {c.name}
                 </option>
               ))}
-              <option value="none">— No category —</option>
+              <option value="none">No category</option>
             </Select>
           </Field>
-          <p className="text-[12.5px] text-muted">Stock, average costs, invoices and reports are not changed — only the grouping of these products.</p>
+          <p className="text-[12.5px] text-muted">Stock, average costs, invoices and reports are not changed - only the grouping of these products.</p>
         </div>
       )}
     </Modal>

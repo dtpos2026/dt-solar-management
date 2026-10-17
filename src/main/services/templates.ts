@@ -1,9 +1,9 @@
 /**
  * Print templates for customer documents (invoices, quotations, orders, challans, returns, purchase documents and
- * payment receipts). A template only changes how a document is printed — never the document data.
+ * payment receipts). A template only changes how a document is printed - never the document data.
  *
  *  - Rows live in doc_templates (firm_id = the firm that created it; NULL rows are shared by every firm).
- *  - layout: classic | modern | compact | thermal80 (80 mm receipt — sale invoices and payment receipts only).
+ *  - layout: classic | modern | compact | thermal80 (80 mm receipt - sale invoices and payment receipts only).
  *  - options: JSON of show/hide switches + accent colour, title override and footer note (see TEMPLATE_OPTION_KEYS).
  *  - The default template per document kind is stored per firm in the settings key `doc_template_defaults`
  *    ({ "<firmId>": { "<kind>": <templateId> | "builtin:<layout>" } }). No entry = built-in Classic.

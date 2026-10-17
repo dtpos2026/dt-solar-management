@@ -1,5 +1,5 @@
 /**
- * Small shared data cache for portal pages (pure — no Firebase imports, unit tested in tests/portal-core.test.ts).
+ * Small shared data cache for portal pages (pure - no Firebase imports, unit tested in tests/portal-core.test.ts).
  *
  * 1. Shared live sources: one Firestore listener per key, shared by every component that needs it, kept open for
  *    a short linger period after the last subscriber leaves so going back to a page does not re-read everything.

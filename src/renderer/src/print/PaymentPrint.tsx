@@ -21,7 +21,7 @@ function allocType(a: any): string {
 }
 
 /**
- * Payment Receipt (money in) / Payment Voucher (money out) — compact, half-page when short.
+ * Payment Receipt (money in) / Payment Voucher (money out) - compact, half-page when short.
  * Layouts: classic / modern / compact (A4) and thermal80 (80 mm receipt); the template options decide what is shown.
  */
 export function PaymentPrint({ id, ctx, setTitle, design, onKind, data }: TemplateProps): JSX.Element | null {
@@ -66,11 +66,11 @@ export function PaymentPrint({ id, ctx, setTitle, design, onKind, data }: Templa
   if (cancelled) meta.push(['Status', 'Cancelled'])
 
   const details: Array<[string, string]> = [
-    ['Payment method', method || '—'],
-    [p.method === 'cheque' ? 'Cheque / ref. #' : 'Reference', p.reference || '—'],
-    [isIn ? 'Deposited to' : 'Paid from', p.account_name ? `${p.account_name}${p.account_type ? ` (${p.account_type === 'bank' ? 'Bank' : p.account_type === 'wallet' ? 'Wallet' : 'Cash'})` : ''}` : '—']
+    ['Payment method', method || '-'],
+    [p.method === 'cheque' ? 'Cheque / ref. #' : 'Reference', p.reference || '-'],
+    [isIn ? 'Deposited to' : 'Paid from', p.account_name ? `${p.account_name}${p.account_type ? ` (${p.account_type === 'bank' ? 'Bank' : p.account_type === 'wallet' ? 'Wallet' : 'Cash'})` : ''}` : '-']
   ]
-  if (p.project_id) details.push(['Project', [p.project_code, p.project_name].filter(Boolean).join(' · ')])
+  if (p.project_id) details.push(['Project', [p.project_code, p.project_name].filter(Boolean).join(', ')])
   if (p.created_by_name) details.push(['Prepared by', p.created_by_name])
 
   return (
@@ -126,10 +126,10 @@ export function PaymentPrint({ id, ctx, setTitle, design, onKind, data }: Templa
             {allocations.map((a, i) => (
               <tr key={a.id ?? i}>
                 <td className="text-[#718096]">{i + 1}</td>
-                <td className="font-semibold">{a.document_number ?? a.expense_number ?? '—'}</td>
+                <td className="font-semibold">{a.document_number ?? a.expense_number ?? '-'}</td>
                 <td>{allocType(a)}</td>
-                <td>{a.document_date ? pd(a.document_date) : '—'}</td>
-                <td className="num text-right">{a.document_total !== null && a.document_total !== undefined ? pm(ctx, a.document_total, 2) : '—'}</td>
+                <td>{a.document_date ? pd(a.document_date) : '-'}</td>
+                <td className="num text-right">{a.document_total !== null && a.document_total !== undefined ? pm(ctx, a.document_total, 2) : '-'}</td>
                 <td className="num text-right font-semibold">{pm(ctx, a.amount, 2)}</td>
               </tr>
             ))}
@@ -147,7 +147,7 @@ export function PaymentPrint({ id, ctx, setTitle, design, onKind, data }: Templa
         </>
       ) : (
         <div className="avoid-break rounded-md border border-dashed border-[#cbd5e0] px-3 py-1.5 text-[10.5px]">
-          <b>Unallocated (advance):</b> {pm(ctx, unallocated, 2)} — {isIn ? 'kept on account / as advance against future invoices.' : 'paid on account / as advance against future bills.'}
+          <b>Unallocated (advance):</b> {pm(ctx, unallocated, 2)} - {isIn ? 'kept on account / as advance against future invoices.' : 'paid on account / as advance against future bills.'}
         </div>
       )}
 
@@ -163,7 +163,7 @@ export function PaymentPrint({ id, ctx, setTitle, design, onKind, data }: Templa
             <div className="rounded-md bg-[#fff5f5] px-2.5 py-1.5 text-[#c53030]">
               <b>This {isIn ? 'receipt' : 'voucher'} has been cancelled</b>
               {p.cancelled_at ? ` on ${pd(p.cancelled_at)}` : ''}
-              {p.cancel_reason ? ` — ${p.cancel_reason}` : ''}. It has no effect on the account.
+              {p.cancel_reason ? ` - ${p.cancel_reason}` : ''}. It has no effect on the account.
             </div>
           )}
         </div>
@@ -174,7 +174,7 @@ export function PaymentPrint({ id, ctx, setTitle, design, onKind, data }: Templa
               <span className="num text-[12.5px] font-bold">{pm(ctx, Math.abs(bal), 2)}</span>
             </div>
             <div className="px-2.5 py-1 text-[9.5px] text-[#4a5568]">
-              {Math.abs(bal) < 0.005 ? 'Account fully settled' : bal > 0 ? '(Receivable) — balance due from the party' : '(Payable) — balance due to the party'}
+              {Math.abs(bal) < 0.005 ? 'Account fully settled' : bal > 0 ? '(Receivable) - balance due from the party' : '(Payable) - balance due to the party'}
               {` · including this payment, as on ${pd(today())}`}
             </div>
           </div>

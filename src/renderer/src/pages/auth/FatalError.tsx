@@ -13,7 +13,7 @@ export function FatalError({ message }: { message: string }): JSX.Element {
           <ol className="list-decimal space-y-1 pl-5 text-muted">
             <li>Close the application completely and start it again.</li>
             <li>Make sure the disk is not full and that you have permission to write to your user folder.</li>
-            <li>If the problem continues, do not delete anything. Contact Digital Target support — your automatic backups are in <b>Documents\DT Solar Pro Backups</b> and can be restored.</li>
+            <li>If the problem continues, do not delete anything. Contact Digital Target support - your automatic backups are in <b>Documents\DT Solar Pro Backups</b> and can be restored.</li>
           </ol>
         </div>
         <div className="mt-6"><VendorLine /></div>

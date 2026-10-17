@@ -117,7 +117,7 @@ export function ClientForm({ open, client, prefill, linkLicense, onClose, onSave
                 </button>
               )}
             </div>
-            <div className="mt-1">PNG / JPEG / WebP — resized and compressed in the browser (stored inline, max 200 KB).</div>
+            <div className="mt-1">PNG / JPEG / WebP - resized and compressed in the browser (stored inline, max 200 KB).</div>
             {err('logo')}
           </div>
           <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => pickLogo(e.target.files?.[0])} aria-label="Logo file" />

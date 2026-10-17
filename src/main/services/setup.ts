@@ -175,7 +175,7 @@ export function seedDemoData(ctx: Ctx): void {
   const labor = (db.prepare("SELECT id FROM expense_categories WHERE cost_head = 'labor' LIMIT 1").get() as { id: number }).id
   const transport = (db.prepare("SELECT id FROM expense_categories WHERE cost_head = 'transport' LIMIT 1").get() as { id: number }).id
   const rent = (db.prepare("SELECT id FROM expense_categories WHERE name = 'Office Rent'").get() as { id: number }).id
-  createExpense(ctx, { date: daysAgo(22), categoryId: labor, projectId: prj, amount: 95000, paid: false, partyId: contractor, notes: 'Installation team — 25kW' })
+  createExpense(ctx, { date: daysAgo(22), categoryId: labor, projectId: prj, amount: 95000, paid: false, partyId: contractor, notes: 'Installation team - 25kW' })
   createExpense(ctx, { date: daysAgo(24), categoryId: transport, projectId: prj, amount: 18000, paid: true, accountId: acc, payeeName: 'Loader Rickshaw' })
   createExpense(ctx, { date: daysAgo(10), categoryId: rent, amount: 60000, paid: true, accountId: acc, payeeName: 'Hadi Commercial Center' })
   createDocument(ctx, {
@@ -187,7 +187,7 @@ export function seedDemoData(ctx: Ctx): void {
     warehouseId: wh,
     dueDate: daysAgo(-7),
     lines: [
-      { description: '25kW On-Grid Solar System — supply of panels, inverters, structure & BOS', qty: 1, rate: 2850000 },
+      { description: '25kW On-Grid Solar System - supply of panels, inverters, structure & BOS', qty: 1, rate: 2850000 },
       { productId: install, description: 'Installation & Commissioning (per kW)', qty: 25, rate: 6000, unit: 'kW' },
       { productId: nm, description: 'Net Metering Documentation & Approval', qty: 1, rate: 45000 }
     ],

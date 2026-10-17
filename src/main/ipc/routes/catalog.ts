@@ -1,5 +1,5 @@
 /**
- * IPC routes — Products, categories, warehouses, projects, parties, firms (owner: catalog area).
+ * IPC routes - Products, categories, warehouses, projects, parties, firms (owner: catalog area).
  * Owns: products.*, categories.*, warehouses.*, projects.*, firms.*, parties.*.
  * Keys defined here override the core route of the same name (router.ts). Business rules and permission checks
  * live in the services; the `perm` below is only the first gate.

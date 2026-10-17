@@ -164,22 +164,22 @@ export function accountLedger(ctx: Ctx, accountId: number, f: { from?: string; t
     .prepare(
       `SELECT * FROM (
          SELECT p.date, p.id AS ref_id, p.number, CASE p.direction WHEN 'in' THEN 'receipt' ELSE 'payment' END AS kind,
-                COALESCE(pa.name, 'General') || CASE WHEN p.notes IS NOT NULL THEN ' — ' || p.notes ELSE '' END AS description,
+                COALESCE(pa.name, 'General') || CASE WHEN p.notes IS NOT NULL THEN ' - ' || p.notes ELSE '' END AS description,
                 CASE WHEN p.direction = 'in' THEN p.amount ELSE 0 END AS money_in,
                 CASE WHEN p.direction = 'out' THEN p.amount ELSE 0 END AS money_out, p.created_at
            FROM payments p LEFT JOIN parties pa ON pa.id = p.party_id
           WHERE p.account_id = @id AND p.status <> 'cancelled'
          UNION ALL
-         SELECT e.date, e.id, e.number, 'expense', ec.name || COALESCE(' — ' || e.payee_name, '') || COALESCE(' — ' || e.notes, ''),
+         SELECT e.date, e.id, e.number, 'expense', ec.name || COALESCE(' - ' || e.payee_name, '') || COALESCE(' - ' || e.notes, ''),
                 0, e.amount, e.created_at
            FROM expenses e JOIN expense_categories ec ON ec.id = e.category_id
           WHERE e.account_id = @id AND e.paid = 1 AND e.status <> 'cancelled'
          UNION ALL
-         SELECT t.date, t.id, t.number, 'transfer_in', 'Transfer from ' || fa.name || COALESCE(' — ' || t.notes, ''), t.amount, 0, t.created_at
+         SELECT t.date, t.id, t.number, 'transfer_in', 'Transfer from ' || fa.name || COALESCE(' - ' || t.notes, ''), t.amount, 0, t.created_at
            FROM account_transfers t JOIN accounts fa ON fa.id = t.from_account_id
           WHERE t.to_account_id = @id AND t.status <> 'cancelled'
          UNION ALL
-         SELECT t.date, t.id, t.number, 'transfer_out', 'Transfer to ' || ta.name || COALESCE(' — ' || t.notes, ''), 0, t.amount, t.created_at
+         SELECT t.date, t.id, t.number, 'transfer_out', 'Transfer to ' || ta.name || COALESCE(' - ' || t.notes, ''), 0, t.amount, t.created_at
            FROM account_transfers t JOIN accounts ta ON ta.id = t.to_account_id
           WHERE t.from_account_id = @id AND t.status <> 'cancelled'
        ) x WHERE (@from IS NULL OR x.date >= @from) AND (@to IS NULL OR x.date <= @to)

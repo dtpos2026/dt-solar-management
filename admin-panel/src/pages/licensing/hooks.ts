@@ -38,7 +38,7 @@ export function useClients(enabled = true): Live<Client[]> {
 
 /**
  * Invoices (read-only), optionally only those of one client / license. Live and shared: when the all-invoices
- * listener is already open (Dashboard / Billing visited in the last minute) the filter runs on it — no new read;
+ * listener is already open (Dashboard / Billing visited in the last minute) the filter runs on it - no new read;
  * otherwise only the matching invoices are queried.
  */
 export function useInvoices(enabled: boolean, filter?: { field: 'clientId' | 'licenseId'; value: string }): Live<InvoiceRow[]> {

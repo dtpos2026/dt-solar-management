@@ -42,7 +42,7 @@ export function BillingReports({ invoices, currency }: { invoices: Invoice[]; cu
   const salesByMonth = sumBy(sales, (i) => monthKey(toDate(i.issueDate)!), (i) => i.total)
   const received = (payments ?? []).filter((p) => !p.cancelled && inRange(toDate(p.date), f, t))
   const revenueByMonth = sumBy(received, (p) => monthKey(toDate(p.date)!), (p) => p.amount)
-  const outstanding = sumBy(invoices.filter((i) => i.status !== 'cancelled' && i.balance > 0 && inRange(toDate(i.issueDate), f, t)), (i) => i.clientName || '—', (i) => i.balance).sort((a, b) => b.value - a.value)
+  const outstanding = sumBy(invoices.filter((i) => i.status !== 'cancelled' && i.balance > 0 && inRange(toDate(i.issueDate), f, t)), (i) => i.clientName || '-', (i) => i.balance).sort((a, b) => b.value - a.value)
   const byPlan = sumBy(sales, (i) => i.planType || 'other', (i) => i.total)
 
   const csvName = (n: string) => `${n}_${from}_${to}.csv`

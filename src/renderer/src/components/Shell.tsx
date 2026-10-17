@@ -214,7 +214,7 @@ function GlobalSearch(): JSX.Element {
             <button key={i} type="button" onMouseDown={() => go(r)} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-surface-2 cursor-pointer">
               <span className="w-20 shrink-0 truncate text-[12px] font-semibold text-muted uppercase">{r.result === 'document' ? nice(r.doc_type) : r.result}</span>
               <span className="flex-1 truncate">
-                {r.result === 'document' ? `${r.number} — ${r.party_name ?? ''}` : r.result === 'serial' ? `${r.serial} — ${r.name}` : r.result === 'project' ? `${r.code} ${r.name}` : r.name}
+                {r.result === 'document' ? `${r.number} - ${r.party_name ?? ''}` : r.result === 'serial' ? `${r.serial} - ${r.name}` : r.result === 'project' ? `${r.code} ${r.name}` : r.name}
               </span>
               <span className="num shrink-0 text-[12px] text-muted">{r.result === 'document' ? date(r.date) : r.phone ?? r.sku ?? r.status ?? ''}</span>
             </button>
@@ -260,7 +260,7 @@ function Notifications(): JSX.Element {
       </button>
       {open && (
         <div data-overlay="dropdown" className="card fade-in absolute right-0 z-40 mt-2 w-80 p-1 shadow-xl">
-          {items.length === 0 && <div className="px-3 py-4 text-center text-[13px] text-muted">All clear — no alerts.</div>}
+          {items.length === 0 && <div className="px-3 py-4 text-center text-[13px] text-muted">All clear - no alerts.</div>}
           {items.map((n, i) => (
             <button key={i} type="button" onMouseDown={() => nav(n.to)} className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-surface-2 cursor-pointer">
               <AlertTriangle className={cx('mt-0.5 h-4 w-4 shrink-0', n.tone === 'bad' ? 'text-bad' : 'text-warn')} />
@@ -369,7 +369,7 @@ function passwordProblem(pw: string, username?: string): string | null {
   const step = codes[1] - codes[0]
   const sequence = Math.abs(step) === 1 && codes.every((c, i) => i === 0 || c - codes[i - 1] === step)
   if (/^(.)\1+$/.test(pw) || sequence || ['password', 'password1', 'qwerty', 'qwerty123', 'abc123', 'admin', 'welcome', 'letmein', 'iloveyou'].includes(lower)) {
-    return 'Too easy to guess — mix letters and numbers.'
+    return 'Too easy to guess - mix letters and numbers.'
   }
   if (username && lower === username.toLowerCase()) return 'Must not be the same as your username.'
   return null
@@ -426,7 +426,7 @@ function ChangePassword({ open, forced, onClose, onSignOut }: { open: boolean; f
         <Field label={forced ? 'Temporary password' : 'Current password'}>
           <Input type="password" value={f.old} onChange={(e) => setF({ ...f, old: e.target.value })} autoFocus autoComplete="current-password" />
         </Field>
-        <Field label="New password" hint={weak ? undefined : 'At least 6 characters — a word plus a few numbers works well.'} error={weak ?? undefined}>
+        <Field label="New password" hint={weak ? undefined : 'At least 6 characters - a word plus a few numbers works well.'} error={weak ?? undefined}>
           <Input type="password" value={f.next} onChange={(e) => setF({ ...f, next: e.target.value })} autoComplete="new-password" />
         </Field>
         <Field label="Confirm new password" error={f.confirm && f.confirm !== f.next ? 'Passwords do not match.' : undefined}>
@@ -444,7 +444,7 @@ interface PinState {
   pinLockedMinutes: number
 }
 
-/** "Set my PIN" — confirm with the current password, then choose a 4–6 digit PIN (or remove it). */
+/** "Set my PIN" - confirm with the current password, then choose a 4–6 digit PIN (or remove it). */
 function MyPinDialog({ open, onClose }: { open: boolean; onClose: () => void }): JSX.Element {
   const [st, setSt] = useState<PinState | null>(null)
   const [f, setF] = useState({ password: '', pin: '', confirm: '' })
@@ -620,7 +620,7 @@ function LicenseBanner(): JSX.Element | null {
     try {
       const st = await api<NonNullable<ReturnType<typeof useApp.getState>['license']>>('license.checkIn')
       useApp.getState().setLicense(st)
-      if (st.canWrite) toast.ok('License verified — this computer is active.')
+      if (st.canWrite) toast.ok('License verified - this computer is active.')
       else toast.error(st.message)
     } catch (e) {
       toast.error(e)

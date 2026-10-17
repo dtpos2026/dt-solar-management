@@ -113,12 +113,12 @@ export function LicenseForm({ open, license, client, onClose, onSaved }: License
   // Preview of what saving does to the client records (the save itself re-reads the clients).
   const syncHint = useMemo(() => {
     if (!syncing) return null
-    if (picked) return `On save, empty fields of ${picked.code} · ${picked.company} are filled from these details (nothing is overwritten).`
+    if (picked) return `On save, empty fields of ${picked.code}, ${picked.company} are filled from these details (nothing is overwritten).`
     const d = clientDetailsFromLicense(f)
     if (!d.company) return 'Enter the business or customer name: a client record is created or matched on save.'
     const m = clients ? findDuplicateClient(clients, d) : null
     return m
-      ? `On save, the license is linked to the existing client ${m.client.code} · ${m.client.company} (same ${m.by === 'phone' ? 'phone number' : 'company and owner name'}); its empty fields are filled from these details.`
+      ? `On save, the license is linked to the existing client ${m.client.code}, ${m.client.company} (same ${m.by === 'phone' ? 'phone number' : 'company and owner name'}); its empty fields are filled from these details.`
       : 'On save, a new client is created from these details and linked (no client with the same phone or company + owner name exists).'
   }, [syncing, picked, clients, f])
 
@@ -126,7 +126,7 @@ export function LicenseForm({ open, license, client, onClose, onSaved }: License
     const e: Errors = {}
     if (!f.businessName.trim() && !f.customerName.trim()) e.name = 'Enter the business name or the customer name.'
     if (f.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim())) e.email = 'Enter a valid email address.'
-    if (syncing && f.phone.trim() && !isValidClientPhone(f.phone)) e.phone = 'Enter a valid phone number (digits, spaces, + - ( )) — it is saved on the client too.'
+    if (syncing && f.phone.trim() && !isValidClientPhone(f.phone)) e.phone = 'Enter a valid phone number (digits, spaces, + - ( )) - it is saved on the client too.'
     if (!license) {
       const pe = planTermsError(planType, f.expiresAt ? f.expiresAt.getTime() : null)
       if (pe) e.expiry = pe
@@ -188,10 +188,10 @@ export function LicenseForm({ open, license, client, onClose, onSaved }: License
               const c = (clients ?? []).find((x) => x.id === e.target.value)
               set(c && !license ? { clientId: c.id, businessName: f.businessName || c.company, customerName: f.customerName || c.ownerName, phone: f.phone || c.phone, email: f.email || c.email, city: f.city || c.city } : { clientId: e.target.value })
             }}>
-              <option value="">{syncing ? '— Match or create from the details below —' : '— No client —'}</option>
+              <option value="">{syncing ? 'Match or create from the details below' : 'No client'}</option>
               {pickableClients.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.code} · {c.company}
+                  {c.code}, {c.company}
                   {c.status !== 'active' ? ` (${c.status})` : ''}
                 </option>
               ))}
@@ -242,7 +242,7 @@ export function LicenseForm({ open, license, client, onClose, onSaved }: License
                 ))}
               </div>
             </Field>
-            <Field label="Expiry" hint={errs.expiry ? <span className="text-red-600">{errs.expiry}</span> : planType === 'lifetime' ? 'Lifetime — no expiry.' : `Suggested: ${planType === 'monthly' ? '+1 month' : '+1 year'} from today. You can change it.`}>
+            <Field label="Expiry" hint={errs.expiry ? <span className="text-red-600">{errs.expiry}</span> : planType === 'lifetime' ? 'Lifetime - no expiry.' : `Suggested: ${planType === 'monthly' ? '+1 month' : '+1 year'} from today. You can change it.`}>
               <input className="input" type="date" disabled={planType === 'lifetime'} value={toInputDate(f.expiresAt)} onChange={(e) => set({ expiresAt: fromInputDate(e.target.value) })} />
             </Field>
             <div className="col-span-2 grid grid-cols-3 gap-3">
@@ -279,7 +279,7 @@ export function LicenseForm({ open, license, client, onClose, onSaved }: License
           <label className="col-span-2 flex items-center gap-2 rounded-lg border border-[#ece6f4] bg-[#faf8fd] px-3 py-2 text-[13px]">
             <input type="checkbox" checked={f.poweredBy === true} onChange={(e) => set({ poweredBy: e.target.checked })} />
             Show “Powered by Digital Target” on the customer’s printed documents
-            <span className="ml-auto text-[11.5px] text-[#7a6d92]">default from Settings → Branding</span>
+            <span className="ml-auto text-[12px] text-[#7a6d92]">default from Settings → Branding</span>
           </label>
         )}
         <div className="col-span-2 flex flex-wrap gap-4">

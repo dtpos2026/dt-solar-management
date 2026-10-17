@@ -1,7 +1,7 @@
 /**
  * Database migrations.
  *
- * RULES (never break these — customer data depends on it):
+ * RULES (never break these - customer data depends on it):
  *  - Never edit a migration that has shipped. Add a new one with the next version.
  *  - Never DROP a table or column holding business data.
  *  - Each migration runs inside a transaction; a failure rolls back that migration only.
@@ -693,7 +693,7 @@ CREATE TABLE legacy_sources (
   imported_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
   summary TEXT
 );
--- Every source row, verbatim (JSON), so no original value is ever lost — including fields the new schema cannot represent.
+-- Every source row, verbatim (JSON), so no original value is ever lost - including fields the new schema cannot represent.
 CREATE TABLE legacy_records (
   id INTEGER PRIMARY KEY,
   source_id INTEGER NOT NULL REFERENCES legacy_sources(id),

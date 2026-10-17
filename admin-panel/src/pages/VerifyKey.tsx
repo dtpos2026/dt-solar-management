@@ -1,4 +1,4 @@
-/** Verify Key — check a DT Solar Pro license key (Module 4). */
+/** Verify Key - check a DT Solar Pro license key (Module 4). */
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { doc, getDoc, getDocs, limit, query, where, collection } from 'firebase/firestore'
@@ -189,13 +189,13 @@ export function VerifyKey() {
         </div>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[12px]">
           <span className={cx(touched && input && !fmt.ok ? 'font-medium text-red-600' : 'text-[#7a6d92]')}>
-            {input && fmt.ok && fmt.key !== input.trim() ? <>Will check <span className="font-mono font-semibold">{fmt.key}</span></> : touched && input && !fmt.ok ? fmt.error : 'Spaces, dashes and lower case are fine — the key is normalised automatically.'}
+            {input && fmt.ok && fmt.key !== input.trim() ? <>Will check <span className="font-mono font-semibold">{fmt.key}</span></> : touched && input && !fmt.ok ? fmt.error : 'Spaces, dashes and lower case are fine - the key is normalised automatically.'}
           </span>
           <span className="text-[#7a6d92]">{cooling ? '' : `${decision.allowed ? VERIFY_LIMIT - decision.history.length + 1 : 0} of ${VERIFY_LIMIT} lookups left this minute`}</span>
         </div>
         {cooling && (
           <Notice tone="warn" className="mt-3">
-            Too many lookups — {VERIFY_LIMIT} per minute are allowed. Try again in {Math.ceil(decision.retryAfterMs / 1000)} s.
+            Too many lookups - {VERIFY_LIMIT} per minute are allowed. Try again in {Math.ceil(decision.retryAfterMs / 1000)} s.
           </Notice>
         )}
       </form>
@@ -235,7 +235,7 @@ export function VerifyKey() {
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="rounded-xl border border-[#ece6f4] bg-[#fcfbfe] px-3.5 py-2.5">
-      <div className="text-[11.5px] font-semibold tracking-wide text-[#7a6d92] uppercase">{label}</div>
+      <div className="text-[12px] font-semibold tracking-wide text-[#7a6d92] uppercase">{label}</div>
       <div className="mt-0.5 text-[14px] font-semibold">{children}</div>
     </div>
   )
@@ -262,13 +262,13 @@ function ResultCard({ r, showCustomer, canOpen }: { r: Result; showCustomer: boo
         <div className="grid grid-cols-2 gap-3 p-5 xl:grid-cols-4">
           {showCustomer ? (
             <Fact label="Customer">
-              {r.client ? `${r.client.company}${r.client.code ? ` (${r.client.code})` : ''}` : l.businessName || l.customerName || '—'}
+              {r.client ? `${r.client.company}${r.client.code ? ` (${r.client.code})` : ''}` : l.businessName || l.customerName || '-'}
               {r.client && (l.businessName || l.customerName) && <div className="text-[12px] font-normal text-[#7a6d92]">{l.businessName || l.customerName}</div>}
             </Fact>
           ) : (
-            <Fact label="Customer"><span className="text-[13px] font-normal text-[#7a6d92]">Hidden — needs “View licenses” or “View clients”</span></Fact>
+            <Fact label="Customer"><span className="text-[13px] font-normal text-[#7a6d92]">Hidden - needs “View licenses” or “View clients”</span></Fact>
           )}
-          <Fact label="Plan">{showCustomer ? <span className="capitalize">{l.plan}</span> : '—'} <span className="text-[12px] font-normal text-[#7a6d92] capitalize">· {l.planType}</span></Fact>
+          <Fact label="Plan">{showCustomer ? <span className="capitalize">{l.plan}</span> : '-'} <span className="text-[12px] font-normal text-[#7a6d92] capitalize">· {l.planType}</span></Fact>
           <Fact label="Expiry">
             {l.expiresAt ? fmtDate(l.expiresAt) : 'Lifetime'}
             {left !== null && <div className={cx('text-[12px] font-normal', left < 0 ? 'text-red-600' : left <= 30 ? 'text-amber-600' : 'text-[#7a6d92]')}>{left < 0 ? `${-left} day(s) ago` : `${left} day(s) left`}</div>}

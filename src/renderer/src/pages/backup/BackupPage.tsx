@@ -52,7 +52,7 @@ function fmtSize(bytes: number | null | undefined): string {
 
 /** ISO timestamp (UTC) -> local "dd Mon yyyy HH:MM". */
 function localDateTime(iso: string | null | undefined): string {
-  if (!iso) return '—'
+  if (!iso) return '-'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return String(iso)
   const p = (n: number): string => String(n).padStart(2, '0')
@@ -276,7 +276,7 @@ function BackupPanel(): JSX.Element {
   const verify = async (file: string): Promise<void> => {
     const r = await run(`verify:${file}`, () => api<{ ok: boolean; error?: string }>('backup.verify', { file }))
     if (!r) return
-    if (r.ok) toast.ok('Integrity check passed — this backup can be restored.')
+    if (r.ok) toast.ok('Integrity check passed - this backup can be restored.')
     else toast.error(`Integrity check failed: ${r.error ?? 'the backup is damaged.'}`)
     await info.reload()
   }
@@ -323,7 +323,7 @@ function BackupPanel(): JSX.Element {
                 <div className="min-w-0">
                   <div className="text-[16px] font-semibold">Back up now</div>
                   <div className="text-[12.5px] text-muted">Creates a complete, verified copy of all data in the backup folder.</div>
-                  <div className="mt-1 truncate font-mono text-[11.5px] text-muted" title={I.dir}>
+                  <div className="mt-1 truncate font-mono text-[12px] text-muted" title={I.dir}>
                     {I.dir}
                   </div>
                 </div>
@@ -353,7 +353,7 @@ function BackupPanel(): JSX.Element {
             <Card title={<span className="inline-flex items-center gap-2"><CalendarClock className="h-4 w-4 text-brand" /> Automatic backup</span>}>
               <div className="space-y-4">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Schedule" hint={schedule === 'off' ? 'Not recommended — you may lose data' : 'Runs when the app is open and a backup is due'}>
+                  <Field label="Schedule" hint={schedule === 'off' ? 'Not recommended - you may lose data' : 'Runs when the app is open and a backup is due'}>
                     <Select
                       value={schedule}
                       disabled={!!busy || !licenseWritable}
@@ -396,7 +396,7 @@ function BackupPanel(): JSX.Element {
                 <div>
                   <div className="mb-1 text-[12.5px] font-medium text-muted">Backup folder</div>
                   <div className="break-all rounded-lg border border-line bg-surface-2 px-3 py-2 font-mono text-[12px]">{I.dir}</div>
-                  {I.dir !== I.defaultDir && <div className="mt-1 text-[11.5px] text-muted">Default folder: {I.defaultDir}</div>}
+                  {I.dir !== I.defaultDir && <div className="mt-1 text-[12px] text-muted">Default folder: {I.defaultDir}</div>}
                   <div className="mt-2 flex flex-wrap gap-2">
                     <Button size="sm" icon={<FolderSync className="h-4 w-4" />} loading={busy === 'dir'} disabled={!!busy && busy !== 'dir'} onClick={changeFolder}>
                       Change…
@@ -489,7 +489,7 @@ function BackupPanel(): JSX.Element {
                     value: (r) => [r.meta?.firmName, r.meta?.userName].filter(Boolean).join(' / '),
                     render: (r) => (
                       <div className="min-w-0 text-[12px]">
-                        <div className="truncate">{r.meta?.firmName || '—'}</div>
+                        <div className="truncate">{r.meta?.firmName || '-'}</div>
                         <div className="truncate text-muted">{r.meta?.userName || (r.kind === 'auto' ? 'Scheduled' : '')}</div>
                       </div>
                     )
@@ -544,13 +544,13 @@ function BackupPanel(): JSX.Element {
               </Guide>
               <Guide title="Important" tone="bad">
                 <li>
-                  <b>Never delete or move the data folder</b> (<Path>{parentDir(I.dbFile)}</Path>) — it holds all your business records.
+                  <b>Never delete or move the data folder</b> (<Path>{parentDir(I.dbFile)}</Path>) - it holds all your business records.
                 </li>
                 <li>Do not open or edit backup files with other programs.</li>
                 <li>Keep at least one recent backup outside this computer (USB, external disk or another PC).</li>
               </Guide>
               <Guide title="Need help?">
-                <li>Contact Digital Target before restoring if you are unsure which backup to use — we can help you recover your data.</li>
+                <li>Contact Digital Target before restoring if you are unsure which backup to use - we can help you recover your data.</li>
                 <li className="list-none pt-1">
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" icon={<Mail className="h-4 w-4" />} onClick={() => api('app.openExternal', { url: `mailto:${VENDOR.email}?subject=${encodeURIComponent('DT Solar Pro backup / restore help')}` }).catch(toast.error)}>
@@ -572,7 +572,7 @@ function BackupPanel(): JSX.Element {
         open={!!inspect}
         onClose={() => !restoring && setInspect(null)}
         title={isOwner ? 'Restore backup' : 'Verify backup'}
-        subtitle="Step 1 of 2 — check the backup file"
+        subtitle="Step 1 of 2 - check the backup file"
         size="md"
         footer={
           inspect && (
@@ -601,7 +601,7 @@ function BackupPanel(): JSX.Element {
                   <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
                   <div>
                     <div className="font-semibold">Integrity check passed</div>
-                    <div className="text-[12.5px]">This is a valid DT Solar Pro backup (database schema version {inspect.schemaVersion ?? '—'}).</div>
+                    <div className="text-[12.5px]">This is a valid DT Solar Pro backup (database schema version {inspect.schemaVersion ?? '-'}).</div>
                   </div>
                 </div>
                 <div>
@@ -609,13 +609,13 @@ function BackupPanel(): JSX.Element {
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                     {SUMMARY_LABELS.map(([k, l]) => (
                       <div key={k} className="rounded-xl border border-line bg-surface-2 px-3 py-2">
-                        <div className="text-[11.5px] text-muted">{l}</div>
-                        <div className="num text-[18px] font-bold">{inspect.summary?.[k] ?? '—'}</div>
+                        <div className="text-[12px] text-muted">{l}</div>
+                        <div className="num text-[18px] font-bold">{inspect.summary?.[k] ?? '-'}</div>
                       </div>
                     ))}
                     <div className="rounded-xl border border-line bg-surface-2 px-3 py-2">
-                      <div className="text-[11.5px] text-muted">Last transaction</div>
-                      <div className="text-[14px] font-bold">{inspect.summary?.lastTransactionDate && inspect.summary.lastTransactionDate !== '—' ? date(String(inspect.summary.lastTransactionDate)) : '—'}</div>
+                      <div className="text-[12px] text-muted">Last transaction</div>
+                      <div className="text-[14px] font-bold">{inspect.summary?.lastTransactionDate && inspect.summary.lastTransactionDate !== '-' ? date(String(inspect.summary.lastTransactionDate)) : '-'}</div>
                     </div>
                   </div>
                 </div>
@@ -650,7 +650,7 @@ function BackupPanel(): JSX.Element {
             {restored ? <CheckCircle2 className="h-5 w-5 text-ok" /> : <RefreshCw className="h-5 w-5 animate-spin text-brand" />}
             <div>
               <div className="font-semibold">{restored ? 'Backup restored' : 'Restoring backup…'}</div>
-              <div className="text-[12.5px] text-muted">{restored ? 'Restarting — please sign in again.' : 'Please do not close the application.'}</div>
+              <div className="text-[12.5px] text-muted">{restored ? 'Restarting - please sign in again.' : 'Please do not close the application.'}</div>
             </div>
           </div>
         </div>
@@ -669,5 +669,5 @@ function Guide({ title, children, tone }: { title: string; children: ReactNode; 
 }
 
 function Path({ children }: { children: ReactNode }): JSX.Element {
-  return <span className="break-all rounded bg-surface-2 px-1 font-mono text-[11.5px] text-ink">{children}</span>
+  return <span className="break-all rounded bg-surface-2 px-1 font-mono text-[12px] text-ink">{children}</span>
 }

@@ -1,6 +1,6 @@
 /**
  * Shared types and helpers for IPC routes. Feature areas register their routes in ./routes/*.ts; the router
- * merges them after the core routes (an area file may re-define a core route to extend it — each route key is
+ * merges them after the core routes (an area file may re-define a core route to extend it - each route key is
  * owned by exactly one file, see the header of each area file).
  */
 import { BrowserWindow, WebContents, dialog } from 'electron'

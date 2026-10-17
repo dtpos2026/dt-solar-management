@@ -104,12 +104,12 @@ export function hardDeleteGuard(x: { isOwner: boolean; linkedLicenses: number; l
   if (x.linkedLicenses) parts.push(`${x.linkedLicenses} license(s)`)
   if (x.linkedInvoices) parts.push(`${x.linkedInvoices} invoice(s)`)
   if (x.linkedThreads) parts.push(`${x.linkedThreads} support conversation(s)`)
-  if (parts.length) return { ok: false, reason: `This client is linked to ${parts.join(', ')}. Archive it instead — linked records are never deleted.` }
+  if (parts.length) return { ok: false, reason: `This client is linked to ${parts.join(', ')}. Archive it instead - linked records are never deleted.` }
   return { ok: true, reason: '' }
 }
 
 /**
- * Delete check for a client. Active licenses (status active and not expired) block the delete — they must be moved
+ * Delete check for a client. Active licenses (status active and not expired) block the delete - they must be moved
  * to another client, unlinked or suspended / revoked first. Every other linked license is unlinked by the delete.
  * Invoices are never deleted (they keep their own copy of the client name), so they only produce a warning.
  */
@@ -157,7 +157,7 @@ export function clientDeleteCheck(x: ClientDeleteCheckInput): ClientDeleteCheck 
   if (x.invoices === null) warnings.push('Invoices could not be checked (no billing permission). Invoices are never deleted.')
   else if (x.invoices > 0) {
     warnings.push(
-      `${x.invoices} invoice(s) stay in Billing with their own copy of the client name${x.openInvoices ? ` — ${x.openInvoices} still ha${x.openInvoices === 1 ? 's' : 've'} an outstanding balance` : ''}.`
+      `${x.invoices} invoice(s) stay in Billing with their own copy of the client name${x.openInvoices ? ` - ${x.openInvoices} still ha${x.openInvoices === 1 ? 's' : 've'} an outstanding balance` : ''}.`
     )
   }
   if (x.threads > 0) warnings.push(`${x.threads} support conversation(s) are kept (they belong to the installations).`)

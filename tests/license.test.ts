@@ -54,7 +54,7 @@ describe('license evaluation', () => {
     const t = evaluate({ ...base, payload: p({ plan: 'trial', expiresAt: new Date(now + 15 * DAY).toISOString() }) })
     expect(t.mode).toBe('trial')
     expect(t.trialDaysLeft).toBe(15)
-    expect(t.message).toContain('Trial — 15 day(s) left')
+    expect(t.message).toContain('Trial - 15 day(s) left')
     expect(evaluate({ ...base, payload: p({ plan: 'trial', expiresAt: new Date(now - DAY).toISOString() }) }).mode).toBe('trial_expired')
   })
   it('active, expired, suspended, revoked, device deactivated, clock error', () => {

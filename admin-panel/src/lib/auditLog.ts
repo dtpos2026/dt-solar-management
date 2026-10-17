@@ -1,5 +1,5 @@
 /**
- * Activity log helpers (pure — no Firebase imports, unit tested in tests/portal-admin.test.ts).
+ * Activity log helpers (pure - no Firebase imports, unit tested in tests/portal-admin.test.ts).
  * Firestore access lives in pages/ActivityLog.tsx and lib/audit.ts.
  */
 import type { AuditCategory } from './types'
@@ -82,7 +82,7 @@ export function auditRowFromData(id: string, d: Record<string, unknown> | undefi
 
 export function actionLabel(action: string): string {
   const t = action.replace(/[_.]+/g, ' ').trim()
-  return t ? t[0].toUpperCase() + t.slice(1) : '—'
+  return t ? t[0].toUpperCase() + t.slice(1) : '-'
 }
 
 export interface AuditFilters {

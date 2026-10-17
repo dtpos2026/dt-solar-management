@@ -38,9 +38,9 @@ export function SigningKeyPanel() {
       <div className="card flex gap-3 border-amber-200 bg-amber-50 p-4 text-[13px] text-amber-900">
         <ShieldAlert className="h-5 w-5 shrink-0" />
         <div>
-          Licenses are signed here, in your browser — the private key is never uploaded anywhere. The key was created automatically the first time you ran{' '}
+          Licenses are signed here, in your browser - the private key is never uploaded anywhere. The key was created automatically the first time you ran{' '}
           <code className="rounded bg-white px-1">npm run build</code> in the DT Solar Pro (desktop) folder: select the file <b>keys\license-private.pem</b> from that
-          folder below. Keep a USB backup of it and never share it. Do not create a new key — installers already given to customers only accept licenses signed with this one.
+          folder below. Keep a USB backup of it and never share it. Do not create a new key - installers already given to customers only accept licenses signed with this one.
         </div>
       </div>
       {restoring ? (
@@ -51,7 +51,7 @@ export function SigningKeyPanel() {
           <div className="mt-2 text-[13px]">Fingerprint: <span className="font-mono">{key.fingerprint}</span></div>
           <div className="mt-3">
             <span className="label">Matching public key (must equal resources/license-public.pem in the app build)</span>
-            <textarea className="input font-mono text-[11.5px]" rows={3} readOnly value={key.publicPem} />
+            <textarea className="input font-mono text-[12px]" rows={3} readOnly value={key.publicPem} />
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <button className="btn btn-secondary btn-sm" onClick={() => copy(key.publicPem)}><Copy className="h-4 w-4" />Copy public key</button>
@@ -84,10 +84,10 @@ export function SigningKeyPanel() {
             />
           </label>
           <div className="my-3 text-[12px] text-[#7a6d92]">or paste it</div>
-          <textarea className="input font-mono text-[11.5px]" rows={5} value={text} onChange={(e) => setText(e.target.value)} placeholder="-----BEGIN PRIVATE KEY-----" aria-label="Private key PEM" />
+          <textarea className="input font-mono text-[12px]" rows={5} value={text} onChange={(e) => setText(e.target.value)} placeholder="-----BEGIN PRIVATE KEY-----" aria-label="Private key PEM" />
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <button className="btn btn-primary" disabled={!text.trim() || busy} onClick={() => doLoad(text)}>Load key</button>
-            <label className="flex items-center gap-2 text-[13px]"><input type="checkbox" checked={remember} onChange={(e) => setRem(e.target.checked)} />Remember on this computer — load once, no more prompts (untick on a shared PC)</label>
+            <label className="flex items-center gap-2 text-[13px]"><input type="checkbox" checked={remember} onChange={(e) => setRem(e.target.checked)} />Remember on this computer - load once, no more prompts (untick on a shared PC)</label>
           </div>
           {err && <div className="mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{err}</div>}
         </div>
@@ -102,11 +102,11 @@ function KeyCard({ icon, title, where, children, tone }: { icon: ReactNode; titl
       <div className="flex items-center gap-2 text-[13.5px] font-bold">
         <span className="text-[#7c3aed] [&>svg]:h-4 [&>svg]:w-4">{icon}</span>
         {title}
-        <span className={tone === 'secret' ? 'ml-auto rounded-md bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-700' : 'ml-auto rounded-md bg-green-50 px-2 py-0.5 text-[11px] font-bold text-green-700'}>
+        <span className={tone === 'secret' ? 'ml-auto rounded-md bg-red-50 px-2 py-0.5 text-[12px] font-bold text-red-700' : 'ml-auto rounded-md bg-green-50 px-2 py-0.5 text-[12px] font-bold text-green-700'}>
           {tone === 'secret' ? 'Secret' : 'Public by design'}
         </span>
       </div>
-      <div className="mt-1 text-[11.5px] font-semibold text-[#7a6d92]">{where}</div>
+      <div className="mt-1 text-[12px] font-semibold text-[#7a6d92]">{where}</div>
       <div className="mt-1.5 text-[12.5px] leading-relaxed text-[#4a3d63]">{children}</div>
     </div>
   )
@@ -116,10 +116,10 @@ function KeyCard({ icon, title, where, children, tone }: { icon: ReactNode; titl
 export function KeysExplained() {
   return (
     <section className="card p-5" aria-labelledby="keys-explained">
-      <h2 id="keys-explained" className="text-[15px] font-bold">Keys and credentials — what is what</h2>
+      <h2 id="keys-explained" className="text-[15px] font-bold">Keys and credentials - what is what</h2>
       <p className="mt-0.5 text-[12.5px] text-[#7a6d92]">Four different things. Only two are secret, and none of the secrets is ever stored in Firebase.</p>
       <div className="mt-3 grid gap-3 lg:grid-cols-2">
-        <KeyCard icon={<UserRound />} title="Admin sign-in (e-mail + password)" where="Firebase Authentication · each admin" tone="secret">
+        <KeyCard icon={<UserRound />} title="Admin sign-in (e-mail + password)" where="Firebase Authentication, each admin" tone="secret">
           Lets a person open this portal. What they may do is decided by their role in Admins and enforced by the Firestore security rules. Change it with
           “Forgot password” on the sign-in page. It cannot sign licenses.
         </KeyCard>
@@ -129,7 +129,7 @@ export function KeysExplained() {
         </KeyCard>
         <KeyCard icon={<FileKey2 />} title="License signing key (private, Ed25519)" where="keys\license-private.pem on the owner’s PC" tone="secret">
           Created once by <code className="rounded bg-[#f6f0fd] px-1">npm run build</code> in the desktop (DT Solar Pro) folder. It signs every license and
-          activation. It is loaded below into this browser only — never uploaded, never stored in Firestore, never committed to git (the keys folder is ignored).
+          activation. It is loaded below into this browser only - never uploaded, never stored in Firestore, never committed to git (the keys folder is ignored).
           Keep a USB backup. If it leaks, anyone could forge licenses: build a new key pair, ship a new installer and re-issue licenses.
         </KeyCard>
         <KeyCard icon={<ShieldCheck />} title="Public verification key" where="resources/license-public.pem inside the desktop app" tone="public">

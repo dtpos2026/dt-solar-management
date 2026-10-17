@@ -1,5 +1,5 @@
 /**
- * Digital Target branding / portal settings helpers (pure — no Firebase imports; unit tested).
+ * Digital Target branding / portal settings helpers (pure - no Firebase imports; unit tested).
  * Firestore access: lib/brandingStore.ts. Browser image compression: lib/imageFile.ts.
  */
 import { DEFAULT_BRANDING, type Branding } from './types'
@@ -9,7 +9,7 @@ export const MAX_IMAGE_BYTES = 150 * 1024
 export const IMAGE_FIELDS = ['logo', 'signature', 'paymentQr'] as const
 export type ImageField = (typeof IMAGE_FIELDS)[number]
 
-/** Fields copied to publicSettings/branding (public get — shown on the invoice verification page). */
+/** Fields copied to publicSettings/branding (public get - shown on the invoice verification page). */
 export const PUBLIC_BRANDING_FIELDS = ['companyName', 'logo', 'phone', 'email', 'website', 'address'] as const
 export type PublicBranding = Pick<Branding, (typeof PUBLIC_BRANDING_FIELDS)[number]>
 
@@ -57,7 +57,7 @@ export function cleanBranding(b: Branding): Branding {
   return out
 }
 
-/** Decoded size in bytes of a base64 data URL (what Firestore stores is the string — see dataUrlStoredBytes). */
+/** Decoded size in bytes of a base64 data URL (what Firestore stores is the string - see dataUrlStoredBytes). */
 export function dataUrlBytes(dataUrl: string | null | undefined): number {
   if (!dataUrl) return 0
   const i = dataUrl.indexOf(',')
@@ -77,7 +77,7 @@ export function imageSizeError(dataUrl: string | null | undefined, max = MAX_IMA
   if (!dataUrl) return null
   if (!/^data:image\/(png|jpeg|webp|gif);base64,/.test(dataUrl)) return 'Unsupported image data. Use PNG or JPEG.'
   const n = dataUrlStoredBytes(dataUrl)
-  return n > max ? `Image is ${formatBytes(n)} — the limit is ${formatBytes(max)}.` : null
+  return n > max ? `Image is ${formatBytes(n)} - the limit is ${formatBytes(max)}.` : null
 }
 
 export function formatBytes(n: number): string {

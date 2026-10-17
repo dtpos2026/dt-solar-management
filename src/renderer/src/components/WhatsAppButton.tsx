@@ -1,7 +1,7 @@
 /**
  * "Send on WhatsApp" (owner: assist area). Prepares the PDF in the WhatsApp outbox and opens the customer's chat in the
  * built-in WhatsApp Web module (or a wa.me chat link). The user drags the PDF into the chat and presses Send in
- * WhatsApp — the app never sends anything by itself and never claims a message was sent.
+ * WhatsApp - the app never sends anything by itself and never claims a message was sent.
  */
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -134,7 +134,7 @@ export function SendWhatsAppDialog({ entity, id, phone, params, onClose }: { ent
       open
       onClose={onClose}
       title="Send on WhatsApp"
-      subtitle={draft ? `${draft.label}${draft.partyName ? ` · ${draft.partyName}` : ''}` : undefined}
+      subtitle={draft ? `${draft.label}${draft.partyName ? `, ${draft.partyName}` : ''}` : undefined}
       size="md"
       footer={
         prepared ? (
@@ -231,8 +231,8 @@ export function AttachTile({ item, onDone, compact }: { item: OutboxItem; onDone
         <FileText className="h-6 w-6 shrink-0 text-bad" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-[13px] font-medium">{item.fileName}</div>
-          <div className="text-[11.5px] text-muted">
-            {formatSize(item.size)} · to +{item.phone}
+          <div className="text-[12px] text-muted">
+            {formatSize(item.size)}, to +{item.phone}
           </div>
         </div>
       </div>

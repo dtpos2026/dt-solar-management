@@ -59,7 +59,7 @@ export const REPORTS: ReportDef[] = [
     key: 'pl',
     group: 'Financial',
     title: 'Profit & Loss',
-    description: 'Accrual-based income statement — net sales, cost of sales, gross profit, operating expenses and net profit for the period.',
+    description: 'Accrual-based income statement - net sales, cost of sales, gross profit, operating expenses and net profit for the period.',
     perms: ['reports.profit'],
     period: 'range',
     scope: true
@@ -76,7 +76,7 @@ export const REPORTS: ReportDef[] = [
     key: 'daybook',
     group: 'Financial',
     title: 'Day Book',
-    description: 'Every entry recorded in the period — documents, receipts, payments, expenses, transfers, material and stock entries.',
+    description: 'Every entry recorded in the period - documents, receipts, payments, expenses, transfers, material and stock entries.',
     perms: ['reports.view'],
     period: 'range'
   },
@@ -172,7 +172,7 @@ export const REPORTS: ReportDef[] = [
     key: 'projects',
     group: 'Projects',
     title: 'Project Profitability',
-    description: 'Side-by-side comparison of solar projects — revenue, direct cost, gross and net profit, margin, profit per kW and collections.',
+    description: 'Side-by-side comparison of solar projects - revenue, direct cost, gross and net profit, margin, profit per kW and collections.',
     perms: ['projects.view', 'projects.financials'],
     period: 'range'
   },
@@ -333,7 +333,7 @@ export interface RTable {
   rows: any[]
   totals?: Record<string, number | string | null> | null
   totalLabel?: string
-  /** Keep the given row order (no sorting / searching on screen) — e.g. a running-balance book */
+  /** Keep the given row order (no sorting / searching on screen) - e.g. a running-balance book */
   fixedOrder?: boolean
   /** Rows that are informational (opening balance) and must be styled differently */
   isSpecial?: (r: any) => boolean
@@ -368,7 +368,7 @@ export interface PlLine {
   label: string
   amount?: number | null
   pct?: number | null
-  /** A deduction — printed in brackets */
+  /** A deduction - printed in brackets */
   less?: boolean
 }
 
@@ -383,7 +383,7 @@ export interface ReportModel {
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 export function monthLabel(ym: string | null | undefined): string {
-  if (!ym) return '—'
+  if (!ym) return '-'
   const [y, m] = String(ym).split('-')
   return y && m ? `${MONTHS[Number(m) - 1] ?? m} ${y}` : String(ym)
 }
@@ -402,7 +402,7 @@ const KIND_LABELS: Record<string, string> = {
   stock_transfer: 'Stock transfer'
 }
 export function kindLabel(k: string | null | undefined): string {
-  if (!k) return '—'
+  if (!k) return '-'
   return KIND_LABELS[k] ?? DOC_TYPES[k as keyof typeof DOC_TYPES]?.label ?? titleCase(k)
 }
 export function kindTone(k: string): Tone {
@@ -467,11 +467,11 @@ export function plLines(f: any): { statement: PlLine[]; memo: PlLine[] } {
       : [{ kind: 'item', label: 'No operating expenses recorded', amount: 0 } as PlLine]),
     { kind: 'subtotal', label: 'Total operating expenses', amount: f.operatingExpenses, pct: p(f.operatingExpenses) },
     { kind: 'section', label: 'Other items' },
-    { kind: 'item', label: 'Stock adjustments — gain / (loss) from stock counts', amount: f.stockAdjustments, pct: p(f.stockAdjustments) },
+    { kind: 'item', label: 'Stock adjustments - gain / (loss) from stock counts', amount: f.stockAdjustments, pct: p(f.stockAdjustments) },
     { kind: 'grand', label: f.netProfit < 0 ? 'Net loss' : 'Net profit', amount: f.netProfit, pct: f.netMarginPct }
   ]
   const memo: PlLine[] = [
-    { kind: 'item', label: 'Purchases into stock, net of returns (inventory asset — not an expense)', amount: f.purchases },
+    { kind: 'item', label: 'Purchases into stock, net of returns (inventory asset - not an expense)', amount: f.purchases },
     { kind: 'item', label: 'Sales tax collected on sales (output tax)', amount: f.taxCollected },
     { kind: 'item', label: 'Sales tax paid on purchases (input tax)', amount: f.taxPaid },
     { kind: 'subtotal', label: 'Net sales tax position (output − input)', amount: round2((Number(f.taxCollected) || 0) - (Number(f.taxPaid) || 0)) }
@@ -481,7 +481,7 @@ export function plLines(f: any): { statement: PlLine[]; memo: PlLine[] } {
 
 export const PL_NOTE =
   'Profit is calculated on an accrual basis, not on cash: sales count when invoiced (excluding sales tax) and costs count when goods are sold or issued to a project, ' +
-  'or when an expense is recorded — not when money is received or paid. Purchases into stock are an inventory asset until sold or issued, so they appear only as a memo line.'
+  'or when an expense is recorded - not when money is received or paid. Purchases into stock are an inventory asset until sold or issued, so they appear only as a memo line.'
 
 /* ---------------------------------------- builders --------------------------------------------- */
 
@@ -529,7 +529,7 @@ function registerModel(key: ReportKey, data: any, o: ReportOptions): Pick<Report
     cols.push(
       { key: 'date', label: 'Date', type: 'date' },
       { key: 'number', label: 'Number', strong: true, nowrap: true, sub: (r) => (r.doc_type === ret ? 'Return' : null) },
-      { key: 'party_name', label: partyLabel, get: (r) => r.party_name ?? (isSales ? 'Walk-in customer' : '—') },
+      { key: 'party_name', label: partyLabel, get: (r) => r.party_name ?? (isSales ? 'Walk-in customer' : '-') },
       { key: 'project_name', label: 'Project' }
     )
   } else if (gb === 'party') {
@@ -600,7 +600,7 @@ function registerModel(key: ReportKey, data: any, o: ReportOptions): Pick<Report
 }
 
 function fmtPct(n: number | null | undefined): string {
-  return n === null || n === undefined ? '—' : `${round2(n).toFixed(1)}%`
+  return n === null || n === undefined ? '-' : `${round2(n).toFixed(1)}%`
 }
 
 /** Build everything a report shows from its raw data. */
@@ -670,7 +670,7 @@ export function buildReportModel(key: ReportKey, data: any, o: ReportOptions): R
         { key: 'number', label: 'Number', strong: true, nowrap: true },
         { key: 'doc_type', label: 'Type', get: (r) => typeName[r.doc_type] ?? kindLabel(r.doc_type), badge: (r) => (String(r.doc_type).endsWith('_return') ? 'warn' : 'muted') },
         { key: 'party_name', label: 'Party' },
-        { key: 'ntn', label: 'NTN / STRN', get: (r) => [r.ntn && `NTN ${r.ntn}`, r.strn && `STRN ${r.strn}`].filter(Boolean).join(' · ') || null },
+        { key: 'ntn', label: 'NTN / STRN', get: (r) => [r.ntn && `NTN ${r.ntn}`, r.strn && `STRN ${r.strn}`].filter(Boolean).join(', ') || null },
         { key: 'net', label: 'Value excl. tax', type: 'money', signed: true },
         { key: 'tax', label: 'Sales tax', type: 'money', signed: true, strong: true },
         { key: 'total', label: 'Value incl. tax', type: 'money', signed: true }
@@ -687,8 +687,8 @@ export function buildReportModel(key: ReportKey, data: any, o: ReportOptions): R
           { label: net >= 0 ? 'Net tax payable' : 'Net tax refundable', value: Math.abs(net), type: 'money', tone: net >= 0 ? 'warn' : 'ok', sub: 'output − input' }
         ],
         sections: [
-          { id: 'output', title: 'Output tax — sales invoices & credit notes', table: { columns: cols, rows: out, totals: tot(out), totalLabel: 'Total output tax' } },
-          { id: 'input', title: 'Input tax — purchase bills & debit notes', table: { columns: cols, rows: inp, totals: tot(inp), totalLabel: 'Total input tax' } }
+          { id: 'output', title: 'Output tax - sales invoices & credit notes', table: { columns: cols, rows: out, totals: tot(out), totalLabel: 'Total output tax' } },
+          { id: 'input', title: 'Input tax - purchase bills & debit notes', table: { columns: cols, rows: inp, totals: tot(inp), totalLabel: 'Total input tax' } }
         ],
         notes: ['Only documents that carry sales tax are listed. Credit notes and debit notes reduce the tax of their side. Cancelled documents are excluded.']
       }
@@ -863,7 +863,7 @@ export function buildReportModel(key: ReportKey, data: any, o: ReportOptions): R
         ],
         notes: [
           `Ages are counted from each ${cust ? 'invoice' : 'bill'}'s due date (or its date when no due date is set) to ${pd(o.asOf)}. ` +
-            `Only unpaid ${cust ? 'invoices' : 'bills'} are included — opening balances, unallocated advances and journal adjustments are not; see ${cust ? 'Customer' : 'Supplier'} Balances for full ledger balances.`
+            `Only unpaid ${cust ? 'invoices' : 'bills'} are included - opening balances, unallocated advances and journal adjustments are not; see ${cust ? 'Customer' : 'Supplier'} Balances for full ledger balances.`
         ]
       }
     }
@@ -907,7 +907,7 @@ export function buildReportModel(key: ReportKey, data: any, o: ReportOptions): R
               { label: 'Net payable', value: round2(b - a), type: 'money', tone: 'sun', negativeBad: true }
             ],
         sections: [{ id: 'balances', table: { columns: cols, rows, totals: { owes_us: a, we_owe: b }, totalLabel: `Total (${rows.length})` } }],
-        notes: ['Balances are the full ledger balance for this firm today — invoices, returns, receipts, payments, expense bills, opening balances and journal adjustments.']
+        notes: ['Balances are the full ledger balance for this firm today - invoices, returns, receipts, payments, expense bills, opening balances and journal adjustments.']
       }
     }
 
@@ -934,7 +934,7 @@ export function buildReportModel(key: ReportKey, data: any, o: ReportOptions): R
       ]
       // 14 columns do not fit a portrait A4 page: code, customer and status move under the project name.
       const printCols: RCol[] = [
-        { key: 'name', label: 'Project', strong: true, sub: (r) => [r.code, r.customer_name, statusText(r)].filter(Boolean).join(' · ') },
+        { key: 'name', label: 'Project', strong: true, sub: (r) => [r.code, r.customer_name, statusText(r)].filter(Boolean).join(', ') },
         ...cols.filter((c) => !['code', 'name', 'customer_name', 'status'].includes(c.key))
       ]
       return {
@@ -987,7 +987,7 @@ export function buildReportModel(key: ReportKey, data: any, o: ReportOptions): R
         ...base,
         summary: [
           { label: 'Total expenses', value: total, type: 'money', tone: 'brand', sub: `${count} entr${count === 1 ? 'y' : 'ies'}` },
-          { label: 'Charged to projects', value: projectTotal, type: 'money', tone: 'sun', sub: `${fmtPct(pctOf(projectTotal, total))} — part of project cost` },
+          { label: 'Charged to projects', value: projectTotal, type: 'money', tone: 'sun', sub: `${fmtPct(pctOf(projectTotal, total))} - part of project cost` },
           { label: 'General / overheads', value: round2(total - projectTotal), type: 'money', tone: 'warn' },
           { label: 'Categories used', value: cats.length, type: 'int', tone: 'info' }
         ],
@@ -1090,7 +1090,7 @@ export function reportCsv(m: ReportModel): { columns: Array<{ key: string; label
 /* ================================================================================================ */
 
 function printCell(ctx: PrintContext, c: RCol, v: any, r?: any): string {
-  if (v === null || v === undefined || v === '') return c.type && c.type !== 'text' ? '—' : ''
+  if (v === null || v === undefined || v === '') return c.type && c.type !== 'text' ? '-' : ''
   switch (c.type) {
     case 'money':
       return pm(ctx, Number(v))
@@ -1221,7 +1221,7 @@ function PrintSummary({ ctx, items }: { ctx: PrintContext; items: RSummary[] }):
   if (!items.length) return null
   const fmt = (s: RSummary): string =>
     s.value === null || s.value === undefined
-      ? '—'
+      ? '-'
       : s.type === 'money'
         ? pm(ctx, s.value)
         : s.type === 'pct'
@@ -1299,7 +1299,7 @@ function PrintPl({ ctx, pl }: { ctx: PrintContext; pl: NonNullable<ReportModel['
       </div>
       <div className="avoid-break mb-4">
         <div className="mb-1 text-[10px] font-bold tracking-wider uppercase" style={{ color: 'var(--pc)' }}>
-          Memo — not part of profit
+          Memo - not part of profit
         </div>
         <table className="w-full border border-[#e2e8f0] text-[10.5px]">
           <tbody>
@@ -1364,7 +1364,7 @@ export function ReportPrint({ params, ctx, setTitle }: TemplateProps): JSX.Eleme
   return <ReportSheet ctx={ctx} reportKey={state.key} opts={state.opts} model={state.model} />
 }
 
-/** The printed A4 page of a report (pure — data already loaded). */
+/** The printed A4 page of a report (pure - data already loaded). */
 export function ReportSheet({ ctx, reportKey: key, opts, model }: { ctx: PrintContext; reportKey: ReportKey; opts: ReportOptions; model: ReportModel }): JSX.Element {
   const def = reportDef(key)!
   const meta: Array<[string, ReactNode]> = []

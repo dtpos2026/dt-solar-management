@@ -1,4 +1,4 @@
-/** Admins — Super Admin users, roles and permissions (Module 6). */
+/** Admins - Super Admin users, roles and permissions (Module 6). */
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { onSnapshot } from 'firebase/firestore'
@@ -89,7 +89,7 @@ export function Admins() {
     try {
       if (pending.kind === 'toggle') {
         await setAdminActive(a, !a.active, reason)
-        setFlash({ tone: 'success', text: `${a.name || a.email} ${a.active ? 'disabled — the account is blocked by the security rules from now on' : 'enabled'}.` })
+        setFlash({ tone: 'success', text: `${a.name || a.email} ${a.active ? 'disabled - the account is blocked by the security rules from now on' : 'enabled'}.` })
       } else if (pending.kind === 'delete') {
         await deleteAdminRecord(a)
         setFlash({ tone: 'success', text: `Admin record of ${a.email} deleted. Delete the login itself in Firebase Console → Authentication.` })
@@ -111,7 +111,7 @@ export function Admins() {
       <PageTitle
         icon={<Users />}
         title="Admins"
-        sub={loading ? 'Loading…' : `${rows.length} admin user(s) · ${activeCount} active`}
+        sub={loading ? 'Loading…' : `${rows.length} admin user(s), ${activeCount} active`}
         actions={
           <button className="btn btn-primary" onClick={() => setForm({ open: true, admin: null })}>
             <UserPlus className="h-4 w-4" />New admin
@@ -134,7 +134,7 @@ export function Admins() {
           <div>
             <div className="mb-0.5 font-bold text-[#1d1530]">Disable blocks immediately</div>
             A disabled admin is refused by the rules at once and signed out of open sessions. “Sign out everywhere” and deleting the login itself are not possible from the
-            browser on the Spark plan — delete the user in Firebase Console → Authentication.
+            browser on the Spark plan - delete the user in Firebase Console → Authentication.
           </div>
         </div>
         <div className="card flex gap-3 p-4 text-[12.5px] text-[#5b4b78]">
@@ -180,7 +180,7 @@ export function Admins() {
                   return (
                     <tr key={a.uid} className={cx(!a.active && 'opacity-60')}>
                       <td>
-                        <div className="flex items-center gap-2 font-semibold">{a.name || '—'}{self && <Badge tone="you">You</Badge>}</div>
+                        <div className="flex items-center gap-2 font-semibold">{a.name || '-'}{self && <Badge tone="you">You</Badge>}</div>
                       </td>
                       <td className="text-[13px]">{a.email}</td>
                       <td><Badge tone={isOwnerRole(a.role) ? 'owner' : 'role'}>{roleLabel(a.role)}</Badge></td>
@@ -188,7 +188,7 @@ export function Admins() {
                       <td><Badge tone={a.active ? 'active' : 'deactivated'}>{a.active ? 'Active' : 'Disabled'}</Badge></td>
                       <td className="text-[12.5px]">
                         <div>{fmtDate(a.createdAt)}</div>
-                        {a.createdBy && <div className="text-[11.5px] text-[#7a6d92]">by {a.createdBy}</div>}
+                        {a.createdBy && <div className="text-[12px] text-[#7a6d92]">by {a.createdBy}</div>}
                       </td>
                       <td>
                         <div className="flex justify-end gap-0.5" title={can.reason ?? undefined}>
@@ -198,7 +198,7 @@ export function Admins() {
                             <IconButton title={a.active ? 'Disable' : 'Enable'} danger={a.active} onClick={() => { setActionError(null); setReason(''); setPending({ kind: 'toggle', admin: a }) }}><Power /></IconButton>
                           )}
                           {can.remove && <IconButton title="Delete admin record" danger onClick={() => { setActionError(null); setPending({ kind: 'delete', admin: a }) }}><Trash2 /></IconButton>}
-                          {!can.edit && !self && <span className="px-2 text-[11.5px] text-[#9a8db3]">Owner only</span>}
+                          {!can.edit && !self && <span className="px-2 text-[12px] text-[#9a8db3]">Owner only</span>}
                         </div>
                       </td>
                     </tr>
@@ -390,7 +390,7 @@ function AdminForm({ open, admin, actorIsOwner, onClose, onDone }: { open: boole
             <div className="flex items-end pb-2">
               <label className="flex items-start gap-2 text-[12.5px] text-[#5b4b78]">
                 <input type="checkbox" className="mt-0.5" checked={linkExisting} onChange={(e) => { setLinkExisting(e.target.checked); set({ password: e.target.checked ? '' : generateTempPassword() }) }} />
-                <span>This e-mail already has a login (e.g. created in Firebase Console or a previously deleted admin) — link it instead of creating a new one.</span>
+                <span>This e-mail already has a login (e.g. created in Firebase Console or a previously deleted admin) - link it instead of creating a new one.</span>
               </label>
             </div>
           </>
@@ -418,7 +418,7 @@ function AdminForm({ open, admin, actorIsOwner, onClose, onDone }: { open: boole
       <div className="mt-4">
         <div className="mb-2 flex items-center justify-between">
           <span className="label mb-0">Permissions</span>
-          <span className="text-[12px] text-[#7a6d92]">{isOwnerDraft ? 'Owners have every permission' : `${sanitisePermissions(d.permissions).length} selected · changing a box switches the role to the matching preset or Custom`}</span>
+          <span className="text-[12px] text-[#7a6d92]">{isOwnerDraft ? 'Owners have every permission' : `${sanitisePermissions(d.permissions).length} selected, changing a box switches the role to the matching preset or Custom`}</span>
         </div>
         <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
           {ADMIN_PERMISSION_GROUPS.map((g) => (
@@ -430,7 +430,7 @@ function AdminForm({ open, admin, actorIsOwner, onClose, onDone }: { open: boole
                 return (
                   <label key={p.key} className={cx('flex items-start gap-2 py-1 text-[12.5px]', (!grantable || isOwnerDraft) && 'opacity-60')} title={!grantable ? 'Only an owner can grant this permission' : p.key}>
                     <input type="checkbox" className="mt-0.5" checked={checked} disabled={isOwnerDraft || !grantable} onChange={(e) => toggle(p.key, e.target.checked)} />
-                    <span>{p.label}{!grantable && <span className="block text-[11px] text-[#9a8db3]">Owner only</span>}</span>
+                    <span>{p.label}{!grantable && <span className="block text-[12px] text-[#9a8db3]">Owner only</span>}</span>
                   </label>
                 )
               })}

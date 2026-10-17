@@ -56,7 +56,7 @@ export function TrialDialog({ open, clients, onClose, onIssued }: { open: boolea
       }
     >
       <p className="mb-3 text-[12.5px] text-[#6b5d85]">
-        Trial plan · 1 computer · {TRIAL_DAYS} days by default (at most {TRIAL_MAX_DAYS}). The computer that activates it still needs your approval under Activation requests.
+        Trial plan, 1 computer, {TRIAL_DAYS} days by default (at most {TRIAL_MAX_DAYS}). The computer that activates it still needs your approval under Activation requests.
       </p>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Business name"><input className="input" value={f.businessName} onChange={(e) => set({ businessName: e.target.value })} /></Field>
@@ -70,8 +70,8 @@ export function TrialDialog({ open, clients, onClose, onIssued }: { open: boolea
         {clients.length > 0 && (
           <Field label="Client (optional)" className="col-span-2">
             <select className="input" value={f.clientId} onChange={(e) => set({ clientId: e.target.value })}>
-              <option value="">— No client —</option>
-              {clients.filter((c) => c.status !== 'archived').map((c) => <option key={c.id} value={c.id}>{c.code} · {c.company}</option>)}
+              <option value="">No client</option>
+              {clients.filter((c) => c.status !== 'archived').map((c) => <option key={c.id} value={c.id}>{c.code}, {c.company}</option>)}
             </select>
           </Field>
         )}

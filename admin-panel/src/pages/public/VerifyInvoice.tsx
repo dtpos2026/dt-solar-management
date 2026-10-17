@@ -28,7 +28,7 @@ type State = { kind: 'loading' } | { kind: 'invalid' } | { kind: 'error' } | { k
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
 const date = (v: unknown) => (v instanceof Timestamp ? v.toDate() : null)
-const fmt = (d: Date | null) => (d ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—')
+const fmt = (d: Date | null) => (d ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-')
 
 function parse(d: Record<string, unknown>): PublicInvoice {
   return {
@@ -45,7 +45,7 @@ export function VerifyInvoice({ token }: { token: string }) {
   const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
-    document.title = 'Verify invoice · Digital Target'
+    document.title = 'Verify invoice, Digital Target'
     if (!isValidToken(token)) { setState({ kind: 'invalid' }); return }
     let alive = true
     setState({ kind: 'loading' })
@@ -121,17 +121,17 @@ export function VerifyInvoice({ token }: { token: string }) {
                     <span className="text-[13px] font-semibold">Payment status</span>
                     <PayTag s={state.inv.status === 'cancelled' ? 'cancelled' : state.inv.paymentStatus} />
                   </div>
-                  <div className="mt-1.5 flex gap-1.5 text-[11.5px] text-[#7a6d92]"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />Payment status as recorded by Digital Target. The QR code proves the invoice is authentic — not that it has been paid.</div>
+                  <div className="mt-1.5 flex gap-1.5 text-[12px] text-[#7a6d92]"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />Payment status as recorded by Digital Target. The QR code proves the invoice is authentic - not that it has been paid.</div>
                 </div>
-                <div className="text-center text-[11.5px] text-[#7a6d92]">Verified at {state.at.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</div>
+                <div className="text-center text-[12px] text-[#7a6d92]">Verified at {state.at.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</div>
               </div>
             </>
           )}
         </div>
 
         <div className="mt-5 text-center text-[12px] text-[#6b5d85]">
-          {[state.kind === 'ok' ? state.inv.issuerPhone || brand.phone : brand.phone, state.kind === 'ok' ? state.inv.issuerEmail || brand.email : brand.email, brand.website].filter(Boolean).join(' · ')}
-          <div className="mt-1">DT Solar Pro · by Digital Target</div>
+          {[state.kind === 'ok' ? state.inv.issuerPhone || brand.phone : brand.phone, state.kind === 'ok' ? state.inv.issuerEmail || brand.email : brand.email, brand.website].filter(Boolean).join(', ')}
+          <div className="mt-1">DT Solar Pro, by Digital Target</div>
         </div>
       </div>
     </div>
@@ -149,7 +149,7 @@ function Banner({ tone, icon, title, text }: { tone: 'good' | 'bad' | 'warn'; ic
 }
 
 function Item({ k, v }: { k: string; v: React.ReactNode }) {
-  return <div><dt className="text-[11.5px] font-semibold uppercase tracking-wide text-[#7a6d92]">{k}</dt><dd className="mt-0.5 font-semibold">{v}</dd></div>
+  return <div><dt className="text-[12px] font-semibold uppercase tracking-wide text-[#7a6d92]">{k}</dt><dd className="mt-0.5 font-semibold">{v}</dd></div>
 }
 
 function PayTag({ s }: { s: 'paid' | 'partial' | 'unpaid' | 'cancelled' }) {

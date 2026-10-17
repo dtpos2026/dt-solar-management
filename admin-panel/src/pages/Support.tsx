@@ -1,4 +1,4 @@
-/** Support — live customer conversations from the desktop app (supportThreads/{installToken} + messages). */
+/** Support - live customer conversations from the desktop app (supportThreads/{installToken} + messages). */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { getDoc, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore'
@@ -22,7 +22,7 @@ const STATUSES: SupportThread['status'][] = ['open', 'pending', 'resolved']
 const PAGE = 100
 
 function StatusTag({ s }: { s: SupportThread['status'] }) {
-  return <span className={cx('rounded-md px-1.5 py-0.5 text-[11px] font-bold capitalize', STATUS_TONE[s])}>{s}</span>
+  return <span className={cx('rounded-md px-1.5 py-0.5 text-[12px] font-bold capitalize', STATUS_TONE[s])}>{s}</span>
 }
 
 export function Support() {
@@ -70,7 +70,7 @@ export function Support() {
 
   return (
     <div>
-      <PageTitle icon={<LifeBuoy />} title="Support" sub={loading ? 'Loading…' : `${threads.length}${recent?.full ? '+' : ''} conversation(s) · ${unread} unread · ${threads.filter((t) => t.status === 'open').length} open`} />
+      <PageTitle icon={<LifeBuoy />} title="Support" sub={loading ? 'Loading…' : `${threads.length}${recent?.full ? '+' : ''} conversation(s), ${unread} unread, ${threads.filter((t) => t.status === 'open').length} open`} />
       <div className="grid h-[calc(100vh-170px)] min-h-[520px] grid-cols-[360px_minmax(0,1fr)] gap-4">
         <div className="card flex min-h-0 flex-col">
           <div className="space-y-2 border-b border-[#ece6f4] p-3">
@@ -88,13 +88,13 @@ export function Support() {
               <button key={t.id} onClick={() => nav(`/support/${t.id}`)} className={cx('block w-full border-b border-[#f1ecf7] px-3.5 py-3 text-left hover:bg-[#faf7fd]', t.id === id && 'bg-[#f3ebfc]')}>
                 <div className="flex items-center justify-between gap-2">
                   <span className={cx('truncate text-[13.5px]', t.unreadByAdmin ? 'font-extrabold' : 'font-semibold')}>{t.companyName || t.contactName || 'Unknown customer'}</span>
-                  <span className="shrink-0 text-[11px] text-[#7a6d92]">{t.lastMessageAt ? timeAgo(t.lastMessageAt) : ''}</span>
+                  <span className="shrink-0 text-[12px] text-[#7a6d92]">{t.lastMessageAt ? timeAgo(t.lastMessageAt) : ''}</span>
                 </div>
                 <div className="mt-0.5 flex items-center gap-2">
                   {t.unreadByAdmin && <span className="h-2 w-2 shrink-0 rounded-full bg-fuchsia-600" aria-label="unread" />}
-                  <span className={cx('truncate text-[12.5px]', t.unreadByAdmin ? 'text-[#1d1530]' : 'text-[#7a6d92]')}>{t.lastMessageFrom === 'admin' ? 'You: ' : ''}{t.lastMessagePreview || '—'}</span>
+                  <span className={cx('truncate text-[12.5px]', t.unreadByAdmin ? 'text-[#1d1530]' : 'text-[#7a6d92]')}>{t.lastMessageFrom === 'admin' ? 'You: ' : ''}{t.lastMessagePreview || '-'}</span>
                 </div>
-                <div className="mt-1 flex items-center gap-2 text-[11px] text-[#7a6d92]"><StatusTag s={t.status} />{t.phone && <span>{t.phone}</span>}</div>
+                <div className="mt-1 flex items-center gap-2 text-[12px] text-[#7a6d92]"><StatusTag s={t.status} />{t.phone && <span>{t.phone}</span>}</div>
               </button>
             ))}
             {recent?.full && !err && (
@@ -198,7 +198,7 @@ function Conversation({ t }: { t: SupportThread }) {
           <div key={m.id} className={cx('flex', m.from === 'admin' ? 'justify-end' : 'justify-start')}>
             <div className={cx('max-w-[72%] rounded-2xl px-3.5 py-2 text-[13.5px] shadow-sm', m.from === 'admin' ? 'rounded-br-md bg-gradient-to-br from-[#5b10a0] to-[#3d096d] text-white' : 'rounded-bl-md border border-[#ece6f4] bg-white')}>
               <div className="whitespace-pre-wrap break-words">{m.body}</div>
-              <div className={cx('mt-1 text-[10.5px]', m.from === 'admin' ? 'text-white/70' : 'text-[#7a6d92]')}>{m.authorName || (m.from === 'admin' ? 'Digital Target' : 'Customer')} · {m.at ? fmtDateTime(m.at) : 'sending…'}</div>
+              <div className={cx('mt-1 text-[12px]', m.from === 'admin' ? 'text-white/70' : 'text-[#7a6d92]')}>{m.authorName || (m.from === 'admin' ? 'Digital Target' : 'Customer')}, {m.at ? fmtDateTime(m.at) : 'sending…'}</div>
             </div>
           </div>
         ))}
@@ -209,7 +209,7 @@ function Conversation({ t }: { t: SupportThread }) {
         <textarea className="input" rows={3} maxLength={4000} placeholder="Type a reply… (Ctrl+Enter to send)" value={body} onChange={(e) => setBody(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && body.trim() && !busy) send() }} />
         <div className="mt-2 flex items-center justify-between gap-2">
-          <span className="text-[11.5px] text-[#7a6d92]">{body.length}/4000</span>
+          <span className="text-[12px] text-[#7a6d92]">{body.length}/4000</span>
           <div className="flex items-center gap-2">
             <label className="flex items-center gap-1.5 text-[12.5px] text-[#6b5d85]">After sending
               <select className="input h-8 w-auto py-0" value={after} onChange={(e) => setAfter(e.target.value as SupportThread['status'])}>

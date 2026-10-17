@@ -113,7 +113,7 @@ export function InvoiceForm({ open, invoice, clients, branding, onClose, onSaved
         <Field label="License (optional)" hint={clientId && licenses.length === 0 ? 'No licenses linked to this client' : undefined}>
           <select className="input" value={licenseId} onChange={(e) => setLicenseId(e.target.value)} disabled={!clientId}>
             <option value="">None</option>
-            {licenses.map((l) => <option key={l.id} value={l.id}>{l.licenseKey} — {l.businessName || l.customerName}</option>)}
+            {licenses.map((l) => <option key={l.id} value={l.id}>{l.licenseKey} - {l.businessName || l.customerName}</option>)}
           </select>
         </Field>
 

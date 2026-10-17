@@ -96,10 +96,10 @@ export function Offline({ embedded = false }: { embedded?: boolean }) {
                 <b>License key:</b> <span className="font-mono">{req.k}</span>
               </div>
               <div>
-                <b>Computer:</b> {req.n || '—'} <span className="font-mono text-[12px]">({req.d})</span>
+                <b>Computer:</b> {req.n || '-'} <span className="font-mono text-[12px]">({req.d})</span>
               </div>
               <div>
-                <b>App / OS:</b> {req.a || '—'} · {req.o || '—'}
+                <b>App / OS:</b> {req.a || '-'}, {req.o || '-'}
               </div>
               {req.t && (
                 <div>
@@ -108,11 +108,11 @@ export function Offline({ embedded = false }: { embedded?: boolean }) {
               )}
               {full && (
                 <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
-                  <div className="mb-1 font-semibold">Needs reassignment — {full.text}</div>
+                  <div className="mb-1 font-semibold">Needs reassignment - {full.text}</div>
                   {full.devices.map((d) => (
                     <label key={d.deviceId} className="flex items-center gap-2 text-[13px]">
                       <input type="radio" name="offline-replace" checked={replaceId === d.deviceId} onChange={() => setReplaceId(d.deviceId)} />
-                      Replace <b>{d.deviceName || 'Device'}</b> <ShortDevice id={d.deviceId} /> <span className="text-[12px] text-[#7a6d92]">{d.status} · activated {fmtDateTime(d.activatedAt)}</span>
+                      Replace <b>{d.deviceName || 'Device'}</b> <ShortDevice id={d.deviceId} /> <span className="text-[12px] text-[#7a6d92]">{d.status}, activated {fmtDateTime(d.activatedAt)}</span>
                     </label>
                   ))}
                   {full.devices.length === 0 && <div className="text-[12.5px]">No computer can be replaced.</div>}
@@ -133,8 +133,8 @@ export function Offline({ embedded = false }: { embedded?: boolean }) {
                   {out.business}
                 </Link>
               </div>
-              <span className="label">Activation code — send this to the customer (WhatsApp / email)</span>
-              <textarea className="input font-mono text-[11.5px]" rows={5} readOnly value={out.code} />
+              <span className="label">Activation code - send this to the customer (WhatsApp / email)</span>
+              <textarea className="input font-mono text-[12px]" rows={5} readOnly value={out.code} />
               <div className="mt-2 flex gap-2">
                 <button className="btn btn-secondary btn-sm" onClick={() => copy(out.code)}>
                   Copy code

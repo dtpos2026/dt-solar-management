@@ -1,4 +1,4 @@
-/** IPC routes — JSON backups (.js1) and legacy software imports (owner: integrator). Owns: jsonBackup.*, legacy.* */
+/** IPC routes - JSON backups (.js1) and legacy software imports (owner: integrator). Owns: jsonBackup.*, legacy.* */
 import Database from 'better-sqlite3'
 import { randomBytes } from 'crypto'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'fs'

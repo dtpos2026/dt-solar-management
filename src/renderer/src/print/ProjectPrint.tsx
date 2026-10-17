@@ -23,9 +23,9 @@ const KIND_LABELS: Record<string, string> = {
   adjustment: 'Journal'
 }
 
-const cap = (s: string | null | undefined): string => (s ? s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : '—')
-const pctText = (n: number | null | undefined): string => (n === null || n === undefined ? '—' : `${n.toFixed(1)}%`)
-const share = (part: number, whole: number): string => (Math.abs(whole) > 0.005 ? `${((part / whole) * 100).toFixed(1)}%` : '—')
+const cap = (s: string | null | undefined): string => (s ? s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : '-')
+const pctText = (n: number | null | undefined): string => (n === null || n === undefined ? '-' : `${n.toFixed(1)}%`)
+const share = (part: number, whole: number): string => (Math.abs(whole) > 0.005 ? `${((part / whole) * 100).toFixed(1)}%` : '-')
 
 /** Amount cell: blank for zero, red for negative. */
 function Amt({ ctx, v, bold }: { ctx: PrintContext; v: number | null | undefined; bold?: boolean }): JSX.Element {
@@ -143,7 +143,7 @@ export function ProjectPrint({ id, ctx, setTitle }: TemplateProps): JSX.Element 
               </>
             )}
             <span className="text-[#4a5568]">Manager</span>
-            <span>{p.manager_name ?? '—'}</span>
+            <span>{p.manager_name ?? '-'}</span>
             {p.quotation_number && (
               <>
                 <span className="text-[#4a5568]">Quotation</span>
@@ -160,14 +160,14 @@ export function ProjectPrint({ id, ctx, setTitle }: TemplateProps): JSX.Element 
           </div>
         </InfoBox>
         <InfoBox title="Customer">
-          <div className="text-[12.5px] font-bold">{p.customer_name ?? '—'}</div>
+          <div className="text-[12.5px] font-bold">{p.customer_name ?? '-'}</div>
           {p.customer_address && <div>{p.customer_address}</div>}
           {p.customer_phone && <div>Phone: {p.customer_phone}</div>}
           {p.customer_email && <div>Email: {p.customer_email}</div>}
           {(p.contact_person || p.contact_phone) && (
             <div className="mt-1 text-[10px]">
               <span className="text-[#4a5568]">Site contact: </span>
-              {[p.contact_person, p.contact_phone].filter(Boolean).join(' · ')}
+              {[p.contact_person, p.contact_phone].filter(Boolean).join(', ')}
             </div>
           )}
         </InfoBox>

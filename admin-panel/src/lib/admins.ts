@@ -2,7 +2,7 @@
  * Admin users (admins/{uid}). On the Spark plan there is no Admin SDK, so:
  *  - new logins are created with createUserWithEmailAndPassword on a SECONDARY Firebase app instance (in-memory
  *    persistence), so the owner's own session is not replaced, and that app is signed out and deleted right after;
- *  - an Auth account cannot be disabled or deleted from the browser — `active: false` blocks it in the rules
+ *  - an Auth account cannot be disabled or deleted from the browser - `active: false` blocks it in the rules
  *    immediately, and the owner can delete the login in Firebase Console → Authentication.
  */
 import { deleteApp, initializeApp } from 'firebase/app'

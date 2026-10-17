@@ -125,7 +125,7 @@ function ExpensesTab({ tick, onEdit }: { tick: number; onEdit: (e: any) => void 
 
   const cats = useLoad(() => api<any[]>('expenseCategories.list'), [tick])
   const projects = useLoad(() => (canProjects ? api<any[]>('projects.options') : Promise.resolve([] as any[])), [canProjects])
-  const projectOptions: Option[] = (projects.data ?? []).map((p) => ({ value: p.id, label: `${p.code} — ${p.name}`, sub: String(p.status ?? '').replace('_', ' ') }))
+  const projectOptions: Option[] = (projects.data ?? []).map((p) => ({ value: p.id, label: `${p.code} - ${p.name}`, sub: String(p.status ?? '').replace('_', ' ') }))
   const { data, loading, reload } = useLoad(
     () =>
       api<any[]>('expenses.list', {
@@ -158,7 +158,7 @@ function ExpensesTab({ tick, onEdit }: { tick: number; onEdit: (e: any) => void 
       title: `Cancel expense ${r.number}?`,
       message: (
         <>
-          {money(r.amount)} — {r.category_name}
+          {money(r.amount)} - {r.category_name}
           {r.project_name ? ` (${r.project_name})` : ''}. The expense stays in the records for audit but will no longer count in costs, cash balances or supplier payables.
         </>
       ),
@@ -188,7 +188,7 @@ function ExpensesTab({ tick, onEdit }: { tick: number; onEdit: (e: any) => void 
           <div className="font-medium">{r.category_name}</div>
           {isDirect(r) ? (
             <Badge tone="info" className="mt-0.5">
-              {r.cost_head === 'overhead' ? 'Overhead → project cost' : `Direct · ${headLabel(r.cost_head)}`}
+              {r.cost_head === 'overhead' ? 'Overhead → project cost' : `Direct, ${headLabel(r.cost_head)}`}
             </Badge>
           ) : (
             <Badge tone="muted" className="mt-0.5">
@@ -223,13 +223,13 @@ function ExpensesTab({ tick, onEdit }: { tick: number; onEdit: (e: any) => void 
             </div>
           )
         ) : (
-          <span className="text-muted">—</span>
+          <span className="text-muted">-</span>
         )
     },
     {
       key: 'payee',
       header: 'Payee',
-      value: (r) => [r.party_name, r.payee_name].filter(Boolean).join(' — '),
+      value: (r) => [r.party_name, r.payee_name].filter(Boolean).join(' - '),
       render: (r) =>
         r.party_name || r.payee_name ? (
           <div>
@@ -237,14 +237,14 @@ function ExpensesTab({ tick, onEdit }: { tick: number; onEdit: (e: any) => void 
             {r.party_name && r.payee_name && <div className="text-[12px] text-muted">{r.payee_name}</div>}
           </div>
         ) : (
-          <span className="text-muted">—</span>
+          <span className="text-muted">-</span>
         )
     },
     {
       key: 'account_name',
       header: 'Paid from',
       value: (r) => (r.paid ? r.account_name : 'Payable'),
-      render: (r) => (r.paid ? r.account_name ?? '—' : <Badge tone="warn">Payable</Badge>)
+      render: (r) => (r.paid ? r.account_name ?? '-' : <Badge tone="warn">Payable</Badge>)
     },
     { key: 'amount', header: 'Amount', align: 'right', render: (r) => <span className="font-semibold">{money(r.amount)}</span> },
     {
@@ -252,7 +252,7 @@ function ExpensesTab({ tick, onEdit }: { tick: number; onEdit: (e: any) => void 
       header: 'Due',
       align: 'right',
       value: (r) => (r.paid || r.status === 'cancelled' ? 0 : Number(r.due) || 0),
-      render: (r) => (!r.paid && r.status !== 'cancelled' && Number(r.due) > EPS ? <span className="text-bad">{money(r.due)}</span> : <span className="text-muted">—</span>)
+      render: (r) => (!r.paid && r.status !== 'cancelled' && Number(r.due) > EPS ? <span className="text-bad">{money(r.due)}</span> : <span className="text-muted">-</span>)
     },
     {
       key: 'status',
@@ -462,7 +462,7 @@ function CategoriesTab(): JSX.Element {
             <Field label="Name" required>
               <Input autoFocus value={edit.name} maxLength={80} onChange={(e) => setEdit({ ...edit, name: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && save()} placeholder="e.g. Installation labour" />
             </Field>
-            <Field label="Cost head" hint={edit.costHead === 'overhead' ? 'General business overhead (rent, salaries, utilities…). If an expense in this category is linked to a project, it counts as that project’s other direct cost.' : 'Project direct cost — expenses linked to a project are added to that project’s cost and reduce its profit.'}>
+            <Field label="Cost head" hint={edit.costHead === 'overhead' ? 'General business overhead (rent, salaries, utilities…). If an expense in this category is linked to a project, it counts as that project’s other direct cost.' : 'Project direct cost - expenses linked to a project are added to that project’s cost and reduce its profit.'}>
               <Select value={edit.costHead} onChange={(e) => setEdit({ ...edit, costHead: e.target.value })}>
                 {COST_HEADS.map((h) => (
                   <option key={h} value={h}>
@@ -568,9 +568,9 @@ function ExpenseFormBody({ expense, preset, onClose, onSaved }: ExpenseFormProps
   const lockedToCredit = allocated > EPS // supplier payments already settle this expense
 
   const projectOptions: Option[] = useMemo(() => {
-    const opts: Option[] = (projects.data ?? []).map((p) => ({ value: p.id, label: `${p.code} — ${p.name}`, sub: String(p.status ?? '').replace('_', ' ') }))
+    const opts: Option[] = (projects.data ?? []).map((p) => ({ value: p.id, label: `${p.code} - ${p.name}`, sub: String(p.status ?? '').replace('_', ' ') }))
     if (f.projectId && !opts.some((o) => Number(o.value) === Number(f.projectId)) && expense?.project_id === f.projectId && expense?.project_name) {
-      opts.unshift({ value: f.projectId, label: expense.project_code ? `${expense.project_code} — ${expense.project_name}` : expense.project_name })
+      opts.unshift({ value: f.projectId, label: expense.project_code ? `${expense.project_code} - ${expense.project_name}` : expense.project_name })
     }
     return opts
   }, [projects.data, f.projectId, expense])
@@ -632,11 +632,11 @@ function ExpenseFormBody({ expense, preset, onClose, onSaved }: ExpenseFormProps
   if (category) {
     if (category.cost_head === 'overhead') {
       hint = f.projectId
-        ? { direct: true, text: 'General overhead category, but linked to a project — it will be charged to that project as other direct cost and reduce its profit.' }
-        : { direct: false, text: 'General overhead — shown under operating expenses in Profit & Loss and not charged to any project.' }
+        ? { direct: true, text: 'General overhead category, but linked to a project - it will be charged to that project as other direct cost and reduce its profit.' }
+        : { direct: false, text: 'General overhead - shown under operating expenses in Profit & Loss and not charged to any project.' }
     } else {
       hint = f.projectId
-        ? { direct: true, text: `Project direct cost — added to the project’s ${headLabel(category.cost_head).toLowerCase()} and reduces its profit.` }
+        ? { direct: true, text: `Project direct cost - added to the project’s ${headLabel(category.cost_head).toLowerCase()} and reduces its profit.` }
         : { direct: true, text: `Direct cost (${headLabel(category.cost_head)}). Link it to a project so it is included in that project’s cost and profit.` }
     }
   }
@@ -697,7 +697,7 @@ function ExpenseFormBody({ expense, preset, onClose, onSaved }: ExpenseFormProps
               <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Payment">
                 {[
                   { paid: true, title: 'Paid now', desc: 'Paid from a cash / bank account', icon: <Wallet className="h-4 w-4" /> },
-                  { paid: false, title: 'On credit — payable', desc: 'Payable to a supplier / contractor, settled later with a supplier payment', icon: <Clock className="h-4 w-4" /> }
+                  { paid: false, title: 'On credit - payable', desc: 'Payable to a supplier / contractor, settled later with a supplier payment', icon: <Clock className="h-4 w-4" /> }
                 ].map((o) => {
                   const active = !!f.paid === o.paid
                   return (
@@ -722,7 +722,7 @@ function ExpenseFormBody({ expense, preset, onClose, onSaved }: ExpenseFormProps
             </div>
 
             <Field
-              label={f.paid ? 'Paid to — supplier / contractor (optional)' : 'Payable to — supplier / contractor'}
+              label={f.paid ? 'Paid to - supplier / contractor (optional)' : 'Payable to - supplier / contractor'}
               required={!f.paid}
               className="col-span-2"
               hint={f.paid ? 'Select one to keep this expense in their ledger.' : 'The amount is added to what you owe them. Pay it later from Accounts → Make payment.'}
@@ -744,7 +744,7 @@ function ExpenseFormBody({ expense, preset, onClose, onSaved }: ExpenseFormProps
 
             {f.paid ? (
               <>
-                <Field label="Paid from account" required error={accountMissing ? 'This account is inactive — choose another.' : undefined}>
+                <Field label="Paid from account" required error={accountMissing ? 'This account is inactive - choose another.' : undefined}>
                   {accounts.length === 0 && !accts.loading ? (
                     <div className="rounded-lg bg-warn-soft px-3 py-2 text-[12.5px] text-warn">No active cash / bank account. Add one in Accounts first.</div>
                   ) : (

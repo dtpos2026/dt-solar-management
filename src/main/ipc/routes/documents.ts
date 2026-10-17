@@ -1,4 +1,4 @@
-/** IPC routes — Documents & printing templates (owner: documents area). Owns: docs.*, templates.*. */
+/** IPC routes - Documents & printing templates (owner: documents area). Owns: docs.*, templates.*. */
 import type { RouteMap } from '../common'
 import * as docs from '../../services/documents'
 import * as tpl from '../../services/templates'

@@ -2,7 +2,7 @@ import { useApp } from '../store'
 import { formatMoney, formatQty, round2 } from '@shared/money'
 
 export function money(n: number | null | undefined, opts: { symbol?: boolean; decimals?: number } = {}): string {
-  if (n === null || n === undefined || Number.isNaN(n)) return '—'
+  if (n === null || n === undefined || Number.isNaN(n)) return '-'
   const s = useApp.getState().settings
   const dec = opts.decimals ?? Number(s.money_decimals ?? 0)
   return formatMoney(n, opts.symbol === false ? '' : String(s.currency_symbol ?? 'Rs.'), dec)
@@ -13,26 +13,26 @@ export function moneyFull(n: number | null | undefined): string {
 }
 
 export function qty(n: number | null | undefined): string {
-  if (n === null || n === undefined) return '—'
+  if (n === null || n === undefined) return '-'
   return formatQty(n)
 }
 
 export function pct(n: number | null | undefined): string {
-  if (n === null || n === undefined) return '—'
+  if (n === null || n === undefined) return '-'
   return `${round2(n).toFixed(1)}%`
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 export function date(s: string | null | undefined): string {
-  if (!s) return '—'
+  if (!s) return '-'
   const [y, m, d] = s.slice(0, 10).split('-')
   if (!y || !m || !d) return s
   return `${d} ${MONTHS[Number(m) - 1]} ${y}`
 }
 
 export function dateTime(s: string | null | undefined): string {
-  if (!s) return '—'
+  if (!s) return '-'
   return `${date(s)} ${s.slice(11, 16)}`
 }
 
@@ -106,6 +106,6 @@ export function statusTone(s: string | null | undefined): 'ok' | 'warn' | 'bad' 
 }
 
 export function label(s: string | null | undefined): string {
-  if (!s) return '—'
+  if (!s) return '-'
   return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }

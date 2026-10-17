@@ -585,7 +585,7 @@ export function createDocument(ctx: Ctx, rawInput: DocInput): number {
     refreshDocCost(ctx, id)
     markSourceConverted(ctx, optId(input.refDocId), input.docType)
     handlePaymentAtBilling(ctx, id, input)
-    audit(ctx, 'create', input.docType, id, `${DOC_TYPES[input.docType].label} ${number} — ${totals.grandTotal}`, {
+    audit(ctx, 'create', input.docType, id, `${DOC_TYPES[input.docType].label} ${number} - ${totals.grandTotal}`, {
       party: h.party_name,
       project: h.project_id,
       total: totals.grandTotal

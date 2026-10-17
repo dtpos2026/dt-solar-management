@@ -152,7 +152,7 @@ export async function createClient(input: ClientInput, by: string, link?: { lice
     const ref = clientRef(id)
     if (link) {
       tx.update(licenseRef(link.license.id), { clientId: ref.id, updatedAt: serverTimestamp() })
-      writeLog(tx, link.license.id, 'client_linked', by, `License linked to new client ${code} ${data.company}${link.reason ? ` — ${link.reason}` : ''}`, 'client')
+      writeLog(tx, link.license.id, 'client_linked', by, `License linked to new client ${code} ${data.company}${link.reason ? ` - ${link.reason}` : ''}`, 'client')
     }
     return { id, code }
   })
@@ -166,7 +166,7 @@ export async function updateClient(c: Client, input: ClientInput, by: string): P
   const changes: string[] = []
   for (const k of Object.keys(data) as (keyof typeof data)[]) {
     if (k === 'registeredAt') {
-      if (before.registeredAt !== input.registeredAt) changes.push(`registered ${before.registeredAt || '—'} → ${input.registeredAt || '—'}`)
+      if (before.registeredAt !== input.registeredAt) changes.push(`registered ${before.registeredAt || '-'} → ${input.registeredAt || '-'}`)
       continue
     }
     if (k === 'logo') {
@@ -179,7 +179,7 @@ export async function updateClient(c: Client, input: ClientInput, by: string): P
     }
     const a = (before as unknown as Record<string, unknown>)[k]
     const b = (data as unknown as Record<string, unknown>)[k]
-    if (String(a ?? '') !== String(b ?? '')) changes.push(`${k}: ${String(a ?? '') || '—'} → ${String(b ?? '') || '—'}`)
+    if (String(a ?? '') !== String(b ?? '')) changes.push(`${k}: ${String(a ?? '') || '-'} → ${String(b ?? '') || '-'}`)
   }
   const batch = writeBatch(db)
   batch.update(clientRef(c.id), { ...data, updatedAt: serverTimestamp() })

@@ -107,7 +107,7 @@ let licInflight: { gen: number; p: Promise<License[]> } | null = null
 export { invalidateLicenses }
 
 export async function loadLicenses(opts: { fresh?: boolean } = {}): Promise<License[]> {
-  // The shared live listener (Dashboard / Clients / Licenses pages) is current — use it instead of re-reading.
+  // The shared live listener (Dashboard / Clients / Licenses pages) is current - use it instead of re-reading.
   if (isSharedLive('licenses')) {
     const docs = peekShared<QueryDocumentSnapshot<DocumentData>[]>('licenses')
     if (docs) return docs.map(licenseFromSnap).sort((a, b) => (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0))
@@ -188,7 +188,7 @@ export async function loadHeartbeatsForLicenses(licenseIds: string[]): Promise<H
   return out
 }
 
-/** settings/branding merged over the defaults (any admin may read it). Shared 60 s cache — one read for every page. */
+/** settings/branding merged over the defaults (any admin may read it). Shared 60 s cache - one read for every page. */
 export function loadBranding(): Promise<Branding> {
   return cachedBranding()
 }

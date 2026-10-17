@@ -271,7 +271,7 @@ export type LocationSource = HeartbeatLocation['source'] | 'unavailable'
 /** Source label shown next to every location. IP locations are never called precise. */
 export const LOCATION_SOURCE_LABEL: Record<LocationSource, string> = {
   device: 'Device location service',
-  approximate: 'Approximate (internet IP) — usually the ISP’s city',
+  approximate: 'Approximate (internet IP) - usually the ISP’s city',
   manual: 'Manual (entered by the customer)',
   unavailable: 'Unavailable'
 }

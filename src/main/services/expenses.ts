@@ -1,5 +1,5 @@
 /**
- * Expenses — general business (overhead) expenses and project-specific direct costs
+ * Expenses - general business (overhead) expenses and project-specific direct costs
  * (labor, contractors, transport, site material, other).
  *
  * An expense is either PAID immediately from a cash/bank account, or recorded as PAYABLE to a
@@ -78,7 +78,7 @@ export function createExpense(ctx: Ctx, input: ExpenseInput): number {
         )
         .run({ ...v, firm_id: ctx.firmId, number, created_by: ctx.user.id }).lastInsertRowid
     )
-    audit(ctx, 'create', 'expense', id, `Expense ${number} — ${v.amount}`, input)
+    audit(ctx, 'create', 'expense', id, `Expense ${number} - ${v.amount}`, input)
     return id
   })()
 }

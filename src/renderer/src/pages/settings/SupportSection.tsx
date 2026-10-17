@@ -1,4 +1,4 @@
-/** Settings section — Support messages to Digital Target with offline queue (owner: cloud area). */
+/** Settings section - Support messages to Digital Target with offline queue (owner: cloud area). */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Eraser, MessageCircle, RefreshCw, RotateCcw, Send, Trash2, WifiOff } from 'lucide-react'
 import { api } from '../../api'
@@ -157,13 +157,13 @@ export function SupportSection(): JSX.Element {
         {s.warning && <span className="text-warn">· {s.warning}</span>}
       </div>
       <p className="mb-3 text-[12.5px] text-muted">
-        Messages are saved on this computer first and are sent automatically when you are online — nothing is lost while offline. Replies are checked every 2 minutes while this page is open
+        Messages are saved on this computer first and are sent automatically when you are online - nothing is lost while offline. Replies are checked every 2 minutes while this page is open
         {ov.background ? ' and every 15 minutes in the background' : ''}.
       </p>
 
       <div className="max-h-[52vh] min-h-[200px] space-y-2 overflow-y-auto rounded-xl border border-line bg-surface-2 p-3">
         {ov.messages.length === 0 ? (
-          <Empty icon={<MessageCircle />} title="No messages yet">Write your question below — Digital Target replies here.</Empty>
+          <Empty icon={<MessageCircle />} title="No messages yet">Write your question below - Digital Target replies here.</Empty>
         ) : (
           ov.messages.map((m) => {
             const out = m.direction === 'out'
@@ -208,7 +208,7 @@ export function SupportSection(): JSX.Element {
         </Button>
       </div>
       <div className="mt-1 text-right text-[12px] text-muted">
-        {text.length}/{MAX} · Ctrl+Enter to send
+        {text.length}/{MAX}, Ctrl+Enter to send
       </div>
     </Card>
   )

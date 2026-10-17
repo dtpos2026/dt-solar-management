@@ -178,7 +178,7 @@ export function ImportPanel(): JSX.Element {
       const r = await api<ExecResult & { runId: number }>('import.run', { ...opts(), text: file.text, fileName: file.fileName })
       setResult(r)
       if (r.reconciliation.matched) toast.ok(`Imported ${r.imported} new, updated ${r.updated}, skipped ${r.skipped}. Totals match the file.`)
-      else toast.warn(`Imported ${r.imported} new, updated ${r.updated} — the reconciliation does not match, check import run #${r.runId}.`)
+      else toast.warn(`Imported ${r.imported} new, updated ${r.updated} - the reconciliation does not match, check import run #${r.runId}.`)
       setFile(null)
       setAnalysis(null)
     } catch (e) {
@@ -260,7 +260,7 @@ export function ImportPanel(): JSX.Element {
               {A.fields.map((f) => (
                 <Field key={f.key} label={`${f.label}${f.required ? ' *' : ''}`}>
                   <Select sm value={A.mapping[f.key] === null || A.mapping[f.key] === undefined ? '' : String(A.mapping[f.key])} disabled={!!busy} onChange={(e) => setMap(f.key, e.target.value)}>
-                    <option value="">— not imported —</option>
+                    <option value="">not imported</option>
                     {A.headers.map((h, i) => (
                       <option key={i} value={i}>
                         {h || `Column ${i + 1}`}
@@ -296,7 +296,7 @@ export function ImportPanel(): JSX.Element {
                     ? 'Fix the column mapping first.'
                     : skipInvalid
                       ? 'These rows will be left out:'
-                      : 'Fix these problems in the file (or the mapping), or tick “leave out the invalid ones” — nothing is imported while any row is invalid.'
+                      : 'Fix these problems in the file (or the mapping), or tick “leave out the invalid ones” - nothing is imported while any row is invalid.'
                 }
                 tone="bad"
                 items={A.errors}
@@ -310,7 +310,7 @@ export function ImportPanel(): JSX.Element {
             {A.dryRun && (
               <div className={cx('mt-3 rounded-xl px-4 py-3 text-[12.5px]', A.dryRun.failures.length || !A.dryRun.reconciliation.matched ? 'bg-bad-soft text-bad' : 'bg-ok-soft text-ok')}>
                 <div className="font-semibold">
-                  Dry run (nothing saved): {A.dryRun.imported} new, {A.dryRun.updated} updated, {A.dryRun.skipped} skipped, {A.dryRun.failed} failed —{' '}
+                  Dry run (nothing saved): {A.dryRun.imported} new, {A.dryRun.updated} updated, {A.dryRun.skipped} skipped, {A.dryRun.failed} failed{' '}
                   {A.dryRun.reconciliation.matched ? 'totals match the file.' : 'totals do NOT match the file.'}
                 </div>
                 {A.dryRun.failures.length > 0 && (
@@ -347,7 +347,7 @@ export function ImportPanel(): JSX.Element {
                   key: f.key,
                   header: f.label,
                   align: f.type === 'number' ? ('right' as const) : undefined,
-                  render: (r: Record<string, unknown>) => (r[f.key] === null || r[f.key] === undefined ? <span className="text-muted">—</span> : f.type === 'bool' ? (r[f.key] ? 'Yes' : 'No') : String(r[f.key]))
+                  render: (r: Record<string, unknown>) => (r[f.key] === null || r[f.key] === undefined ? <span className="text-muted">-</span> : f.type === 'bool' ? (r[f.key] ? 'Yes' : 'No') : String(r[f.key]))
                 }))
               ]}
             />
@@ -366,7 +366,7 @@ export function ImportPanel(): JSX.Element {
           columns={[
             { key: 'created_at', header: 'Date', render: (r) => <span className="whitespace-nowrap">{r.created_at}</span> },
             { key: 'kind', header: 'Kind', render: (r) => <Badge tone="info">{r.kind}</Badge> },
-            { key: 'file_name', header: 'File', render: (r) => <span className="truncate">{r.file_name ?? '—'}</span> },
+            { key: 'file_name', header: 'File', render: (r) => <span className="truncate">{r.file_name ?? '-'}</span> },
             { key: 'total_rows', header: 'Rows', align: 'right' },
             { key: 'imported', header: 'Imported', align: 'right' },
             {
@@ -382,7 +382,7 @@ export function ImportPanel(): JSX.Element {
                 )
               }
             },
-            { key: 'created_by_name', header: 'By', render: (r) => r.created_by_name ?? '—' }
+            { key: 'created_by_name', header: 'By', render: (r) => r.created_by_name ?? '-' }
           ]}
         />
       </Card>
@@ -431,7 +431,7 @@ function runResult(r: ImportRun): { label: string; tone: string; detail: string 
   }
   const c = rec?.counts
   if (r.imported === 0 && c && !c.failed && c.skipped) return { label: 'Nothing new (duplicates)', tone: 'muted', detail: `${c.skipped} skipped` }
-  if (r.imported === 0) return { label: 'Failed — nothing saved', tone: 'bad', detail: errs.map((e) => e.message).slice(0, 10).join('\n') }
+  if (r.imported === 0) return { label: 'Failed - nothing saved', tone: 'bad', detail: errs.map((e) => e.message).slice(0, 10).join('\n') }
   if (c?.failed) return { label: `Partly imported (${c.failed} left out)`, tone: 'warn', detail: errs.map((e) => e.message).slice(0, 10).join('\n') }
   if (rec && rec.matched === false) return { label: 'Totals mismatch', tone: 'warn', detail: 'File totals differ from imported totals' }
   return { label: 'Reconciled', tone: 'ok', detail: 'File totals match imported totals' }
@@ -440,7 +440,7 @@ function runResult(r: ImportRun): { label: string; tone: string; detail: string 
 function Stat({ label, value, tone }: { label: string; value: string; tone?: 'ok' | 'bad' }): JSX.Element {
   return (
     <div className="rounded-xl border border-line bg-surface-2 px-3 py-2">
-      <div className="text-[11.5px] text-muted">{label}</div>
+      <div className="text-[12px] text-muted">{label}</div>
       <div className={cx('num text-[17px] font-bold', tone === 'ok' && 'text-ok', tone === 'bad' && 'text-bad')}>{value}</div>
     </div>
   )

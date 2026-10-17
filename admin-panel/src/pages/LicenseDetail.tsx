@@ -68,7 +68,7 @@ export function LicenseDetail() {
   const [fNum, setFNum] = useState(1)
   const [fBool, setFBool] = useState(true)
   const [fClient, setFClient] = useState('')
-  // Delete license (owner only — the rules allow nobody else).
+  // Delete license (owner only - the rules allow nobody else).
   const isOwner = !!useAdmin()?.isOwner
   const [delPrev, setDelPrev] = useState<LicenseDeletePreview | null>(null)
   const [delErr, setDelErr] = useState<string | null>(null)
@@ -88,7 +88,7 @@ export function LicenseDetail() {
   // Every change of the license or its computers bumps updatedAt: reload the per-license reads then.
   const ver = l?.updatedAt?.toMillis() ?? 0
 
-  // Heartbeats of this license only (one query) — version, last verification, last seen, consented location.
+  // Heartbeats of this license only (one query) - version, last verification, last seen, consented location.
   const canHb = HEARTBEAT_READ_PERMS.some(can)
   useEffect(() => {
     if (!canHb) return setHeartbeats(null)
@@ -190,7 +190,7 @@ export function LicenseDetail() {
             <div className="grid grid-cols-2 gap-3">
               <Field label="Plan"><select className="input" value={fPlan} onChange={(e) => setFPlan(e.target.value as Plan)}>{(PAID_PLANS as Plan[]).map((p) => <option key={p} value={p}>{PLAN_PRESETS[p].label}</option>)}</select></Field>
               <Field label="Billing cycle"><select className="input" value={fPlanType} onChange={(e) => setFPlanType(e.target.value as PlanType)}>{PLAN_TYPES.map((p) => <option key={p} value={p}>{PLAN_TYPE_LABEL[p]}</option>)}</select></Field>
-              <div className="col-span-2 text-[12px] text-[#7a6d92]">{PLAN_PRESETS[fPlan].maxFirms} firm(s) · {PLAN_PRESETS[fPlan].maxDevices} computer(s) · {PLAN_PRESETS[fPlan].maxUsers} user(s)</div>
+              <div className="col-span-2 text-[12px] text-[#7a6d92]">{PLAN_PRESETS[fPlan].maxFirms} firm(s), {PLAN_PRESETS[fPlan].maxDevices} computer(s), {PLAN_PRESETS[fPlan].maxUsers} user(s)</div>
             </div>
           ),
           run: async (reason) => {
@@ -236,11 +236,11 @@ export function LicenseDetail() {
             </ul>
           ),
           run: async (reason) => {
-            if (!key) throw new Error('Load the signing key first — detached certificates must be signed now.')
+            if (!key) throw new Error('Load the signing key first - detached certificates must be signed now.')
             await detachLicense(lic.id, reason, by)
             const r = await publishCertificates(lic.id, key, by, `detached: ${reason}`)
             setCerts(r.certs)
-            setMsg({ tone: 'success', text: `License detached. ${r.certs.length} detached certificate(s) published — download them below for the offline hand-over.` })
+            setMsg({ tone: 'success', text: `License detached. ${r.certs.length} detached certificate(s) published - download them below for the offline hand-over.` })
           }
         }
       case 'publish':
@@ -275,14 +275,14 @@ export function LicenseDetail() {
           title: 'Delete license permanently', confirmLabel: 'Delete license', tone: 'danger', reason: true, typeToConfirm: 'DELETE',
           body: (
             <div className="space-y-2">
-              <p>License <b className="font-mono">{lic.licenseKey}</b> ({lic.businessName || lic.customerName || '—'}) is deleted with everything that belongs to it. This cannot be undone — <b>Revoke</b> keeps the record instead.</p>
+              <p>License <b className="font-mono">{lic.licenseKey}</b> ({lic.businessName || lic.customerName || '-'}) is deleted with everything that belongs to it. This cannot be undone - <b>Revoke</b> keeps the record instead.</p>
               {delErr ? <div className="rounded-lg bg-red-50 p-2.5 text-[13px] text-red-700">{delErr}</div> : !delPrev ? <Loading label="Counting computers, history and requests…" /> : (
                 <ul className="list-disc space-y-1 pl-5 text-[13px]">
                   <li>{delPrev.devices.length} computer record(s) deleted{activeN ? ` (${activeN} still active)` : ''}.</li>
                   <li>{delPrev.history.length} license history entr{delPrev.history.length === 1 ? 'y' : 'ies'} deleted; the activity log keeps a “license deleted” entry.</li>
                   <li>The published license status and the activation pass of the key are removed.</li>
                   {delPrev.requests.length > 0 && <li>{delPrev.requests.length} pending activation request(s) are answered as rejected.</li>}
-                  {lic.clientId && <li>Unlinked from client {client ? `${client.code} · ${client.company}` : lic.clientId} (the client record is kept).</li>}
+                  {lic.clientId && <li>Unlinked from client {client ? `${client.code}, ${client.company}` : lic.clientId} (the client record is kept).</li>}
                   <li>{delPrev.invoices === null ? 'Invoices are never deleted.' : delPrev.invoices ? `${delPrev.invoices} invoice(s) are kept (they keep their own copy of the customer details).` : 'No invoice mentions this license.'}</li>
                 </ul>
               )}
@@ -296,7 +296,7 @@ export function LicenseDetail() {
             </div>
           ),
           run: async (reason) => {
-            if (!delPrev) throw new Error('Still counting what belongs to this license — try again in a moment.')
+            if (!delPrev) throw new Error('Still counting what belongs to this license - try again in a moment.')
             deleting.current = true
             try {
               const r = await deleteLicense(lic, by, reason, { invoices: BILLING_READ_PERMS.some(can) })
@@ -315,8 +315,8 @@ export function LicenseDetail() {
           extra: (
             <Field label="Client">
               <select className="input" value={fClient} onChange={(e) => setFClient(e.target.value)}>
-                <option value="">— No client —</option>
-                {clients.data.filter((c) => c.status !== 'archived' || c.id === lic.clientId).map((c) => <option key={c.id} value={c.id}>{c.code} · {c.company}</option>)}
+                <option value="">No client</option>
+                {clients.data.filter((c) => c.status !== 'archived' || c.id === lic.clientId).map((c) => <option key={c.id} value={c.id}>{c.code}, {c.company}</option>)}
               </select>
             </Field>
           ),
@@ -349,7 +349,7 @@ export function LicenseDetail() {
       <button className="mb-3 flex items-center gap-1 text-[13px] text-[#6b5d85] hover:underline" onClick={() => nav('/licenses')}><ArrowLeft className="h-4 w-4" />All licenses</button>
       <PageTitle
         title={lic.businessName || lic.customerName || 'License'}
-        sub={`${lic.customerName}${lic.city ? ` · ${lic.city}` : ''}${lic.phone ? ` · ${lic.phone}` : ''}`}
+        sub={`${lic.customerName}${lic.city ? `, ${lic.city}` : ''}${lic.phone ? `, ${lic.phone}` : ''}`}
         actions={(manage || isOwner) && <>
           {manage && <button className="btn btn-secondary" onClick={() => setEdit(true)}><Pencil className="h-4 w-4" />Edit</button>}
           {isOwner && <button className="btn btn-danger" onClick={openDelete}><Trash2 className="h-4 w-4" />Delete license</button>}
@@ -359,7 +359,7 @@ export function LicenseDetail() {
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Stat label="Status" value={<Pill value={st} />} />
-        <Stat label="Plan" value={<span className="text-[15px]">{PLAN_PRESETS[lic.plan]?.label ?? lic.plan} · {PLAN_TYPE_LABEL[lic.planType]}</span>} />
+        <Stat label="Plan" value={<span className="text-[15px]">{PLAN_PRESETS[lic.plan]?.label ?? lic.plan}, {PLAN_TYPE_LABEL[lic.planType]}</span>} />
         <Stat label="Expiry" value={<span className="text-[15px]">{expiryLabel(lic)}</span>} />
         <Stat label="Computers" value={`${slots} / ${lic.maxDevices}`} />
         <Stat label="Payment" value={<Pill value={payStatus} label={payStatus === 'none' ? 'no invoice' : payStatus} />} />
@@ -373,9 +373,9 @@ export function LicenseDetail() {
         <div className="grid gap-x-6 gap-y-2 px-4 py-3 text-[13px] md:grid-cols-3">
           <div><span className="text-[#7a6d92]">Key: </span><code className="font-bold">{lic.licenseKey}</code></div>
           <div className="flex items-center gap-1"><span className="text-[#7a6d92]">License id: </span><code>{lic.id}</code><button className="rounded p-0.5 text-[#7a6d92] hover:text-[#3d096d]" title="Copy license id" aria-label="Copy license id" onClick={() => copy(lic.id)}><Copy className="h-3.5 w-3.5" /></button></div>
-          <div><span className="text-[#7a6d92]">Product / plan: </span>DT Solar Pro · {PLAN_PRESETS[lic.plan]?.label ?? lic.plan} · {PLAN_TYPE_LABEL[lic.planType]}</div>
-          <div><span className="text-[#7a6d92]">Device limit: </span>{lic.maxDevices} computer(s) · new computers need approval</div>
-          <div><span className="text-[#7a6d92]">Firms: </span>{lic.maxFirms} · <span className="text-[#7a6d92]">Users: </span>{lic.maxUsers}</div>
+          <div><span className="text-[#7a6d92]">Product / plan: </span>DT Solar Pro, {PLAN_PRESETS[lic.plan]?.label ?? lic.plan}, {PLAN_TYPE_LABEL[lic.planType]}</div>
+          <div><span className="text-[#7a6d92]">Device limit: </span>{lic.maxDevices} computer(s), new computers need approval</div>
+          <div><span className="text-[#7a6d92]">Firms: </span>{lic.maxFirms}, <span className="text-[#7a6d92]">Users: </span>{lic.maxUsers}</div>
           <div><span className="text-[#7a6d92]">Check-in: </span>{lic.detached || lic.checkinDays <= 0 ? 'Not required' : `every ${lic.checkinDays} days, grace period ${lic.graceDays} days`}</div>
           <div><span className="text-[#7a6d92]">Powered by line: </span>{lic.poweredBy ? 'shown' : 'hidden'}</div>
           <GraceExplainer className="col-span-2 mt-2" checkinDays={lic.checkinDays} graceDays={lic.graceDays} detached={lic.detached} />
@@ -383,7 +383,7 @@ export function LicenseDetail() {
           <div><span className="text-[#7a6d92]">First activation: </span>{fmtDateTime(lic.activatedAt)}</div>
           <div>
             <span className="text-[#7a6d92]">Client: </span>
-            {client ? <Link className="font-semibold text-[#3d096d] underline" to={`/clients/${client.id}`}>{client.code} · {client.company}</Link> : lic.clientId ? <code>{lic.clientId}</code> : 'not linked'}
+            {client ? <Link className="font-semibold text-[#3d096d] underline" to={`/clients/${client.id}`}>{client.code}, {client.company}</Link> : lic.clientId ? <code>{lic.clientId}</code> : 'not linked'}
           </div>
           {lic.detached && <div className="md:col-span-2"><span className="text-[#7a6d92]">Detached: </span>{fmtDateTime(lic.detachedAt)} by {lic.detachedBy}</div>}
           {lic.notes && <div className="md:col-span-3"><span className="text-[#7a6d92]">Notes: </span>{lic.notes}</div>}
@@ -412,13 +412,13 @@ export function LicenseDetail() {
         sub={fresh.length ? (outdated ? `${outdated} of ${fresh.length} active computer(s) need a new certificate` : 'All active computers have a current certificate') : 'No active computers'}
         actions={(manage || devManage) && fresh.length > 0 && <button className="btn btn-sm btn-primary" disabled={!key} title={key ? '' : 'Load the signing key first'} onClick={() => open({ k: 'publish' })}><FileSignature className="h-4 w-4" />Publish certificates</button>}
       >
-        {!key && outdated > 0 && <div className="px-4 py-2 text-[13px] text-amber-700">No signing key loaded — load it on the <Link className="underline" to="/key">Signing key</Link> page to publish.</div>}
+        {!key && outdated > 0 && <div className="px-4 py-2 text-[13px] text-amber-700">No signing key loaded - load it on the <Link className="underline" to="/key">Signing key</Link> page to publish.</div>}
         {fresh.length > 0 && (
           <table className="w-full text-[13px]">
             <tbody>
               {fresh.map((f) => (
                 <tr key={f.deviceId} className="border-t border-[#f1ecf7]">
-                  <td className="px-4 py-2"><code title={f.deviceId}>{devices.find((d) => d.deviceId === f.deviceId)?.deviceName || 'Device'} · {maskDeviceId(f.deviceId)}</code></td>
+                  <td className="px-4 py-2"><code title={f.deviceId}>{devices.find((d) => d.deviceId === f.deviceId)?.deviceName || 'Device'}, {maskDeviceId(f.deviceId)}</code></td>
                   <td className="px-4 py-2"><Pill value={f.state === 'current' ? 'active' : f.state === 'missing' ? 'pending' : 'expired'} label={f.state} /></td>
                   <td className="px-4 py-2 text-[#7a6d92]">{f.diff.length ? `differs: ${f.diff.join(', ')}` : f.issuedAt ? `issued ${fmtDateTime(f.issuedAt)}` : ''}</td>
                   <td className="px-4 py-2 text-right">
@@ -433,22 +433,22 @@ export function LicenseDetail() {
         )}
       </Panel>
 
-      <Panel className="mb-4" title={`Computers (${devices.length})`} sub={`${slots} of ${lic.maxDevices} slot(s) used — active, suspended and revoked computers hold a slot; released ones do not`}>
+      <Panel className="mb-4" title={`Computers (${devices.length})`} sub={`${slots} of ${lic.maxDevices} slot(s) used - active, suspended and revoked computers hold a slot; released ones do not`}>
         {devices.length === 0 ? <Empty title="No computer activated yet" /> : (
           <div className="overflow-x-auto">
             <table className="w-full text-[13px]">
-              <thead className="text-left text-[12px] text-[#7a6d92]"><tr><th className="px-4 py-2">Computer</th><th className="px-4 py-2">Windows · app version</th><th className="px-4 py-2">Activated</th><th className="px-4 py-2">Last verification</th><th className="px-4 py-2">Last known location</th><th className="px-4 py-2">Approval / status</th><th className="px-4 py-2" /></tr></thead>
+              <thead className="text-left text-[12px] text-[#7a6d92]"><tr><th className="px-4 py-2">Computer</th><th className="px-4 py-2">Windows, app version</th><th className="px-4 py-2">Activated</th><th className="px-4 py-2">Last verification</th><th className="px-4 py-2">Last known location</th><th className="px-4 py-2">Approval / status</th><th className="px-4 py-2" /></tr></thead>
               <tbody>
                 {devices.map((d) => {
                   const hb = hbByDevice.get(d.deviceId)
                   return (
                   <tr key={d.deviceId} className="border-t border-[#f1ecf7] align-top">
-                    <td className="px-4 py-2"><div className="font-semibold">{d.deviceName || '—'}</div><code className="text-[11px] text-[#7a6d92]" title={d.deviceId}>{maskDeviceId(d.deviceId)}</code><button className="ml-1 rounded p-0.5 text-[#7a6d92] hover:text-[#3d096d]" title="Copy device id" aria-label="Copy device id" onClick={() => copy(d.deviceId)}><Copy className="inline h-3 w-3" /></button></td>
-                    <td className="px-4 py-2">{hb?.os || d.os || '—'}<div className="text-[11.5px] text-[#7a6d92]">v{hb?.appVersion || d.appVersion || '—'}</div></td>
-                    <td className="px-4 py-2">{fmtDateTime(d.activatedAt)} <div className="text-[11.5px] text-[#7a6d92]">{d.activationType}</div></td>
-                    <td className="px-4 py-2">{hb?.lastCheckAt ? fmtDateTime(hb.lastCheckAt) : heartbeats === null ? <span className="text-[#9a8fb0]">not visible</span> : '—'}{hb?.lastSeenMs ? <div className="text-[11.5px] text-[#7a6d92]">seen {timeAgo(hb.lastSeenMs)}</div> : null}</td>
+                    <td className="px-4 py-2"><div className="font-semibold">{d.deviceName || '-'}</div><code className="text-[12px] text-[#7a6d92]" title={d.deviceId}>{maskDeviceId(d.deviceId)}</code><button className="ml-1 rounded p-0.5 text-[#7a6d92] hover:text-[#3d096d]" title="Copy device id" aria-label="Copy device id" onClick={() => copy(d.deviceId)}><Copy className="inline h-3 w-3" /></button></td>
+                    <td className="px-4 py-2">{hb?.os || d.os || '-'}<div className="text-[12px] text-[#7a6d92]">v{hb?.appVersion || d.appVersion || '-'}</div></td>
+                    <td className="px-4 py-2">{fmtDateTime(d.activatedAt)} <div className="text-[12px] text-[#7a6d92]">{d.activationType}</div></td>
+                    <td className="px-4 py-2">{hb?.lastCheckAt ? fmtDateTime(hb.lastCheckAt) : heartbeats === null ? <span className="text-[#9a8fb0]">not visible</span> : '-'}{hb?.lastSeenMs ? <div className="text-[12px] text-[#7a6d92]">seen {timeAgo(hb.lastSeenMs)}</div> : null}</td>
                     <td className="px-4 py-2 text-[12.5px]"><LocationLine loc={hb?.location ?? null} /></td>
-                    <td className="px-4 py-2"><div className="text-[11.5px] text-[#7a6d92]">approved</div><Pill value={d.status} />{d.statusNote && <div className="text-[11px] text-[#7a6d92]">{d.statusNote}</div>}</td>
+                    <td className="px-4 py-2"><div className="text-[12px] text-[#7a6d92]">approved</div><Pill value={d.status} />{d.statusNote && <div className="text-[12px] text-[#7a6d92]">{d.statusNote}</div>}</td>
                     <td className="px-4 py-2 text-right">
                       <div className="flex justify-end gap-1">
                         {devManage && d.status === 'active' && <button className="btn btn-sm btn-secondary" onClick={() => issue(d)} disabled={!key}>Issue .dtlic</button>}
@@ -468,7 +468,7 @@ export function LicenseDetail() {
         {requests.length > 0 && (
           <div className="border-t border-[#ece6f4] px-4 py-3 text-[13px]">
             <b>Awaiting approval ({requests.length}):</b>{' '}
-            {requests.map((r) => `${r.deviceName || 'Device'} (${maskDeviceId(r.deviceId)})`).join(', ')} —{' '}
+            {requests.map((r) => `${r.deviceName || 'Device'} (${maskDeviceId(r.deviceId)})`).join(', ')}{' '}
             <Link className="font-semibold text-[#3d096d] underline" to="/licenses?tab=requests">review activation requests</Link>
           </div>
         )}

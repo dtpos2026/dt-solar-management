@@ -1,5 +1,5 @@
 /**
- * Billing overview tables (pure — no Firebase imports, unit tested in tests/portal-core.test.ts):
+ * Billing overview tables (pure - no Firebase imports, unit tested in tests/portal-core.test.ts):
  * per-client totals and payment status, built only from existing invoice documents.
  */
 export interface BillInvoice {
@@ -51,7 +51,7 @@ export function billingByClient(invoices: readonly BillInvoice[], now = Date.now
     const key = i.clientId || `name:${i.clientName}`
     let c = m.get(key)
     if (!c) {
-      c = { clientId: i.clientId, clientName: i.clientName || '—', planTypes: [], invoices: 0, total: 0, paid: 0, balance: 0, overdue: 0, nextDueMs: null, lastPaymentAtMs: null, firstIssueMs: null, lastIssueMs: null, state: 'none' }
+      c = { clientId: i.clientId, clientName: i.clientName || '-', planTypes: [], invoices: 0, total: 0, paid: 0, balance: 0, overdue: 0, nextDueMs: null, lastPaymentAtMs: null, firstIssueMs: null, lastIssueMs: null, state: 'none' }
       m.set(key, c)
     }
     c.invoices++

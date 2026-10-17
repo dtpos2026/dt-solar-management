@@ -225,7 +225,7 @@ export function autoMap(headers: string[], kind: ImportKind): Mapping {
   const h = headers.map(norm)
   const used = new Set<number>()
   const map: Mapping = {}
-  // Pass 1: exact matches on the label (what our own export writes), key or an alias — for every field first,
+  // Pass 1: exact matches on the label (what our own export writes), key or an alias - for every field first,
   // so a loose match for one field never steals the exact column of another.
   // Pass 0: the exact label wins (our own export), so an alias of an earlier field never takes a later field's column.
   for (const fl of fields) {
@@ -411,8 +411,8 @@ function resolveParty(ctx: Ctx, type: PartyType, name: string, phone: string): {
   const label = type === 'customer' ? 'Customer' : 'Supplier'
   const found = findParties(ctx, type, name, phone)
   if (found.length === 1) return { id: found[0].id }
-  if (found.length > 1) return { error: `${label} "${name}" matches ${found.length} records — add the phone number column to tell them apart.` }
-  return { error: `${label} "${name}"${phone ? ` (${phone})` : ''} was not found — import ${type}s first.` }
+  if (found.length > 1) return { error: `${label} "${name}" matches ${found.length} records - add the phone number column to tell them apart.` }
+  return { error: `${label} "${name}"${phone ? ` (${phone})` : ''} was not found - import ${type}s first.` }
 }
 
 function resolveAccount(ctx: Ctx, name: string): { id?: number; error?: string } {
@@ -433,7 +433,7 @@ function findProduct(ctx: Ctx, sku: string, name: string): { id?: number; error?
   }
   if (!name) return {}
   const rows = ctx.db.prepare('SELECT id FROM products WHERE name = ? COLLATE NOCASE AND (firm_id IS NULL OR firm_id = ?)').all(name, ctx.firmId) as Array<{ id: number }>
-  if (rows.length > 1) return { error: `Product name "${name}" matches ${rows.length} products — add the SKU column.` }
+  if (rows.length > 1) return { error: `Product name "${name}" matches ${rows.length} products - add the SKU column.` }
   return rows.length ? { id: rows[0].id } : {}
 }
 
@@ -607,7 +607,7 @@ function prepare(ctx: Ctx, opts: ImportOptions): Prepared {
       if (exists) {
         rec.action = 'skip'
         rec.existingId = exists.id
-        rec.reason = `Invoice ${head.number} already exists${duplicates === 'update' ? ' — existing invoices are never changed by an import' : ''}.`
+        rec.reason = `Invoice ${head.number} already exists${duplicates === 'update' ? ' - existing invoices are never changed by an import' : ''}.`
       }
       nonNeg(g.first, head, ['docDiscount', 'otherCharges', 'paidAmount'])
       if (rec.action !== 'skip') {
@@ -628,7 +628,7 @@ function prepare(ctx: Ctx, opts: ImportOptions): Prepared {
           if (v.qty !== null && n0(v.qty) <= 0) fail(r.row, 'Qty must be greater than zero.', 'qty')
           const pr = findProduct(ctx, s0(v.itemSku), s0(v.itemName))
           if (pr.error) fail(r.row, pr.error, 'itemSku')
-          else if (!pr.id && ok(r.row)) warn(r.row, `"${s0(v.itemName)}" is not a product in the list — imported as a text line (no stock effect).`)
+          else if (!pr.id && ok(r.row)) warn(r.row, `"${s0(v.itemName)}" is not a product in the list - imported as a text line (no stock effect).`)
           rec.lines!.push({ ...v, productId: pr.id ?? null })
         }
       }
@@ -655,7 +655,7 @@ function prepare(ctx: Ctx, opts: ImportOptions): Prepared {
         if (!existing) {
           const byName = db.prepare('SELECT id, sku FROM products WHERE name = ? COLLATE NOCASE AND (firm_id IS NULL OR firm_id = ?)').all(name, ctx.firmId) as Array<{ id: number; sku: string | null }>
           if (byName.length > 1) {
-            fail(row, `Product "${name}" matches ${byName.length} products — add the SKU column.`, 'name')
+            fail(row, `Product "${name}" matches ${byName.length} products - add the SKU column.`, 'name')
             continue
           }
           existing = byName[0]
@@ -673,7 +673,7 @@ function prepare(ctx: Ctx, opts: ImportOptions): Prepared {
           rec.existingId = existing.id
           rec.action = duplicates === 'update' ? 'update' : 'skip'
           rec.reason = `Product "${name}" already exists.`
-          if (rec.action === 'update' && n0(v.openingQty) > 0) warn(row, `"${name}" exists: opening qty is not changed for existing products — use the Stock levels import.`)
+          if (rec.action === 'update' && n0(v.openingQty) > 0) warn(row, `"${name}" exists: opening qty is not changed for existing products - use the Stock levels import.`)
         }
         if (!v.openingCost && n0(v.openingQty) > 0) v.openingCost = n0(v.purchasePrice)
       } else if (kind === 'categories') {
@@ -696,7 +696,7 @@ function prepare(ctx: Ctx, opts: ImportOptions): Prepared {
         if (dupInFile(`${name}|${phone}`, row, `"${name}"${phone ? ` (${phone})` : ''}`)) continue
         const ex = findParties(ctx, type, name, phone)
         if (ex.length > 1) {
-          fail(row, `"${name}" matches ${ex.length} existing records — add the phone number to tell them apart.`, 'name')
+          fail(row, `"${name}" matches ${ex.length} existing records - add the phone number to tell them apart.`, 'name')
           continue
         }
         if (ex.length === 1) {
@@ -717,7 +717,7 @@ function prepare(ctx: Ctx, opts: ImportOptions): Prepared {
           if (ex) {
             rec.existingId = ex.id
             rec.action = 'skip'
-            rec.reason = `Payment ${num} already exists — existing payments are never changed by an import.`
+            rec.reason = `Payment ${num} already exists - existing payments are never changed by an import.`
           }
         }
         if (rec.action !== 'skip' && dir) {
@@ -737,7 +737,7 @@ function prepare(ctx: Ctx, opts: ImportOptions): Prepared {
             else {
               const sum = r2(al.items.reduce((s, x) => s + x.amount, 0))
               if (sum > n0(v.amount) + 0.001) fail(row, `Against amounts (${sum}) are more than the payment amount.`, 'against')
-              for (const it of al.items) if (!resolveAllocation(ctx, it.number)) fail(row, `Document "${it.number}" was not found — import the invoices / expenses first.`, 'against')
+              for (const it of al.items) if (!resolveAllocation(ctx, it.number)) fail(row, `Document "${it.number}" was not found - import the invoices / expenses first.`, 'against')
               v.allocations = JSON.stringify(al.items)
             }
           }
@@ -752,7 +752,7 @@ function prepare(ctx: Ctx, opts: ImportOptions): Prepared {
           if (ex) {
             rec.existingId = ex.id
             rec.action = 'skip'
-            rec.reason = `Expense ${num} already exists — existing expenses are never changed by an import.`
+            rec.reason = `Expense ${num} already exists - existing expenses are never changed by an import.`
           }
         }
         if (rec.action !== 'skip') {
@@ -776,7 +776,7 @@ function prepare(ctx: Ctx, opts: ImportOptions): Prepared {
         nonNeg(row, v, ['unitCost'])
         const pr = findProduct(ctx, s0(v.sku), s0(v.name))
         if (pr.error) fail(row, pr.error, 'sku')
-        else if (!pr.id) fail(row, `Product "${s0(v.name)}" was not found — import products first.`, 'name')
+        else if (!pr.id) fail(row, `Product "${s0(v.name)}" was not found - import products first.`, 'name')
         const wh = findWarehouse(ctx, s0(v.warehouse))
         if (wh.error) fail(row, wh.error, 'warehouse')
         if (pr.id && wh.id) {
@@ -1152,7 +1152,7 @@ function execute(ctx: Ctx, prep: Prepared, opts: { commit: boolean; skipInvalid:
       }
       if (!opts.commit) throw new Rollback()
       if (failures.length && !opts.skipInvalid) throw new Rollback()
-      if (!matched) throw new AppError('Imported totals do not match the file totals — the import was rolled back.', 'RECONCILE')
+      if (!matched) throw new AppError('Imported totals do not match the file totals - the import was rolled back.', 'RECONCILE')
       opts.onCommit?.(result)
     })()
   } catch (e) {

@@ -290,7 +290,7 @@ export function writeAudit(w: Writer, action: string, by: string, licenseId: str
   writeAuditEntry(w, { action, by, licenseId, details, category })
 }
 
-/** Audit entry with an explicit target (e.g. a client) — for use inside batches / transactions. */
+/** Audit entry with an explicit target (e.g. a client) - for use inside batches / transactions. */
 export function writeAuditEntry(
   w: Writer,
   a: { action: string; by: string; category: AuditCategory; details: string; licenseId?: string | null; target?: string; targetType?: string; meta?: Record<string, unknown> }
@@ -472,7 +472,7 @@ function writeLicenseUpdate(w: Writer, current: License, data: ReturnType<typeof
       if (cert) certChange = true
     }
   }
-  const fmt = (v: unknown) => (Array.isArray(v) ? v.join(', ') || 'none' : String(v ?? '') || '—')
+  const fmt = (v: unknown) => (Array.isArray(v) ? v.join(', ') || 'none' : String(v ?? '') || '-')
   cmp('Customer', current.customerName, data.customerName)
   cmp('Business', current.businessName, data.businessName)
   cmp('Phone', current.phone, data.phone)
@@ -508,7 +508,7 @@ function writeLicenseUpdate(w: Writer, current: License, data: ReturnType<typeof
 }
 
 export async function setLicenseState(l: License, status: LicenseState, by: string, reason: string): Promise<void> {
-  if (l.detached && status !== 'active') throw new Error('This license is detached from central management — it can no longer be suspended or revoked remotely.')
+  if (l.detached && status !== 'active') throw new Error('This license is detached from central management - it can no longer be suspended or revoked remotely.')
   const action = status === 'active' ? 'license_reactivated' : status === 'suspended' ? 'license_suspended' : 'license_revoked'
   const batch = writeBatch(db)
   batch.update(licenseRef(l.id), { status, updatedAt: serverTimestamp() })
@@ -629,7 +629,7 @@ export async function renewLicense(l: License, newExpiry: Date | null, by: strin
 
 /**
  * Lifetime detachment (Module 8): marks the license detached. The caller signs and publishes the detached
- * certificates (approve.ts publishCertificates) — detachment is only offered while the signing key is loaded.
+ * certificates (approve.ts publishCertificates) - detachment is only offered while the signing key is loaded.
  */
 export async function detachLicense(licenseId: string, reason: string, by: string): Promise<License> {
   return runTransaction(db, async (tx) => {
@@ -686,7 +686,7 @@ export function deactivateDeviceInTx(
     updatedAt: serverTimestamp()
   })
   tx.set(licenseStatusRef(lic.id), licenseStatusPatch(lic, { add: [deviceId] }, [deviceId]), { merge: true })
-  writeLog(tx, lic.id, 'device_released', by, withReason(`${deviceLabel(dev.deviceName, deviceId)} released ${how} — slot freed`, note), 'license')
+  writeLog(tx, lic.id, 'device_released', by, withReason(`${deviceLabel(dev.deviceName, deviceId)} released ${how} - slot freed`, note), 'license')
   return true
 }
 

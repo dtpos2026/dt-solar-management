@@ -183,7 +183,7 @@ export interface LicensePayload {
   leaseUntil: null
   graceDays: number
   checkinDays: number
-  /** v1.1 (src/main/license/types.ts) — optional so older certificates stay valid. */
+  /** v1.1 (src/main/license/types.ts) - optional so older certificates stay valid. */
   planType?: string
   clientId?: string
   maxDevices?: number

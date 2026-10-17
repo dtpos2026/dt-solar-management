@@ -257,7 +257,7 @@ function UsersTab({ tick, onEdit }: { tick: number; onEdit: (u: UserRow) => void
     {
       key: 'full_name',
       header: 'Name',
-      value: (u) => [u.full_name, u.email, u.phone].filter(Boolean).join(' · '),
+      value: (u) => [u.full_name, u.email, u.phone].filter(Boolean).join(', '),
       render: (u) => (
         <div className="flex items-center gap-3">
           <div className={cx('flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[13px] font-bold', u.is_owner ? 'bg-warn-soft text-warn' : 'bg-brand-soft text-brand')}>
@@ -289,7 +289,7 @@ function UsersTab({ tick, onEdit }: { tick: number; onEdit: (u: UserRow) => void
                 </Badge>
               )}
             </div>
-            <div className="truncate text-[12px] text-muted">{[u.email, u.phone].filter(Boolean).join(' · ') || '—'}</div>
+            <div className="truncate text-[12px] text-muted">{[u.email, u.phone].filter(Boolean).join(', ') || '-'}</div>
           </div>
         </div>
       )
@@ -375,7 +375,7 @@ function UsersTab({ tick, onEdit }: { tick: number; onEdit: (u: UserRow) => void
             </Select>
             <span className="text-[12.5px] text-muted">
               {activeCount} active user{activeCount === 1 ? '' : 's'}
-              {maxUsers > 0 ? ` · your license allows ${maxUsers}` : ''}
+              {maxUsers > 0 ? `, your license allows ${maxUsers}` : ''}
             </span>
           </>
         }
@@ -503,7 +503,7 @@ function UserPinDialog({ user, onClose, onSaved }: { user: UserRow | null; onClo
             <div className="min-w-0">
               <div className="truncate font-semibold">{user.full_name}</div>
               <div className="text-[12px] text-muted">
-                {user.role_name} · {user.has_pin ? (user.pin_locked ? 'PIN locked after wrong attempts' : 'PIN is set') : 'No PIN yet'}
+                {user.role_name}, {user.has_pin ? (user.pin_locked ? 'PIN locked after wrong attempts' : 'PIN is set') : 'No PIN yet'}
               </div>
             </div>
           </div>
@@ -612,8 +612,8 @@ function UserForm({ open, user, onClose, onSaved }: { open: boolean; user?: User
       open={open}
       onClose={onClose}
       size="lg"
-      title={isNew ? 'New user' : `Edit user — ${user?.full_name}`}
-      subtitle={isNew ? 'Create a sign-in for a staff member and choose what they can do' : isOwner ? 'Owner account — always has full access to every firm' : undefined}
+      title={isNew ? 'New user' : `Edit user - ${user?.full_name}`}
+      subtitle={isNew ? 'Create a sign-in for a staff member and choose what they can do' : isOwner ? 'Owner account - always has full access to every firm' : undefined}
       footer={
         <>
           <Button onClick={onClose}>Cancel</Button>
@@ -641,7 +641,7 @@ function UserForm({ open, user, onClose, onSaved }: { open: boolean; user?: User
             label="Role"
             required
             hint={isOwner ? 'The owner always keeps the Super Administrator role.' : role?.description || undefined}
-            error={isSelf && !isOwner && user && Number(f.roleId) !== user.role_id ? 'You are changing your own role — you may lose access to this page.' : undefined}
+            error={isSelf && !isOwner && user && Number(f.roleId) !== user.role_id ? 'You are changing your own role - you may lose access to this page.' : undefined}
           >
             <Select value={f.roleId || ''} disabled={isOwner} onChange={(e) => setF({ ...f, roleId: Number(e.target.value) })}>
               {!f.roleId && <option value="">Select a role…</option>}
@@ -890,7 +890,7 @@ function RolesTab(): JSX.Element {
               </div>
               <div className="text-[12.5px] text-muted">
                 {readOnly ? 'Full access to everything' : `${draft.permissions.filter((p) => allKeys.includes(p)).length} of ${allKeys.length} permissions`}
-                {current ? ` · assigned to ${current.user_count} user${current.user_count === 1 ? '' : 's'}` : ''}
+                {current ? `, assigned to ${current.user_count} user${current.user_count === 1 ? '' : 's'}` : ''}
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -1137,8 +1137,8 @@ function AuditTab(): JSX.Element {
 
   const cols: Array<Column<AuditRow>> = [
     { key: 'ts', header: 'Time', sortable: false, render: (r) => <span className="whitespace-nowrap">{dateTime(r.ts)}</span> },
-    { key: 'username', header: 'User', sortable: false, render: (r) => <span className="font-medium">{r.username ?? '—'}</span> },
-    { key: 'firm_name', header: 'Firm', sortable: false, render: (r) => <span className="block max-w-[160px] truncate text-muted">{r.firm_name ?? '—'}</span> },
+    { key: 'username', header: 'User', sortable: false, render: (r) => <span className="font-medium">{r.username ?? '-'}</span> },
+    { key: 'firm_name', header: 'Firm', sortable: false, render: (r) => <span className="block max-w-[160px] truncate text-muted">{r.firm_name ?? '-'}</span> },
     { key: 'action', header: 'Action', sortable: false, render: (r) => <Badge tone={actionTone(r.action)}>{label(r.action)}</Badge> },
     {
       key: 'entity',
@@ -1146,7 +1146,7 @@ function AuditTab(): JSX.Element {
       sortable: false,
       render: (r) => (
         <span className="whitespace-nowrap">
-          {r.entity ? label(r.entity) : '—'}
+          {r.entity ? label(r.entity) : '-'}
           {r.entity_id ? <span className="text-muted"> #{r.entity_id}</span> : null}
         </span>
       )
@@ -1158,7 +1158,7 @@ function AuditTab(): JSX.Element {
       render: (r) => (
         <div className="flex items-center gap-2">
           <span className="block max-w-[460px] truncate" title={r.summary ?? ''}>
-            {r.summary ?? '—'}
+            {r.summary ?? '-'}
           </span>
           {r.details && <Badge tone="muted">details</Badge>}
         </div>
@@ -1282,7 +1282,7 @@ function AuditTab(): JSX.Element {
         open={!!detail}
         onClose={() => setDetail(null)}
         size="lg"
-        title={detail ? `${label(detail.action)}${detail.entity ? ` · ${label(detail.entity)}` : ''}${detail.entity_id ? ` #${detail.entity_id}` : ''}` : ''}
+        title={detail ? `${label(detail.action)}${detail.entity ? `, ${label(detail.entity)}` : ''}${detail.entity_id ? ` #${detail.entity_id}` : ''}` : ''}
         subtitle={detail ? dateTime(detail.ts) : undefined}
         footer={
           <>
@@ -1309,17 +1309,17 @@ function AuditTab(): JSX.Element {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-x-8 rounded-xl border border-line px-4 py-2">
               <Kv label="Time">{dateTime(detail.ts)}</Kv>
-              <Kv label="User">{detail.username ?? '—'}</Kv>
-              <Kv label="Firm">{detail.firm_name ?? '—'}</Kv>
+              <Kv label="User">{detail.username ?? '-'}</Kv>
+              <Kv label="Firm">{detail.firm_name ?? '-'}</Kv>
               <Kv label="Action">
                 <Badge tone={actionTone(detail.action)}>{label(detail.action)}</Badge>
               </Kv>
-              <Kv label="Entity">{detail.entity ? label(detail.entity) : '—'}</Kv>
-              <Kv label="Entity ID">{detail.entity_id ?? '—'}</Kv>
+              <Kv label="Entity">{detail.entity ? label(detail.entity) : '-'}</Kv>
+              <Kv label="Entity ID">{detail.entity_id ?? '-'}</Kv>
             </div>
             <div>
               <div className="mb-1 text-[12.5px] font-medium text-muted">Summary</div>
-              <div className="rounded-xl bg-surface-2 px-4 py-3">{detail.summary || '—'}</div>
+              <div className="rounded-xl bg-surface-2 px-4 py-3">{detail.summary || '-'}</div>
             </div>
             <div>
               <div className="mb-1 text-[12.5px] font-medium text-muted">Details</div>

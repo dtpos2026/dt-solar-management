@@ -1,6 +1,6 @@
 /**
  * Pure license-terms logic: plan expiry suggestions, limit guards, lifetime detachment eligibility and the
- * certificate payload (v1.1) signed for each device. No Firebase imports — unit tested from the root suite,
+ * certificate payload (v1.1) signed for each device. No Firebase imports - unit tested from the root suite,
  * where the signed payload is verified with the desktop's own verifier (src/main/license/verify.ts).
  */
 import type { LicensePayload } from './crypto'
@@ -85,7 +85,7 @@ export function detachEligibility(l: DetachInput, now = Date.now()): { ok: boole
   const reasons: string[] = []
   if (l.detached) reasons.push('This license is already detached.')
   if (l.planType !== 'lifetime') reasons.push('Only lifetime licenses can be detached (change the plan to lifetime first).')
-  if (l.expiresAtMs !== null) reasons.push(l.expiresAtMs <= now ? 'The license has expired.' : 'The license has an expiry date — lifetime licenses have none.')
+  if (l.expiresAtMs !== null) reasons.push(l.expiresAtMs <= now ? 'The license has expired.' : 'The license has an expiry date - lifetime licenses have none.')
   if (l.status !== 'active') reasons.push(`The license is ${l.status}. Only active licenses can be detached.`)
   return { ok: reasons.length === 0, reasons }
 }
@@ -146,7 +146,7 @@ export function buildCertPayload(t: CertTerms, deviceId: string, issuedAt: Date 
   return payload
 }
 
-/** Fields of the terms that end up in certificates — a change in any of them requires re-signing. */
+/** Fields of the terms that end up in certificates - a change in any of them requires re-signing. */
 export function certTermsChanged(a: CertTerms, b: CertTerms): string[] {
   const out: string[] = []
   const keys: (keyof CertTerms)[] = ['customerName', 'businessName', 'phone', 'email', 'plan', 'planType', 'clientId', 'maxFirms', 'maxUsers', 'maxDevices', 'expiresAtMs', 'graceDays', 'checkinDays', 'poweredBy', 'detached']

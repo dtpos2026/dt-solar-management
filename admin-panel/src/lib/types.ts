@@ -143,7 +143,7 @@ export interface ActivationRequest {
 export interface AdminDoc {
   email: string
   name: string
-  /** 'owner' (legacy 'superadmin') or a preset / custom role — see lib/perm.ts */
+  /** 'owner' (legacy 'superadmin') or a preset / custom role - see lib/perm.ts */
   role: string
   permissions?: string[]
   active?: boolean

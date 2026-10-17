@@ -176,7 +176,7 @@ export function DocumentEditor(): JSX.Element {
     if (!payment.accountId && accounts.length) setPayment((p: any) => ({ ...p, accountId: (accounts.find((a) => a.is_default) ?? accounts[0]).id }))
   }, [accounts]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Project-linked sales invoices default to not deducting stock only when the project already has issued materials — keep explicit
+  // Project-linked sales invoices default to not deducting stock only when the project already has issued materials - keep explicit
   const project = projects.find((p) => p.id === h.projectId)
   const party = parties.find((p) => p.id === h.partyId)
 
@@ -271,7 +271,7 @@ export function DocumentEditor(): JSX.Element {
         </IconButton>
         <div>
           <h1 className="text-[20px] font-bold">{h.id ? `Edit ${meta.label}` : `New ${meta.label}`}</h1>
-          <div className="text-[12.5px] text-muted">{number ? `Number ${number}` : 'Number is assigned automatically when saved'} · Ctrl+S to save</div>
+          <div className="text-[12.5px] text-muted">{number ? `Number ${number}` : 'Number is assigned automatically when saved'}, Ctrl+S to save</div>
         </div>
         {h.refDocId && <Badge tone="info">Linked to a source document</Badge>}
       </div>
@@ -293,7 +293,7 @@ export function DocumentEditor(): JSX.Element {
             />
             {party && (
               <div className="mt-1 text-[12px] text-muted">
-                {party.phone} {party.city ? `· ${party.city}` : ''} · Balance:{' '}
+                {party.phone} {party.city ? `· ${party.city}` : ''}, Balance:{' '}
                 <span className={party.balance > 0 ? 'font-semibold text-bad' : party.balance < 0 ? 'font-semibold text-ok' : ''}>
                   {money(party.balance)} {party.balance > 0 ? '(receivable)' : party.balance < 0 ? (meta.partyType === 'customer' ? '(advance)' : '(payable)') : ''}
                 </span>
@@ -441,14 +441,14 @@ export function DocumentEditor(): JSX.Element {
                           </button>
                         )}
                         {(p?.track_serial || l.serials) && stockAffecting ? (
-                          <Input sm value={l.serials} onChange={(e) => setLine(l.key, { serials: e.target.value })} placeholder={`Serial numbers (comma separated)${p?.track_serial ? ` — ${l.qty} required` : ''}`} />
+                          <Input sm value={l.serials} onChange={(e) => setLine(l.key, { serials: e.target.value })} placeholder={`Serial numbers (comma separated)${p?.track_serial ? ` - ${l.qty} required` : ''}`} />
                         ) : null}
                         {isSales && (l.warranty || p?.warranty_months) ? (
                           <Input sm value={l.warranty} onChange={(e) => setLine(l.key, { warranty: e.target.value })} placeholder="Warranty (e.g. 12 Years)" />
                         ) : null}
                         {p && (
                           <div className="flex flex-wrap gap-3 text-[12px] text-muted">
-                            {p.type === 'goods' && <span className={short ? 'font-semibold text-bad' : ''}>In stock: {fmtQty(p.stock)} {p.unit}{short && ' — not enough stock'}</span>}
+                            {p.type === 'goods' && <span className={short ? 'font-semibold text-bad' : ''}>In stock: {fmtQty(p.stock)} {p.unit}{short && ' - not enough stock'}</span>}
                             {p.avg_cost !== null && p.type === 'goods' && <span>Avg cost: {money(p.avg_cost)}</span>}
                             {belowCost && <span className="font-semibold text-warn"><AlertTriangle className="inline h-3 w-3" /> Below cost</span>}
                           </div>
@@ -575,7 +575,7 @@ export function DocumentEditor(): JSX.Element {
 
       <div className="fixed right-0 bottom-0 left-[232px] z-20 flex items-center justify-end gap-2 border-t border-line bg-surface/95 px-6 py-3 backdrop-blur">
         <span className="mr-auto text-[13px] text-muted">
-          {meta.label} · {lines.filter((l) => l.productId || l.description).length} item(s) · <b className="text-ink">{money(t.grandTotal)}</b>
+          {meta.label}, {lines.filter((l) => l.productId || l.description).length} item(s), <b className="text-ink">{money(t.grandTotal)}</b>
         </span>
         <Button onClick={() => nav(-1)}>Cancel</Button>
         <Button loading={busy} onClick={() => save(true)} icon={<Printer className="h-4 w-4" />}>

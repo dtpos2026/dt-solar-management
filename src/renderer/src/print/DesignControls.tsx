@@ -1,6 +1,6 @@
 /**
  * Layout + show/hide controls of a print design. Used by the template designer (Settings -> Invoice templates) and by
- * the "Customise this print" panel of the print preview. Only changes how a document looks — never its data.
+ * the "Customise this print" panel of the print preview. Only changes how a document looks - never its data.
  */
 import { Field, Input, Textarea, Toggle, cx } from '../components/ui'
 import { BoolOption, LAYOUTS, Layout, OPTION_GROUPS, TemplateOptions } from './design'

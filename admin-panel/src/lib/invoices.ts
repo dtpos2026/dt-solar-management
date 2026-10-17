@@ -229,7 +229,7 @@ export async function voidInvoicePayment(inv: Invoice, pay: InvoicePayment, reas
   void syncLicensePayment(res.licenseId, res.status)
 }
 
-/** Best effort: licenses.update needs licenses.manage — silently skipped when the admin lacks it. */
+/** Best effort: licenses.update needs licenses.manage - silently skipped when the admin lacks it. */
 async function syncLicensePayment(licenseId: string, status: 'paid' | 'partial' | 'unpaid'): Promise<void> {
   if (!licenseId) return
   try {

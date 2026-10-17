@@ -60,7 +60,7 @@ export function StatementPrint({ id, params, ctx, setTitle }: TemplateProps): JS
   // When no start date is given the ledger already contains the party's own opening entry.
   const showBf = !!from || rows[0]?.kind !== 'opening'
   const phones = [party.phone, party.phone2].filter(Boolean).join(' / ')
-  const ids = [party.ntn && `NTN: ${party.ntn}`, party.strn && `STRN: ${party.strn}`, party.cnic && `CNIC: ${party.cnic}`].filter(Boolean).join(' · ')
+  const ids = [party.ntn && `NTN: ${party.ntn}`, party.strn && `STRN: ${party.strn}`, party.cnic && `CNIC: ${party.cnic}`].filter(Boolean).join(', ')
 
   const tiles: Array<{ label: string; value: string; sub?: string; accent?: boolean }> = [
     { label: from ? `Opening balance (${pd(from)})` : 'Opening balance', value: drCr(ctx, opening), sub: nature(opening) },
@@ -143,7 +143,7 @@ export function StatementPrint({ id, params, ctx, setTitle }: TemplateProps): JS
       >
         {showBf && (
           <tr>
-            <td style={{ background: '#f1f5f9' }}>{from ? pd(from) : '—'}</td>
+            <td style={{ background: '#f1f5f9' }}>{from ? pd(from) : '-'}</td>
             <td style={{ background: '#f1f5f9' }} colSpan={3} className="font-semibold">
               {from ? 'Opening balance brought forward' : 'Opening balance'}
             </td>
@@ -156,7 +156,7 @@ export function StatementPrint({ id, params, ctx, setTitle }: TemplateProps): JS
           <tr key={`${r.kind}-${r.ref_id ?? 'o'}-${i}`}>
             <td className="whitespace-nowrap">{pd(r.date)}</td>
             <td>{KIND_LABELS[r.kind] ?? r.kind}</td>
-            <td className="font-semibold">{r.kind === 'opening' ? '—' : r.number}</td>
+            <td className="font-semibold">{r.kind === 'opening' ? '-' : r.number}</td>
             <td>{r.description}</td>
             <td className="num text-right">{r.debit ? pm(ctx, r.debit, 2) : ''}</td>
             <td className="num text-right">{r.credit ? pm(ctx, r.credit, 2) : ''}</td>

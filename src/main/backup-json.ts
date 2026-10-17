@@ -1,5 +1,5 @@
 /**
- * DT Solar Pro JSON backup — ".js1" (JSON snapshot, format version 1).
+ * DT Solar Pro JSON backup - ".js1" (JSON snapshot, format version 1).
  *
  * A complete, human-auditable copy of every table of the business database:
  *   { format: 'dtsp-js1', version: 1, app, appVersion, schemaVersion, createdAt, source, counts, sha256, tables }
@@ -125,7 +125,7 @@ export function readJs1(file: string): Js1File {
       throw new Error(`Table "${name}" has ${t.rows.length} rows but the backup header says ${data.counts[name]}. The file is incomplete.`)
     }
   }
-  if (tablesHash(data.tables) !== data.sha256) throw new Error('The backup checksum does not match — the file was modified or is damaged.')
+  if (tablesHash(data.tables) !== data.sha256) throw new Error('The backup checksum does not match - the file was modified or is damaged.')
   return data
 }
 
@@ -150,7 +150,7 @@ export function buildDatabaseFromJs1(data: Js1File, targetFile: string): { ok: t
   const db = new Database(targetFile)
   try {
     configure(db)
-    migrate(db) // creates the current schema; seed data is NOT added — every row comes from the backup
+    migrate(db) // creates the current schema; seed data is NOT added - every row comes from the backup
     // Rows the migrations seed by themselves (app_meta) are replaced by the backup's own rows.
     db.prepare('DELETE FROM app_meta').run()
     db.pragma('foreign_keys = OFF')

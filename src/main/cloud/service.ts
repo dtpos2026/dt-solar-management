@@ -251,7 +251,7 @@ export class CloudService {
     return { ...this.state.heartbeat }
   }
 
-  /** Sends heartbeats/{installToken}. Never throws — the record says what happened. */
+  /** Sends heartbeats/{installToken}. Never throws - the record says what happened. */
   sendHeartbeat(): Promise<HeartbeatRecord> {
     if (this.hbInFlight) return this.hbInFlight
     this.hbInFlight = (async () => {

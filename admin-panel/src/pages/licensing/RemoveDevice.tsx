@@ -8,7 +8,7 @@ import { ConfirmDialog, type ConfirmOptions, type NoticeTone } from './kit'
 
 export interface RemovedInfo {
   row: DeviceRow
-  /** The row is gone (record / heartbeat deleted) — hide it now. */
+  /** The row is gone (record / heartbeat deleted) - hide it now. */
   deleted: boolean
   text: string
   tone: NoticeTone
@@ -52,13 +52,13 @@ export function RemoveDeviceDialog({ row, onClose, onDone }: { row: DeviceRow | 
     reasonLabel: 'Note',
     body: unregistered ? (
       <p>
-        This computer was never activated — it only sends heartbeats{r.company ? ` (${r.company})` : ''}. Its heartbeat record is deleted, so it disappears from the
+        This computer was never activated - it only sends heartbeats{r.company ? ` (${r.company})` : ''}. Its heartbeat record is deleted, so it disappears from the
         Devices list and the map. If the app keeps running there, it shows up again with its next heartbeat.
       </p>
     ) : (
       <ul className="list-disc space-y-1 pl-5">
         <li>
-          Status now: <b>{DEVICE_STATUS_LABEL[r.deviceStatus]}</b>{r.company ? ` · ${r.company}` : ''} · license {key}.
+          Status now: <b>{DEVICE_STATUS_LABEL[r.deviceStatus]}</b>{r.company ? `, ${r.company}` : ''}, license {key}.
         </li>
         {holds ? (
           <li>It is <b>released</b> first: its slot is freed and it is added to the deactivated list, so it becomes read-only at its next check-in.</li>
@@ -72,7 +72,7 @@ export function RemoveDeviceDialog({ row, onClose, onDone }: { row: DeviceRow | 
       <label className="flex items-start gap-2 text-[13px]">
         <input type="checkbox" className="mt-0.5" checked={deleteRecord} onChange={(e) => setDeleteRecord(e.target.checked)} />
         <span>
-          Also delete the device record and its heartbeat — it disappears from the Devices list and the map (it stays on the deactivated list). Untick to only
+          Also delete the device record and its heartbeat - it disappears from the Devices list and the map (it stays on the deactivated list). Untick to only
           release it.
         </span>
       </label>

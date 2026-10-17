@@ -94,7 +94,7 @@ export function Login({ onDone }: { onDone: () => void }): JSX.Element {
         <AppLogo light size={52} />
         <div className="relative max-w-lg">
           <div className="text-[40px] leading-[1.1] font-extrabold">Clean Energy.<br />Clear Accounts.</div>
-          <div className="mt-4 text-[15px] text-white/80">Sales, purchases, inventory, accounts and complete project-wise profit for solar businesses — fully offline on your computer.</div>
+          <div className="mt-4 text-[15px] text-white/80">Sales, purchases, inventory, accounts and complete project-wise profit for solar businesses - fully offline on your computer.</div>
           <div className="mt-8 grid grid-cols-3 gap-3 text-[12.5px]">
             <div className="rounded-xl bg-white/10 p-3"><WifiOff className="mb-2 h-5 w-5 text-[#ffc24a]" />Works 100% offline</div>
             <div className="rounded-xl bg-white/10 p-3"><BarChart3 className="mb-2 h-5 w-5 text-[#ffc24a]" />Project-wise profit</div>
@@ -129,7 +129,7 @@ export function Login({ onDone }: { onDone: () => void }): JSX.Element {
                     <Avatar name={t.full_name} id={t.id} size={40} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[13.5px] font-semibold group-hover:text-brand" title={t.full_name}>{t.full_name}</span>
-                      <span className="block truncate text-[11.5px] text-muted" title={t.role_name}>{t.role_name}</span>
+                      <span className="block truncate text-[12px] text-muted" title={t.role_name}>{t.role_name}</span>
                     </span>
                     {t.has_pin && <KeyRound className="h-3.5 w-3.5 shrink-0 text-muted" aria-label="PIN sign-in" />}
                   </button>
@@ -207,8 +207,8 @@ export function Login({ onDone }: { onDone: () => void }): JSX.Element {
           {license && license.mode !== 'active' && (
             <div className={`mt-6 rounded-xl px-4 py-3 text-[12.5px] ${license.canWrite ? 'bg-warn-soft text-warn' : 'bg-bad-soft text-bad'}`}>{license.message}</div>
           )}
-          <div className="mt-10 text-[11.5px] text-muted">
-            DT Solar Pro v{version} · Forgot your PIN or a user password? The Administrator can reset it from Users &amp; Permissions.{' '}
+          <div className="mt-10 text-[12px] text-muted">
+            DT Solar Pro v{version}, Forgot your PIN or a user password? The Administrator can reset it from Users &amp; Permissions.{' '}
             <button type="button" className="cursor-pointer font-medium text-brand hover:underline" onClick={() => setResetOpen(true)}>
               Administrator locked out?
             </button>

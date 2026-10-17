@@ -1,4 +1,4 @@
-/** IPC routes — License, registration, heartbeat, location, support messages (owner: cloud area). Owns: license.*, auth.setup, cloud.*, support.*. */
+/** IPC routes - License, registration, heartbeat, location, support messages (owner: cloud area). Owns: license.*, auth.setup, cloud.*, support.*. */
 import { BrowserWindow, dialog, shell } from 'electron'
 import { readFileSync } from 'fs'
 import type { RouteMap } from '../common'

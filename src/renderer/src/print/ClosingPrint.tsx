@@ -57,7 +57,7 @@ export function ClosingPrint({ id, ctx, setTitle }: TemplateProps): JSX.Element 
         {rows.map(([l, v]) => (
           <tr key={l}>
             <td>{l}</td>
-            <td className="text-right">{v === null || v === undefined ? '—' : pm(ctx, Number(v))}</td>
+            <td className="text-right">{v === null || v === undefined ? '-' : pm(ctx, Number(v))}</td>
           </tr>
         ))}
       </PrintTable>

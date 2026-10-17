@@ -242,7 +242,7 @@ function DayClosing(): JSX.Element {
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
               <Fig label="Sales" value={money(f.sales)} sub={`${f.counts.sales} invoice(s)`} />
               <Fig label="Purchases" value={money(f.purchases)} sub={`${f.counts.purchases} bill(s)`} />
-              <Fig label="Returns" value={money(f.returns)} sub={`Sales ${money(f.saleReturns)} · Purch. ${money(f.purchaseReturns)}`} />
+              <Fig label="Returns" value={money(f.returns)} sub={`Sales ${money(f.saleReturns)}, Purch. ${money(f.purchaseReturns)}`} />
               <Fig label="Expenses" value={money(f.expenses)} sub={`${f.counts.expenses} expense(s)`} />
               <Fig label="Receipts" value={money(f.receipts)} sub={`${f.counts.receipts} receipt(s)`} />
               <Fig label="Payments" value={money(f.payments)} sub={`${f.counts.payments} payment(s)`} />
@@ -270,7 +270,7 @@ function DayClosing(): JSX.Element {
                 <Field label="Counted cash" hint="Count the cash in hand (cash accounts)">
                   <NumberInput value={counted ?? ''} min={0} placeholder={String(f.cash.expected)} onChange={(v) => setCounted(Number.isFinite(v) ? v : null)} />
                 </Field>
-                <Fig label="Difference (counted − expected)" value={diff === null ? '—' : money(diff)} tone={diff === null ? undefined : diff === 0 ? 'ok' : diff < 0 ? 'bad' : 'warn'} sub={diff === null ? 'Enter counted cash' : diff === 0 ? 'Cash matches' : diff < 0 ? 'Short' : 'Excess'} />
+                <Fig label="Difference (counted − expected)" value={diff === null ? '-' : money(diff)} tone={diff === null ? undefined : diff === 0 ? 'ok' : diff < 0 ? 'bad' : 'warn'} sub={diff === null ? 'Enter counted cash' : diff === 0 ? 'Cash matches' : diff < 0 ? 'Short' : 'Excess'} />
                 <Field label="Notes">
                   <Textarea rows={2} value={notes} maxLength={1000} onChange={(e) => setNotes(e.target.value)} placeholder="Optional" />
                 </Field>
@@ -436,14 +436,14 @@ function ClosingHistory(): JSX.Element {
           { key: 'kind', header: 'Kind', render: (r) => <Badge tone={r.kind === 'month' ? 'info' : 'brand'}>{r.kind}</Badge> },
           { key: 'sales_total', header: 'Sales', align: 'right', render: (r) => <span className="num">{money(r.sales_total)}</span> },
           { key: 'closing_cash', header: 'Expected cash', align: 'right', render: (r) => <span className="num">{money(r.closing_cash)}</span> },
-          { key: 'counted_cash', header: 'Counted', align: 'right', render: (r) => <span className="num">{r.counted_cash === null ? '—' : money(r.counted_cash)}</span> },
+          { key: 'counted_cash', header: 'Counted', align: 'right', render: (r) => <span className="num">{r.counted_cash === null ? '-' : money(r.counted_cash)}</span> },
           { key: 'difference', header: 'Difference', align: 'right', render: (r) => <span className={cx('num', r.difference < 0 && 'text-bad', r.difference > 0 && 'text-warn')}>{money(r.difference)}</span> },
           {
             key: 'status',
             header: 'Status',
             render: (r) => (r.status === 'closed' ? <Badge tone="ok">Closed</Badge> : <span title={r.reopen_reason ?? ''}><Badge tone="warn">Reopened</Badge></span>)
           },
-          { key: 'closed_by_name', header: 'Closed by', render: (r) => <div className="text-[12px]"><div>{r.closed_by_name ?? '—'}</div><div className="text-muted">{r.closed_at}</div></div> },
+          { key: 'closed_by_name', header: 'Closed by', render: (r) => <div className="text-[12px]"><div>{r.closed_by_name ?? '-'}</div><div className="text-muted">{r.closed_at}</div></div> },
           { key: 'backup', header: 'Backup', value: (r) => r.backup_file ?? '', render: (r) => (r.backup_file ? <Badge tone="ok">Saved</Badge> : <Badge tone="muted">None</Badge>) },
           {
             key: 'actions',

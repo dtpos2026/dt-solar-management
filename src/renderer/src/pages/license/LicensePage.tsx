@@ -78,13 +78,13 @@ const pad = (n: number): string => String(n).padStart(2, '0')
 const ymd = (d: Date): string => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 
 function localDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
+  if (!iso) return '-'
   const d = new Date(iso)
   return Number.isNaN(d.getTime()) ? String(iso) : date(ymd(d))
 }
 
 function localDateTime(iso: string | null | undefined): string {
-  if (!iso) return '—'
+  if (!iso) return '-'
   const d = new Date(iso)
   return Number.isNaN(d.getTime()) ? String(iso) : `${date(ymd(d))} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
@@ -118,11 +118,11 @@ function openExternal(url: string): void {
 /** When the next online verification is due (lease date, or last check + check-in interval). */
 function nextCheckIn(l: Lic): string {
   const p = l.payload
-  if (!p) return '—'
+  if (!p) return '-'
   if (p.leaseUntil) return localDate(p.leaseUntil)
   if (p.checkinDays && p.checkinDays > 0) {
     const base = Math.max(l.lastCheckAt ? Date.parse(l.lastCheckAt) || 0 : 0, Date.parse(p.issuedAt) || 0)
-    return base ? localDate(new Date(base + p.checkinDays * 86400000).toISOString()) : '—'
+    return base ? localDate(new Date(base + p.checkinDays * 86400000).toISOString()) : '-'
   }
   return 'Not required'
 }
@@ -267,7 +267,7 @@ export function LicensePage({ embedded = false }: { embedded?: boolean } = {}): 
     if (!(await confirmReplace())) return
     const r = await run('activate', () => api<ActivationResult>('license.activate', { licenseKey: key, registration: reg }))
     if (!r) {
-      // The request may have been cleared (rejected / not found) — keep the store in sync.
+      // The request may have been cleared (rejected / not found) - keep the store in sync.
       api<Lic>('license.status').then(setLic).catch(() => undefined)
       return
     }
@@ -408,7 +408,7 @@ export function LicensePage({ embedded = false }: { embedded?: boolean } = {}): 
               <div className="text-[16px] font-semibold">Waiting for approval from Digital Target…</div>
               {lic?.pendingReason && <div className="mt-1 text-[13px] font-medium text-warn">Why approval is needed: {lic.pendingReason}</div>}
               <div className="mt-0.5 text-[13px] text-muted">
-                Your activation request has been sent. This page checks automatically (every few seconds at first) — the license installs itself as soon as it is approved or a device slot is free. You can keep working or close this page;
+                Your activation request has been sent. This page checks automatically (every few seconds at first) - the license installs itself as soon as it is approved or a device slot is free. You can keep working or close this page;
                 checking resumes when you come back.
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-muted">
@@ -454,7 +454,7 @@ export function LicensePage({ embedded = false }: { embedded?: boolean } = {}): 
           </div>
         ) : (
           <div className="space-y-4">
-            <Field label="License key" hint="Format: DTSP-XXXX-XXXX-XXXX-XXXX — you received it from Digital Target">
+            <Field label="License key" hint="Format: DTSP-XXXX-XXXX-XXXX-XXXX - you received it from Digital Target">
               <Input
                 value={key}
                 placeholder="DTSP-XXXX-XXXX-XXXX-XXXX"
@@ -519,7 +519,7 @@ export function LicensePage({ embedded = false }: { embedded?: boolean } = {}): 
             ) : (
               <div className="grid gap-5 lg:grid-cols-2">
                 <div className="space-y-3">
-                  <div className="font-semibold">Step 1 — Send a request code</div>
+                  <div className="font-semibold">Step 1 - Send a request code</div>
                   <Button icon={<KeyRound className="h-4 w-4" />} loading={busy === 'code'} disabled={!KEY_RE.test(key) || (!!busy && busy !== 'code')} onClick={generateCode}>
                     Generate request code
                   </Button>
@@ -537,7 +537,7 @@ export function LicensePage({ embedded = false }: { embedded?: boolean } = {}): 
                           size="sm"
                           icon={<Mail className="h-4 w-4" />}
                           onClick={() =>
-                            openExternal(`mailto:${VENDOR.email}?subject=${encodeURIComponent(`DT Solar Pro activation request — ${key}`)}&body=${encodeURIComponent(`License key: ${key}\nDevice ID: ${lic?.deviceId ?? ''}\n\nRequest code:\n${reqCode}`)}`)
+                            openExternal(`mailto:${VENDOR.email}?subject=${encodeURIComponent(`DT Solar Pro activation request - ${key}`)}&body=${encodeURIComponent(`License key: ${key}\nDevice ID: ${lic?.deviceId ?? ''}\n\nRequest code:\n${reqCode}`)}`)
                           }
                         >
                           Send by email
@@ -550,7 +550,7 @@ export function LicensePage({ embedded = false }: { embedded?: boolean } = {}): 
                   </div>
                 </div>
                 <div className="space-y-3">
-                  <div className="font-semibold">Step 2 — Install the license you received</div>
+                  <div className="font-semibold">Step 2 - Install the license you received</div>
                   <Button icon={<FileUp className="h-4 w-4" />} loading={busy === 'file'} disabled={!!busy && busy !== 'file'} onClick={() => install()}>
                     Install license file…
                   </Button>
@@ -597,19 +597,19 @@ function StatusSection({ lic }: { lic: Lic }): JSX.Element {
           {daysLeft !== null && daysLeft !== undefined && (
             <div className="text-right">
               <div className="num text-[26px] leading-none font-bold">{Math.max(0, daysLeft)}</div>
-              <div className="text-[11.5px] text-muted">{daysLabel}</div>
+              <div className="text-[12px] text-muted">{daysLabel}</div>
             </div>
           )}
         </div>
         <div className="grid gap-x-8 p-5 text-[13px] sm:grid-cols-2">
-          <Kv label="Licensed business">{p?.businessName ?? '—'}</Kv>
-          <Kv label="Customer">{p?.customerName ?? '—'}</Kv>
-          <Kv label="Plan">{p ? p.plan : lic.mode === 'trial' || lic.mode === 'trial_expired' ? 'Trial' : '—'}</Kv>
-          <Kv label="License ID">{p ? <span className="font-mono text-[12px]">{p.licenseId}</span> : '—'}</Kv>
+          <Kv label="Licensed business">{p?.businessName ?? '-'}</Kv>
+          <Kv label="Customer">{p?.customerName ?? '-'}</Kv>
+          <Kv label="Plan">{p ? p.plan : lic.mode === 'trial' || lic.mode === 'trial_expired' ? 'Trial' : '-'}</Kv>
+          <Kv label="License ID">{p ? <span className="font-mono text-[12px]">{p.licenseId}</span> : '-'}</Kv>
           <Kv label="Max firms">{limit(lic.maxFirms)}</Kv>
           <Kv label="Max users">{limit(lic.maxUsers)}</Kv>
-          <Kv label="Issued">{p ? localDate(p.issuedAt) : '—'}</Kv>
-          <Kv label="Expires">{p ? (p.expiresAt ? localDate(p.expiresAt) : 'Lifetime') : '—'}</Kv>
+          <Kv label="Issued">{p ? localDate(p.issuedAt) : '-'}</Kv>
+          <Kv label="Expires">{p ? (p.expiresAt ? localDate(p.expiresAt) : 'Lifetime') : '-'}</Kv>
           <Kv label="Next online check-in">{nextCheckIn(lic)}</Kv>
           <Kv label="Last check-in">{lic.lastCheckAt ? localDateTime(lic.lastCheckAt) : 'Never'}</Kv>
         </div>
@@ -645,9 +645,9 @@ function StatusSection({ lic }: { lic: Lic }): JSX.Element {
             </Button>
           </div>
           <div className="mt-2 flex items-center gap-1.5 text-[12px] text-muted">
-            <Cpu className="h-3.5 w-3.5" /> Computer name: <span className="text-ink">{lic.deviceName || '—'}</span>
+            <Cpu className="h-3.5 w-3.5" /> Computer name: <span className="text-ink">{lic.deviceName || '-'}</span>
           </div>
-          <div className="mt-1 text-[11.5px] text-muted">A license is tied to this Device ID. Share it with Digital Target when asked.</div>
+          <div className="mt-1 text-[12px] text-muted">A license is tied to this Device ID. Share it with Digital Target when asked.</div>
         </Card>
         <Card title={<span className="inline-flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-brand" /> How licensing works</span>}>
           <ul className="list-disc space-y-1.5 pl-5 text-[13px] leading-relaxed text-muted">

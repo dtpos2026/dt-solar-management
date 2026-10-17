@@ -8,7 +8,7 @@ let cloud: CloudService | null = null
 
 /**
  * Timers run in installed (packaged) builds. Development / test runs of the unpackaged app do not write heartbeats to
- * the production project on their own — unless they point at the emulator or opt in with DTSP_CLOUD_BACKGROUND=1.
+ * the production project on their own - unless they point at the emulator or opt in with DTSP_CLOUD_BACKGROUND=1.
  * Customer-initiated actions (Send now, support messages, activation) always work.
  */
 function backgroundAllowed(): boolean {

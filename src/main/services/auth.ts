@@ -76,7 +76,7 @@ export function validatePin(pin: unknown): string {
   return v
 }
 
-/** PINs are hashed exactly like passwords (scrypt with a random salt) — never stored in plain text. */
+/** PINs are hashed exactly like passwords (scrypt with a random salt) - never stored in plain text. */
 export function hashPin(pin: string): string {
   return hashPassword(validatePin(pin))
 }
@@ -157,7 +157,7 @@ function minutesLeft(ts: string | null): number {
 
 /**
  * Checks a password for a known user row and keeps the failed-attempt counter (5 wrong passwords lock the
- * account for 5 minutes — shared by sign-in and the lock screen). Throws AppError('AUTH') on failure.
+ * account for 5 minutes - shared by sign-in and the lock screen). Throws AppError('AUTH') on failure.
  */
 function checkPasswordAttempt(db: DB, u: UserRow, password: string, failAction: string, auditName: string, failMsg: string): void {
   const fail = (msg: string): never => {
@@ -181,7 +181,7 @@ function checkPasswordAttempt(db: DB, u: UserRow, password: string, failAction: 
 
 /**
  * Administrator password reset sent by Digital Target: the owner signs in with the temporary password the Super Admin relayed
- * (verified against the signed command's PBKDF2 verifier — no plaintext is stored anywhere). The account then gets a normal
+ * (verified against the signed command's PBKDF2 verifier - no plaintext is stored anywhere). The account then gets a normal
  * hash and must choose a new password; a locked or failed-attempt state is cleared because recovery is the point.
  */
 function tryAdminResetLogin(db: DB, u: UserRow, password: string): boolean {

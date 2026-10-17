@@ -58,7 +58,7 @@ export function Dashboard(): JSX.Element {
         <div>
           <h1 className="text-[22px] font-bold tracking-tight">Dashboard</h1>
           <div className="text-[13px] text-muted">
-            {greet}, {user?.fullName?.split(' ')[0]} · {scope === 'all' ? 'All firms (consolidated)' : firm?.name}
+            {greet}, {user?.fullName?.split(' ')[0]}, {scope === 'all' ? 'All firms (consolidated)' : firm?.name}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -88,9 +88,9 @@ export function Dashboard(): JSX.Element {
                 <div className="mt-2 text-[13.5px] text-white/80">Solar Solutions for Homes, Businesses &amp; Industries</div>
               </div>
               <div className="flex gap-6 text-[13px]">
-                <div className="flex items-center gap-2"><Zap className="h-5 w-5 text-[#ffc24a]" /><div><div className="text-[18px] font-bold">{d ? qty(d.projectSummary.installedKw) : '—'} kW</div><div className="text-white/75">Installed capacity</div></div></div>
-                <div className="flex items-center gap-2"><Sun className="h-5 w-5 text-[#ffc24a]" /><div><div className="text-[18px] font-bold">{d ? d.projectSummary.active : '—'}</div><div className="text-white/75">Active projects</div></div></div>
-                <div className="flex items-center gap-2"><Leaf className="h-5 w-5 text-[#8bf00a]" /><div><div className="text-[18px] font-bold">{d ? qty(d.projectSummary.pipelineKw) : '—'} kW</div><div className="text-white/75">In pipeline</div></div></div>
+                <div className="flex items-center gap-2"><Zap className="h-5 w-5 text-[#ffc24a]" /><div><div className="text-[18px] font-bold">{d ? qty(d.projectSummary.installedKw) : '-'} kW</div><div className="text-white/75">Installed capacity</div></div></div>
+                <div className="flex items-center gap-2"><Sun className="h-5 w-5 text-[#ffc24a]" /><div><div className="text-[18px] font-bold">{d ? d.projectSummary.active : '-'}</div><div className="text-white/75">Active projects</div></div></div>
+                <div className="flex items-center gap-2"><Leaf className="h-5 w-5 text-[#8bf00a]" /><div><div className="text-[18px] font-bold">{d ? qty(d.projectSummary.pipelineKw) : '-'} kW</div><div className="text-white/75">In pipeline</div></div></div>
               </div>
             </div>
           </div>
@@ -104,9 +104,9 @@ export function Dashboard(): JSX.Element {
                 <StatCard label="Net Purchases" value={money(k.purchases)} icon={<ShoppingBag className="h-5 w-5" />} tone="ok" trend={k.purchasesTrend} sub="vs previous period" onClick={() => nav('/purchases')} />
                 {k.grossProfit !== null && <StatCard label="Gross Profit" value={money(k.grossProfit)} icon={<TrendingUp className="h-5 w-5" />} tone="sun" sub={k.grossMarginPct !== null ? `${pct(k.grossMarginPct)} margin` : undefined} />}
                 {k.netProfit !== null && <StatCard label="Net Profit" value={<span className={k.netProfit < 0 ? 'text-bad' : ''}>{money(k.netProfit)}</span>} icon={<BadgeDollarSign className="h-5 w-5" />} tone={k.netProfit < 0 ? 'bad' : 'ok'} trend={k.netProfitTrend} sub="after expenses" />}
-                <StatCard label="Customer Outstanding" value={money(k.receivables)} icon={<Users className="h-5 w-5" />} tone="info" sub={`${k.receivableCount} customer(s)${k.overdueInvoices ? ` · ${k.overdueInvoices} overdue` : ''}`} onClick={() => nav('/customers?due=1')} />
+                <StatCard label="Customer Outstanding" value={money(k.receivables)} icon={<Users className="h-5 w-5" />} tone="info" sub={`${k.receivableCount} customer(s)${k.overdueInvoices ? `, ${k.overdueInvoices} overdue` : ''}`} onClick={() => nav('/customers?due=1')} />
                 <StatCard label="Supplier Payables" value={money(k.payables)} icon={<Truck className="h-5 w-5" />} tone="warn" onClick={() => nav('/suppliers?due=1')} />
-                {k.cash !== null && <StatCard label="Cash & Bank" value={money((k.cash ?? 0) + (k.bank ?? 0))} icon={<Landmark className="h-5 w-5" />} tone="brand" sub={`Cash ${money(k.cash)} · Bank ${money(k.bank)}`} onClick={() => nav('/accounts')} />}
+                {k.cash !== null && <StatCard label="Cash & Bank" value={money((k.cash ?? 0) + (k.bank ?? 0))} icon={<Landmark className="h-5 w-5" />} tone="brand" sub={`Cash ${money(k.cash)}, Bank ${money(k.bank)}`} onClick={() => nav('/accounts')} />}
                 {k.inventoryValue !== null && <StatCard label="Inventory Value" value={money(k.inventoryValue)} icon={<Boxes className="h-5 w-5" />} tone="info" sub="at average cost" onClick={() => nav('/inventory')} />}
               </div>
 
@@ -186,7 +186,7 @@ export function Dashboard(): JSX.Element {
                         <tbody>
                           {d.recentProjects.map((p: any) => (
                             <tr key={p.id} className="clickable" onClick={() => nav(`/projects/${p.id}`)}>
-                              <td><div className="font-medium">{p.name}</div><div className="text-[12px] text-muted">{p.code} · {p.customer_name ?? '—'}</div></td>
+                              <td><div className="font-medium">{p.name}</div><div className="text-[12px] text-muted">{p.code}, {p.customer_name ?? '-'}</div></td>
                               <td className="num">{qty(p.capacity_kw)} kW</td>
                               <td><Badge tone={statusTone(p.status)}>{label(p.status)}</Badge></td>
                               <td><div className="flex items-center gap-2"><Progress value={p.progress} tone={p.progress >= 100 ? 'ok' : 'brand'} /><span className="num w-9 text-right text-[12px] text-muted">{p.progress}%</span></div></td>
@@ -247,7 +247,7 @@ export function Dashboard(): JSX.Element {
                     <div className="mt-3 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 p-4 text-white">
                       <div className="text-[12px] opacity-85">Net profit, all projects</div>
                       <div className="text-[22px] font-bold">{money(d.projectSummary.netProfit)}</div>
-                      <div className="text-[12px] opacity-85">Revenue {money(d.projectSummary.revenue)}{d.projectSummary.marginPct !== null && <> · margin {pct(d.projectSummary.marginPct)}</>}</div>
+                      <div className="text-[12px] opacity-85">Revenue {money(d.projectSummary.revenue)}{d.projectSummary.marginPct !== null && <>, margin {pct(d.projectSummary.marginPct)}</>}</div>
                     </div>
                   )}
                 </>
@@ -258,7 +258,7 @@ export function Dashboard(): JSX.Element {
             <Card title="Cash & Bank" actions={<Wallet className="h-4 w-4 text-muted" />}>
               {d.accounts.map((a: any) => (
                 <div key={a.id} className="flex items-center justify-between py-1.5 text-[13px]">
-                  <span>{a.name}{d.scope === 'all' && <span className="text-muted"> · {a.firm_name}</span>}</span>
+                  <span>{a.name}{d.scope === 'all' && <span className="text-muted">, {a.firm_name}</span>}</span>
                   <span className={`num font-semibold ${a.balance < 0 ? 'text-bad' : ''}`}>{money(a.balance)}</span>
                 </div>
               ))}

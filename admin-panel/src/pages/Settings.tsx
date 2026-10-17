@@ -1,4 +1,4 @@
-/** Settings — Digital Target branding, invoices, bank & payment, support contacts, portal options and the signing key. */
+/** Settings - Digital Target branding, invoices, bank & payment, support contacts, portal options and the signing key. */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
@@ -173,7 +173,7 @@ export function Settings() {
         setSavedTick(true)
         setFlash({ tone: 'success', text: savedText(r.value) })
       } else {
-        setFlash({ tone: 'warn', text: 'Saving is taking longer than usual (slow or no connection). The changes are kept in this tab and upload automatically when the connection is back — keep the tab open.' })
+        setFlash({ tone: 'warn', text: 'Saving is taking longer than usual (slow or no connection). The changes are kept in this tab and upload automatically when the connection is back - keep the tab open.' })
         r.pending.then(
           (fields) => { setSavedTick(true); setFlash({ tone: 'success', text: savedText(fields) }) },
           (e) => setFlash({ tone: 'error', text: `Settings could not be saved: ${errorMessage(e)}` })
@@ -233,7 +233,7 @@ export function Settings() {
           st.loading
             ? st.cached ? 'Refreshing…' : 'Loading…'
             : st.updatedAt
-              ? `Digital Target branding, invoices, payments, support and portal options · last saved ${fmtDateTime(st.updatedAt)}${st.updatedBy ? ` by ${st.updatedBy}` : ''}`
+              ? `Digital Target branding, invoices, payments, support and portal options, last saved ${fmtDateTime(st.updatedAt)}${st.updatedBy ? ` by ${st.updatedBy}` : ''}`
               : 'Digital Target branding, invoices, payments, support and portal options'
         }
         actions={
@@ -253,11 +253,11 @@ export function Settings() {
       {st.error && <Notice tone="error" className="mb-4">Settings could not be loaded: {st.error}</Notice>}
       {!canEdit && tab !== 'key' && tab !== 'version' && (
         <Notice tone="info" className="mb-4">
-          <span className="inline-flex items-center gap-1.5"><Lock className="h-3.5 w-3.5" />Read only — changing these settings needs the “Branding, invoice & portal settings” permission.</span>
+          <span className="inline-flex items-center gap-1.5"><Lock className="h-3.5 w-3.5" />Read only - changing these settings needs the “Branding, invoice & portal settings” permission.</span>
         </Notice>
       )}
       {!st.loading && !st.saved && canEdit && tab !== 'key' && (
-        <Notice tone="warn" className="mb-4">These settings have never been saved — the defaults below are in use. Review them and press “Save changes”.</Notice>
+        <Notice tone="warn" className="mb-4">These settings have never been saved - the defaults below are in use. Review them and press “Save changes”.</Notice>
       )}
 
       <Tabs tabs={TABS.map((t) => ({ ...t, label: tried && errorTabs.includes(t.id) ? `${t.label} •` : t.label }))} active={tab} onChange={setTab} />
@@ -286,11 +286,11 @@ export function Settings() {
                 <Section title="Preview" sub="Invoice / receipt header">
                   <div className="rounded-xl border border-[#ece6f4] bg-white p-4">
                     <div className="flex items-start gap-3">
-                      {clean.logo ? <img src={clean.logo} alt="Logo" className="h-12 max-w-[96px] object-contain" /> : <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-[#f1e9fb] text-[11px] text-[#7a6d92]">Logo</div>}
+                      {clean.logo ? <img src={clean.logo} alt="Logo" className="h-12 max-w-[96px] object-contain" /> : <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-[#f1e9fb] text-[12px] text-[#7a6d92]">Logo</div>}
                       <div className="min-w-0 text-[12px] leading-snug">
-                        <div className="truncate text-[15px] font-extrabold text-[#3d096d]">{clean.companyName || '—'}</div>
+                        <div className="truncate text-[15px] font-extrabold text-[#3d096d]">{clean.companyName || '-'}</div>
                         {clean.address && <div className="text-[#5b4b78]">{clean.address}</div>}
-                        <div className="text-[#5b4b78]">{[clean.phone, clean.email, clean.website].filter(Boolean).join(' · ')}</div>
+                        <div className="text-[#5b4b78]">{[clean.phone, clean.email, clean.website].filter(Boolean).join(', ')}</div>
                       </div>
                     </div>
                   </div>
@@ -356,7 +356,7 @@ export function Settings() {
                         [
                           ['full', 'Show in full', 'Wetco Solar Traders'],
                           ['masked', 'Masked (recommended)', maskName('Wetco Solar Traders')],
-                          ['hidden', 'Hidden', '— not shown —']
+                          ['hidden', 'Hidden', 'not shown']
                         ] as const
                       ).map(([v, label, example]) => (
                         <label key={v} className={cx('flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2 text-[13px]', draft.customerPrivacy === v ? 'border-[#7c3aed] bg-[#f6f0fd]' : 'border-[#e7e1f0] bg-white')}>
@@ -427,7 +427,7 @@ export function Settings() {
                 <div className="mt-4 space-y-2 rounded-xl border border-[#ece6f4] bg-[#fcfbfe] p-3 text-[12.5px] text-[#5b4b78]">
                   <div className="flex items-center gap-1.5 font-bold text-[#1d1530]"><ShieldCheck className="h-4 w-4 text-[#7c3aed]" />What the free Spark plan can and cannot do</div>
                   <p>Sign-in attempts are throttled by Firebase Authentication. Disabling an admin blocks them in the security rules at once and closes their open portal sessions.</p>
-                  <p>“Sign out everywhere” (revoking refresh tokens) and deleting a login need server code, which the Spark plan does not have — delete the user in Firebase Console → Authentication when needed.</p>
+                  <p>“Sign out everywhere” (revoking refresh tokens) and deleting a login need server code, which the Spark plan does not have - delete the user in Firebase Console → Authentication when needed.</p>
                   <p>Two-factor authentication needs the paid Firebase Identity Platform upgrade and is not enabled.</p>
                 </div>
               </Section>

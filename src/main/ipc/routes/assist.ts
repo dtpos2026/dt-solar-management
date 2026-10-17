@@ -1,4 +1,4 @@
-/** IPC routes — Offline help assistant and WhatsApp (owner: assist area). Owns: help.*, whatsapp.*. */
+/** IPC routes - Offline help assistant and WhatsApp (owner: assist area). Owns: help.*, whatsapp.*. */
 import { BrowserWindow, WebContents, shell } from 'electron'
 import type { RouteMap } from '../common'
 import { runtime } from '../../runtime'

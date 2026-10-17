@@ -1,4 +1,4 @@
-/** Activity Log — every admin action, with filters, export, archiving and retention (Module 7). */
+/** Activity Log - every admin action, with filters, export, archiving and retention (Module 7). */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   Timestamp,
@@ -65,7 +65,7 @@ const CATEGORY_TONE: Record<string, string> = {
 }
 
 function CategoryPill({ c }: { c: string }) {
-  return <span className={cx('inline-block rounded-md px-2 py-0.5 text-[11.5px] font-bold capitalize', CATEGORY_TONE[c] ?? CATEGORY_TONE.general)}>{c}</span>
+  return <span className={cx('inline-block rounded-md px-2 py-0.5 text-[12px] font-bold capitalize', CATEGORY_TONE[c] ?? CATEGORY_TONE.general)}>{c}</span>
 }
 
 type Snap = QueryDocumentSnapshot<DocumentData>
@@ -123,7 +123,7 @@ export function ActivityLog() {
   const fromMs = fromDay ? dayStartMs(fromDay) : null
   const toMs = toDay ? dayEndMs(toDay) : null
 
-  /** Server query: optional date range on `at` + order by `at` (single-field index only — no composite index). */
+  /** Server query: optional date range on `at` + order by `at` (single-field index only - no composite index). */
   const fetchPage = useCallback(
     async (after: Snap | null) => {
       const cons: QueryConstraint[] = []
@@ -312,7 +312,7 @@ export function ActivityLog() {
       <PageTitle
         icon={<Activity />}
         title="Activity Log"
-        sub={loading ? 'Loading…' : `${rows.length} entr${rows.length === 1 ? 'y' : 'ies'} loaded${hasMore ? ' (more available)' : ''} · newest first`}
+        sub={loading ? 'Loading…' : `${rows.length} entr${rows.length === 1 ? 'y' : 'ies'} loaded${hasMore ? ' (more available)' : ''}, newest first`}
         actions={
           <>
             <button className="btn btn-secondary" onClick={() => reload()} disabled={loading}><RefreshCw className={cx('h-4 w-4', loading && 'animate-spin')} />Refresh</button>
@@ -359,9 +359,9 @@ export function ActivityLog() {
             <button className="btn btn-secondary btn-sm h-[38px]" onClick={() => { setF(EMPTY_FILTERS); setFromDay(''); setToDay('') }}><RotateCcw className="h-4 w-4" />Reset</button>
           )}
         </div>
-        <div className="mt-2 flex items-center gap-1.5 text-[11.5px] text-[#7a6d92]">
+        <div className="mt-2 flex items-center gap-1.5 text-[12px] text-[#7a6d92]">
           <Filter className="h-3.5 w-3.5" />
-          The date range is applied by Firestore; the other filters search the {rows.length} loaded entries{hasMore ? ' — use “Load more” to search further back' : ''}.
+          The date range is applied by Firestore; the other filters search the {rows.length} loaded entries{hasMore ? ' - use “Load more” to search further back' : ''}.
         </div>
       </div>
 
@@ -407,10 +407,10 @@ export function ActivityLog() {
                       </td>
                     )}
                     <td className="text-[12.5px] whitespace-nowrap text-[#6b5d85]">{fmtDateTime(r.atMs)}</td>
-                    <td className="font-semibold">{actionLabel(r.action)}{r.archived && <span className="ml-1.5 text-[11px] font-normal text-[#7a6d92]">archived</span>}</td>
+                    <td className="font-semibold">{actionLabel(r.action)}{r.archived && <span className="ml-1.5 text-[12px] font-normal text-[#7a6d92]">archived</span>}</td>
                     <td><CategoryPill c={r.category} /></td>
-                    <td className="max-w-[180px] truncate text-[12.5px]" title={r.by}>{r.by || '—'}</td>
-                    <td className="max-w-[160px] truncate font-mono text-[12px]" title={r.target}>{r.target || '—'}</td>
+                    <td className="max-w-[180px] truncate text-[12.5px]" title={r.by}>{r.by || '-'}</td>
+                    <td className="max-w-[160px] truncate font-mono text-[12px]" title={r.target}>{r.target || '-'}</td>
                     <td className="max-w-[340px] truncate text-[12.5px]" title={r.details}>{r.details}</td>
                     <td><Badge tone={r.status === 'failure' ? 'rejected' : 'active'}>{r.status}</Badge></td>
                   </tr>
@@ -447,7 +447,7 @@ export function ActivityLog() {
       </ConfirmDialog>
 
       <ConfirmDialog open={dialog === 'archiveSelected'} title="Archive entries" confirmLabel={`Archive ${selected.size}`} busy={busy} error={dialogError} onConfirm={runDialog} onClose={() => setDialog(null)}>
-        <p>Archive {selected.size} selected entr{selected.size === 1 ? 'y' : 'ies'}? Archived entries are hidden by default but never changed — tick “Show archived” to see them. Archiving cannot be undone.</p>
+        <p>Archive {selected.size} selected entr{selected.size === 1 ? 'y' : 'ies'}? Archived entries are hidden by default but never changed - tick “Show archived” to see them. Archiving cannot be undone.</p>
         {progress && <p className="text-[12.5px] text-[#6b5d85]">{progress}</p>}
       </ConfirmDialog>
 
@@ -506,11 +506,11 @@ export function ActivityLog() {
         )}
         {plan && plan.key === scopeKey && (
           <Notice tone={plan.plan.refs.length ? 'warn' : 'info'}>
-            <b>{plan.plan.refs.length}</b> entr{plan.plan.refs.length === 1 ? 'y' : 'ies'} will be deleted — {describeClearScope(clearScope, (ms) => new Date(ms).toLocaleDateString())}.
+            <b>{plan.plan.refs.length}</b> entr{plan.plan.refs.length === 1 ? 'y' : 'ies'} will be deleted - {describeClearScope(clearScope, (ms) => new Date(ms).toLocaleDateString())}.
             {plan.plan.kept > 0 && <> {plan.plan.kept} security entr{plan.plan.kept === 1 ? 'y is' : 'ies are'} kept.</>}
           </Notice>
         )}
-        <p className="text-[12.5px] text-[#6b5d85]">This cannot be undone — export a CSV first if you need a copy. Deleted in batches of 450; a security record of who cleared what and how many is added.</p>
+        <p className="text-[12.5px] text-[#6b5d85]">This cannot be undone - export a CSV first if you need a copy. Deleted in batches of 450; a security record of who cleared what and how many is added.</p>
         {progress && <p className="text-[12.5px] font-semibold text-[#3d096d]" role="status">{progress}</p>}
       </ConfirmDialog>
     </div>
@@ -521,12 +521,12 @@ function DetailView({ r }: { r: AuditRow }) {
   const rows: [string, ReactNode][] = [
     ['Time', fmtDateTime(r.atMs)],
     ['Action', <><span className="font-semibold">{actionLabel(r.action)}</span> <span className="font-mono text-[12px] text-[#7a6d92]">{r.action}</span></>],
-    ['Category', <><CategoryPill c={r.category} />{r.legacy && <span className="ml-2 text-[12px] text-[#7a6d92]">legacy entry (before categories) — shown as license</span>}</>],
+    ['Category', <><CategoryPill c={r.category} />{r.legacy && <span className="ml-2 text-[12px] text-[#7a6d92]">legacy entry (before categories) - shown as license</span>}</>],
     ['Status', <Badge tone={r.status === 'failure' ? 'rejected' : 'active'}>{r.status}</Badge>],
-    ['Admin', <>{r.by || '—'}{r.byUid && <div className="font-mono text-[11.5px] text-[#7a6d92]">{r.byUid}</div>}</>],
-    ['Target', <>{r.target || '—'}{r.targetType && <span className="ml-1 text-[12px] text-[#7a6d92]">({r.targetType})</span>}</>],
-    ['License', r.licenseId ? <span className="font-mono text-[12px]">{r.licenseId}</span> : '—'],
-    ['Archived', r.archived ? `Yes — ${fmtDateTime(r.archivedAtMs)}${r.archivedBy ? ` by ${r.archivedBy}` : ''}` : 'No'],
+    ['Admin', <>{r.by || '-'}{r.byUid && <div className="font-mono text-[12px] text-[#7a6d92]">{r.byUid}</div>}</>],
+    ['Target', <>{r.target || '-'}{r.targetType && <span className="ml-1 text-[12px] text-[#7a6d92]">({r.targetType})</span>}</>],
+    ['License', r.licenseId ? <span className="font-mono text-[12px]">{r.licenseId}</span> : '-'],
+    ['Archived', r.archived ? `Yes - ${fmtDateTime(r.archivedAtMs)}${r.archivedBy ? ` by ${r.archivedBy}` : ''}` : 'No'],
     ['Entry id', <span className="font-mono text-[12px]">{r.id}</span>]
   ]
   return (
@@ -541,11 +541,11 @@ function DetailView({ r }: { r: AuditRow }) {
       </dl>
       <div>
         <div className="label">Details</div>
-        <div className="rounded-xl border border-[#ece6f4] bg-[#fcfbfe] p-3 whitespace-pre-wrap">{r.details || '—'}</div>
+        <div className="rounded-xl border border-[#ece6f4] bg-[#fcfbfe] p-3 whitespace-pre-wrap">{r.details || '-'}</div>
       </div>
       <div>
         <div className="label">Meta</div>
-        <pre className="max-h-80 overflow-auto rounded-xl border border-[#ece6f4] bg-[#1d1530] p-3 font-mono text-[11.5px] text-[#e9defa]">{Object.keys(r.meta).length ? JSON.stringify(r.meta, null, 2) : '{}'}</pre>
+        <pre className="max-h-80 overflow-auto rounded-xl border border-[#ece6f4] bg-[#1d1530] p-3 font-mono text-[12px] text-[#e9defa]">{Object.keys(r.meta).length ? JSON.stringify(r.meta, null, 2) : '{}'}</pre>
       </div>
     </div>
   )

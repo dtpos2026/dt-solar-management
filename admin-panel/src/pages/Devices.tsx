@@ -88,7 +88,7 @@ export function Devices() {
     <div>
       <PageTitle
         title="Devices"
-        sub={`Registered computers across all licenses · ${ONLINE_THRESHOLD_LABEL}`}
+        sub={`Registered computers across all licenses, ${ONLINE_THRESHOLD_LABEL}`}
         actions={<>
           <Link className="btn btn-secondary" to="/map"><MapIcon className="h-4 w-4" />Map</Link>
           {tab === 'list' && <button className="btn btn-secondary" onClick={fleet.refresh} disabled={fleet.loading}><RefreshCw className="h-4 w-4" />Refresh</button>}
@@ -100,7 +100,7 @@ export function Devices() {
         tabs={[
           { id: 'list', label: <><MonitorSmartphone className="h-4 w-4" />Devices</> },
           ...(canRequests ? [
-            { id: 'requests' as Tab, label: <><Inbox className="h-4 w-4" />Activation requests{pending > 0 && <span className="ml-1 rounded-full bg-amber-400 px-1.5 text-[11px] text-[#2b0750]">{pending}</span>}</> },
+            { id: 'requests' as Tab, label: <><Inbox className="h-4 w-4" />Activation requests{pending > 0 && <span className="ml-1 rounded-full bg-amber-400 px-1.5 text-[12px] text-[#2b0750]">{pending}</span>}</> },
             { id: 'offline' as Tab, label: <><WifiOff className="h-4 w-4" />Offline activation</> }
           ] : [])
         ]}
@@ -138,19 +138,19 @@ export function Devices() {
                   <tbody>
                     {paged.rows.map((r) => (
                       <tr key={r.key} className="border-t border-[#f1ecf7] align-top">
-                        <td className="px-3 py-2"><div className="font-semibold">{r.deviceName || '—'}</div><code className="text-[11px] text-[#7a6d92]">{maskDeviceId(r.deviceId)}</code></td>
+                        <td className="px-3 py-2"><div className="font-semibold">{r.deviceName || '-'}</div><code className="text-[12px] text-[#7a6d92]">{maskDeviceId(r.deviceId)}</code></td>
                         <td className="px-3 py-2">
-                          <div>{r.company || '—'}</div>
-                          {r.licenseId ? <span className="flex items-center gap-1"><Link className="text-[11.5px] text-[#3d096d] underline" to={`/licenses/${r.licenseId}`}>{r.licenseKey ? maskLicenseKey(r.licenseKey) : 'license'}</Link>{r.licenseKey && <MaskedCopy value={r.licenseKey} />}</span> : <span className="text-[11.5px] text-[#7a6d92]">no license</span>}
+                          <div>{r.company || '-'}</div>
+                          {r.licenseId ? <span className="flex items-center gap-1"><Link className="text-[12px] text-[#3d096d] underline" to={`/licenses/${r.licenseId}`}>{r.licenseKey ? maskLicenseKey(r.licenseKey) : 'license'}</Link>{r.licenseKey && <MaskedCopy value={r.licenseKey} />}</span> : <span className="text-[12px] text-[#7a6d92]">no license</span>}
                         </td>
                         <td className="px-3 py-2">
                           <div>Installed {r.appVersion || 'unknown'}</div>
                           {published.value.latest && (
                             <div className="text-[12px] text-[#6b5d85]">
                               Available {published.value.latest}
-                              {versionState(r.appVersion, published.value) === 'update' && <span className="ml-1.5 rounded-md bg-amber-50 px-1.5 py-0.5 text-[11.5px] font-semibold text-amber-800">Update available</span>}
-                              {versionState(r.appVersion, published.value) === 'required' && <span className="ml-1.5 rounded-md bg-red-50 px-1.5 py-0.5 text-[11.5px] font-semibold text-red-700">Update required</span>}
-                              {versionState(r.appVersion, published.value) === 'current' && <span className="ml-1.5 rounded-md bg-green-50 px-1.5 py-0.5 text-[11.5px] font-semibold text-green-700">Up to date</span>}
+                              {versionState(r.appVersion, published.value) === 'update' && <span className="ml-1.5 rounded-md bg-amber-50 px-1.5 py-0.5 text-[12px] font-semibold text-amber-800">Update available</span>}
+                              {versionState(r.appVersion, published.value) === 'required' && <span className="ml-1.5 rounded-md bg-red-50 px-1.5 py-0.5 text-[12px] font-semibold text-red-700">Update required</span>}
+                              {versionState(r.appVersion, published.value) === 'current' && <span className="ml-1.5 rounded-md bg-green-50 px-1.5 py-0.5 text-[12px] font-semibold text-green-700">Up to date</span>}
                             </div>
                           )}
                           <div className="text-[12px] text-[#7a6d92]">{r.os || 'OS not reported'}</div>
@@ -167,7 +167,7 @@ export function Devices() {
                           )}
                         </td>
                         <td className="px-3 py-2">{fmtDateTime(r.registeredMs)}</td>
-                        <td className="px-3 py-2"><Pill value={r.online} />{r.lastSeenMs && <div className="text-[11.5px] text-[#7a6d92]" title={fmtDateTime(r.lastSeenMs)}>{timeAgo(r.lastSeenMs)}</div>}</td>
+                        <td className="px-3 py-2"><Pill value={r.online} />{r.lastSeenMs && <div className="text-[12px] text-[#7a6d92]" title={fmtDateTime(r.lastSeenMs)}>{timeAgo(r.lastSeenMs)}</div>}</td>
                         <td className="px-3 py-2">
                           {r.location ? (
                             <>
@@ -184,8 +184,8 @@ export function Devices() {
                           <div className={`text-[12px] ${r.verification.kind === 'overdue' ? 'font-semibold text-red-700' : r.verification.kind === 'grace' ? 'font-semibold text-amber-800' : 'text-[#6b5d85]'}`}>{verificationText(r.verification)}</div>
                         </td>
                         <td className="px-3 py-2">
-                          <div className="flex flex-col items-start gap-1"><Pill value={r.deviceStatus} title="Device status" /><Pill value={r.licenseStatus} title="License status" label={`license: ${r.licenseStatus === 'none' ? '—' : r.licenseStatus}`} /></div>
-                          {r.statusNote && <div className="text-[11px] text-[#7a6d92]">{r.statusNote}</div>}
+                          <div className="flex flex-col items-start gap-1"><Pill value={r.deviceStatus} title="Device status" /><Pill value={r.licenseStatus} title="License status" label={`license: ${r.licenseStatus === 'none' ? '-' : r.licenseStatus}`} /></div>
+                          {r.statusNote && <div className="text-[12px] text-[#7a6d92]">{r.statusNote}</div>}
                         </td>
                         <td className="px-3 py-2">
                           {manage && (

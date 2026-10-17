@@ -1,5 +1,5 @@
 /**
- * Verify Key helpers (pure — no Firebase imports, unit tested in tests/portal-admin.test.ts).
+ * Verify Key helpers (pure - no Firebase imports, unit tested in tests/portal-admin.test.ts).
  *
  * License keys look like DTSP-XXXX-XXXX-XXXX-XXXX (A–Z, 0–9). People type them with spaces, lower case,
  * typographic dashes or no dashes at all, so input is normalised before the format check.
@@ -39,8 +39,8 @@ export function checkKeyFormat(raw: string): KeyFormatResult {
   if (!key.startsWith('DTSP')) return { key, ok: false, error: `License keys start with DTSP (format ${KEY_PLACEHOLDER}).` }
   const chars = key.replace(/-/g, '')
   if (/[^A-Z0-9]/.test(chars)) return { key, ok: false, error: 'Only letters A–Z and digits 0–9 are allowed.' }
-  if (chars.length < 20) return { key, ok: false, error: `The key is too short — ${chars.length - 4} of 16 characters after DTSP.` }
-  if (chars.length > 20) return { key, ok: false, error: `The key is too long — ${chars.length - 4} characters after DTSP (16 expected).` }
+  if (chars.length < 20) return { key, ok: false, error: `The key is too short - ${chars.length - 4} of 16 characters after DTSP.` }
+  if (chars.length > 20) return { key, ok: false, error: `The key is too long - ${chars.length - 4} characters after DTSP (16 expected).` }
   return { key, ok: false, error: `Expected the format ${KEY_PLACEHOLDER}.` }
 }
 
@@ -113,7 +113,7 @@ export function isoToMs(iso: unknown): number | null {
   return Number.isNaN(t) ? null : t
 }
 
-/** "DTSP-AB12-****-****-9XYZ" — keys are shown masked in the activity log. */
+/** "DTSP-AB12-****-****-9XYZ" - keys are shown masked in the activity log. */
 export function maskKey(key: string): string {
   const m = key.match(/^DTSP-([A-Z0-9]{4})-[A-Z0-9]{4}-[A-Z0-9]{4}-([A-Z0-9]{4})$/)
   return m ? `DTSP-${m[1]}-****-****-${m[2]}` : key.length > 8 ? `${key.slice(0, 6)}…` : key
@@ -135,7 +135,7 @@ export interface RateDecision {
 }
 
 /**
- * Sliding-window limiter: at most `max` lookups in any `windowMs`. Browser-side only — a determined user can
+ * Sliding-window limiter: at most `max` lookups in any `windowMs`. Browser-side only - a determined user can
  * bypass it; real server-side rate limiting would need Cloud Functions (not on the Spark plan).
  */
 export function rateLimit(history: readonly number[], nowMs: number, max = VERIFY_LIMIT, windowMs = VERIFY_WINDOW_MS): RateDecision {

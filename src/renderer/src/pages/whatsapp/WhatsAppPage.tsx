@@ -189,7 +189,7 @@ export function WhatsAppPage(): JSX.Element {
         {st?.testMode && <Badge tone="warn">Test page</Badge>}
         {state === 'failed' && (
           <span className="max-w-[320px] truncate text-[12px] text-bad" title={st?.error ?? ''}>
-            {st?.error} — check the internet and press Reload.
+            {st?.error} - check the internet and press Reload.
           </span>
         )}
         <div className="ms-auto flex flex-wrap items-center gap-2">

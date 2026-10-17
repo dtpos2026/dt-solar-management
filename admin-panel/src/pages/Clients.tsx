@@ -54,7 +54,7 @@ function ClientList() {
       <PageTitle
         icon={<Building2 />}
         title="Clients"
-        sub={clients.loading ? 'Loading…' : `${clients.data.filter((c) => c.status === 'active').length} active · ${clients.data.filter((c) => c.status === 'suspended').length} suspended · ${clients.data.filter((c) => c.status === 'archived').length} archived`}
+        sub={clients.loading ? 'Loading…' : `${clients.data.filter((c) => c.status === 'active').length} active, ${clients.data.filter((c) => c.status === 'suspended').length} suspended, ${clients.data.filter((c) => c.status === 'archived').length} archived`}
         actions={can('clients.manage') && <button className="btn btn-primary" onClick={() => setForm(true)}><Plus className="h-4 w-4" />New client</button>}
       />
       <Notice msg={msg} onClose={() => setMsg(null)} className="mb-3" />
@@ -85,13 +85,13 @@ function ClientList() {
                     <td className="font-mono font-bold">{c.code}</td>
                     <td>
                       <div className="flex items-center gap-2">
-                        {c.logo ? <img src={c.logo} alt="" className="h-7 w-7 rounded object-contain" /> : <div className="flex h-7 w-7 items-center justify-center rounded bg-[#efe4fb] text-[11px] font-bold text-[#3d096d]">{c.company.slice(0, 2).toUpperCase()}</div>}
+                        {c.logo ? <img src={c.logo} alt="" className="h-7 w-7 rounded object-contain" /> : <div className="flex h-7 w-7 items-center justify-center rounded bg-[#efe4fb] text-[12px] font-bold text-[#3d096d]">{c.company.slice(0, 2).toUpperCase()}</div>}
                         <span className="font-semibold">{c.company}</span>
                       </div>
                     </td>
-                    <td>{c.ownerName}<div className="text-[11.5px] text-[#7a6d92]">{c.phone}</div></td>
-                    <td>{c.city || '—'}</td>
-                    <td>{c.plan || '—'} <Pill value={c.planType} /></td>
+                    <td>{c.ownerName}<div className="text-[12px] text-[#7a6d92]">{c.phone}</div></td>
+                    <td>{c.city || '-'}</td>
+                    <td>{c.plan || '-'} <Pill value={c.planType} /></td>
                     <td className="num">{licCount.get(c.id) ?? 0}</td>
                     <td>{fmtDate(c.registeredAt ?? c.createdAt)}</td>
                     <td><Pill value={c.status} /></td>

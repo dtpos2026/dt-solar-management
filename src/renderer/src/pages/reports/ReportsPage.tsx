@@ -89,7 +89,7 @@ const DOC_KINDS = new Set(['sale_invoice', 'quotation', 'sale_order', 'delivery_
 /* ------------------------------------------------------------------------------------------------ */
 
 function cellText(c: RCol, v: any, r?: any): string {
-  if (v === null || v === undefined || v === '') return c.type && c.type !== 'text' ? '—' : ''
+  if (v === null || v === undefined || v === '') return c.type && c.type !== 'text' ? '-' : ''
   switch (c.type) {
     case 'money':
       return money(Number(v))
@@ -127,7 +127,7 @@ function plAmount(l: PlLine): string {
 }
 
 function summaryValue(s: ReportModel['summary'][number]): string {
-  if (s.value === null || s.value === undefined) return '—'
+  if (s.value === null || s.value === undefined) return '-'
   if (s.type === 'money') return money(s.value)
   if (s.type === 'pct') return pct(s.value)
   if (s.type === 'qty') return qty(s.value)
@@ -275,7 +275,7 @@ export function ReportsPage(): JSX.Element {
     <div>
       <PageHeader
         title="Reports"
-        subtitle={`${opts.scope === 'all' ? 'All firms (consolidated)' : firm?.name ?? ''} · financial, sales, stock, party and project reports`}
+        subtitle={`${opts.scope === 'all' ? 'All firms (consolidated)' : firm?.name ?? ''}, financial, sales, stock, party and project reports`}
         icon={<ChartColumn className="h-5 w-5" />}
       />
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
@@ -355,7 +355,7 @@ export function ReportsPage(): JSX.Element {
                   {!accountList.length && <option value="">{accounts.loading ? 'Loading accounts…' : 'No accounts'}</option>}
                   {accountList.map((a) => (
                     <option key={a.id} value={a.id}>
-                      {a.name} · {label(a.type)}
+                      {a.name}, {label(a.type)}
                       {a.is_active ? '' : ' (inactive)'}
                     </option>
                   ))}
@@ -493,7 +493,7 @@ function rowHandler(
     else if (kind.startsWith('transfer') && can('accounts.view')) nav('/accounts?tab=transfers')
     else if (kind.startsWith('stock_') && can('inventory.view')) nav('/inventory?tab=adjustments')
     else {
-      toast.info(`${what} — you do not have access to the module that holds this entry.`)
+      toast.info(`${what} - you do not have access to the module that holds this entry.`)
       return
     }
     toast.info(`Look for ${what} in this list.`)
@@ -663,7 +663,7 @@ function PlView({ pl }: { pl: NonNullable<ReportModel['pl']> }): JSX.Element {
             </tbody>
           </table>
         </Card>
-        <Card title="Memo — not part of profit" pad={false}>
+        <Card title="Memo - not part of profit" pad={false}>
           <table className="w-full text-[13px]">
             <tbody>
               {pl.memo.map((l) => (
@@ -682,7 +682,7 @@ function PlView({ pl }: { pl: NonNullable<ReportModel['pl']> }): JSX.Element {
             <div className="flex flex-col items-center gap-3">
               <Donut parts={parts} center={compact(rev)} sub="Net sales" size={160} />
               <Legend items={parts.map((p) => ({ ...p, share: (p.value / rev) * 100 }))} />
-              {f.netProfit < 0 && <div className="text-center text-[12px] font-medium text-bad">Costs exceed sales — net loss of {money(Math.abs(f.netProfit))}</div>}
+              {f.netProfit < 0 && <div className="text-center text-[12px] font-medium text-bad">Costs exceed sales - net loss of {money(Math.abs(f.netProfit))}</div>}
             </div>
           ) : (
             <Empty title="No sales in this period">The chart appears once sales are invoiced.</Empty>
@@ -743,7 +743,7 @@ function Legend({ items }: { items: Array<{ label: string; value: number; color:
           <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: p.color }} />
           <span className="min-w-0 flex-1 truncate">{p.label}</span>
           <span className="num font-semibold">{money(p.value)}</span>
-          {p.share !== undefined && <span className="num w-12 text-right text-muted">{p.share === null ? '—' : pct(p.share)}</span>}
+          {p.share !== undefined && <span className="num w-12 text-right text-muted">{p.share === null ? '-' : pct(p.share)}</span>}
         </div>
       ))}
     </div>
@@ -776,7 +776,7 @@ function DonutCard({ title, items, center }: { title: string; items: Array<{ lab
   )
 }
 
-/** Chart labels double as React keys — make repeated names (two parties called alike) unique. */
+/** Chart labels double as React keys - make repeated names (two parties called alike) unique. */
 function uniqueLabels<T extends { label: string }>(items: T[]): T[] {
   const seen = new Map<string, number>()
   return items.map((i) => {
@@ -789,7 +789,7 @@ function uniqueLabels<T extends { label: string }>(items: T[]): T[] {
 function topN(rows: any[], valueOf: (r: any) => number, labelOf: (r: any) => string, n = 8): Array<{ label: string; value: number }> {
   return uniqueLabels(
     [...rows]
-      .map((r) => ({ label: labelOf(r) || '—', value: round2(Number(valueOf(r)) || 0) }))
+      .map((r) => ({ label: labelOf(r) || '-', value: round2(Number(valueOf(r)) || 0) }))
       .filter((i) => Math.abs(i.value) > 0.004)
       .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
       .slice(0, n)
@@ -829,7 +829,7 @@ function ReportCharts({ k, data, model, gb }: { k: ReportKey; data: any; model: 
               <HBar items={topN(rows, (r) => r.profit, (r) => r.name)} color="#f7931e" />
             </Card>
           ) : (
-            <DonutCard title={`Share of net ${isSales ? 'sales' : 'purchases'}`} items={rows.map((r) => ({ label: String(r.name ?? '—'), value: Number(r.net) || 0 }))} center="Net total" />
+            <DonutCard title={`Share of net ${isSales ? 'sales' : 'purchases'}`} items={rows.map((r) => ({ label: String(r.name ?? '-'), value: Number(r.net) || 0 }))} center="Net total" />
           )}
         </div>
       )
@@ -899,11 +899,11 @@ function ReportCharts({ k, data, model, gb }: { k: ReportKey; data: any; model: 
       return (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Card title="Net profit by project">
-            <HBar items={topN(rows, (r) => r.financials?.netProfit, (r) => `${r.code} · ${r.name}`)} color="#1baf7a" />
+            <HBar items={topN(rows, (r) => r.financials?.netProfit, (r) => `${r.code}, ${r.name}`)} color="#1baf7a" />
           </Card>
           <Card title="Customer dues by project">
-            {topN(rows, (r) => r.financials?.customerOutstanding, (r) => `${r.code} · ${r.name}`).length ? (
-              <HBar items={topN(rows, (r) => r.financials?.customerOutstanding, (r) => `${r.code} · ${r.name}`)} color="#eb6834" />
+            {topN(rows, (r) => r.financials?.customerOutstanding, (r) => `${r.code}, ${r.name}`).length ? (
+              <HBar items={topN(rows, (r) => r.financials?.customerOutstanding, (r) => `${r.code}, ${r.name}`)} color="#eb6834" />
             ) : (
               <Empty title="All project dues collected" />
             )}

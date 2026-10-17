@@ -202,12 +202,12 @@ export function renderReport(
   lines.push('# Vyapar → DT Solar Pro conversion report', '')
   lines.push(`- Source: \`${conv.sourceFile.split(/[\\/]/).pop()}\` (SHA-256 \`${conv.sourceSha256}\`)`)
   lines.push(`- Vyapar database inside: \`${conv.vypName}\` (schema user_version ${conv.vypUserVersion})`)
-  lines.push(`- Result: **${v.failed === 0 ? 'ALL CHECKS PASSED' : `${v.failed} CHECK(S) FAILED`}** — ${v.checks.length} checks, ${v.warnings} warnings/limitations (listed below)`)
+  lines.push(`- Result: **${v.failed === 0 ? 'ALL CHECKS PASSED' : `${v.failed} CHECK(S) FAILED`}** - ${v.checks.length} checks, ${v.warnings} warnings/limitations (listed below)`)
   lines.push(`- Restore tests: .js1 restored with the app's restore builder ${rt.restoredValidationPassed ? 'passed every check again' : 'FAILED'}; second backup→restore round trip ${rt.identical ? 'identical (same SHA-256)' : 'DIFFERENT'}; .dtbak validation ${rt.dtbakValid ? 'ok' : 'FAILED'}`)
   lines.push('', '## Files', '')
-  lines.push(`- \`${files.js1}\` — DT Solar Pro JSON backup (.js1). Restore: Backup & Restore → **JSON backup (.js1) → Restore**.`)
-  lines.push(`- \`${files.dtbak}\` — the same data as a native DT Solar Pro backup. Restore: Backup & Restore → **Restore from a backup file**.`)
-  lines.push(`- Sign in after restoring: user **admin**, temporary password **${files.password}** — the app forces a new password at first sign-in.`)
+  lines.push(`- \`${files.js1}\` - DT Solar Pro JSON backup (.js1). Restore: Backup & Restore → **JSON backup (.js1) → Restore**.`)
+  lines.push(`- \`${files.dtbak}\` - the same data as a native DT Solar Pro backup. Restore: Backup & Restore → **Restore from a backup file**.`)
+  lines.push(`- Sign in after restoring: user **admin**, temporary password **${files.password}** - the app forces a new password at first sign-in.`)
   lines.push('', '## Checks (source vs converted)', '', '| Group | Check | Vyapar | DT Solar Pro | Result |', '|---|---|---:|---:|:---:|')
   for (const c of v.checks) lines.push(`| ${c.group} | ${c.name}${c.detail ? ` (${c.detail})` : ''} | ${fmt(c.expected)} | ${fmt(c.actual)} | ${c.pass ? 'PASS' : '**FAIL**'} |`)
   lines.push('', '## Cash / bank accounts', '', '| Vyapar payment type | Vyapar balance | DT Solar Pro (all firms) |', '|---|---:|---:|')
@@ -228,7 +228,7 @@ export function renderReport(
     if (infoSeen.has(key)) continue
     infoSeen.add(key)
     const count = conv.notes.filter((x) => x.level === 'info' && `${x.entity}:${x.message.replace(/\d+/g, '#')}` === key).length
-    lines.push(`- (${n.entity}) ${n.message}${count > 1 ? ` — ${count} records` : ''}`)
+    lines.push(`- (${n.entity}) ${n.message}${count > 1 ? ` - ${count} records` : ''}`)
   }
   lines.push('', '## Field mapping', '')
   lines.push(...FIELD_MAPPING)

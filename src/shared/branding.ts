@@ -1,4 +1,4 @@
-/** Software vendor (Digital Target) branding — shown on splash, login, about and (optionally) printed documents. */
+/** Software vendor (Digital Target) branding - shown on splash, login, about and (optionally) printed documents. */
 export const VENDOR = {
   company: 'Digital Target',
   product: 'DT Solar Pro',

@@ -27,7 +27,7 @@ const TONES: Record<string, string> = {
   deactivated: 'bg-slate-100 text-slate-600'
 }
 export function Badge({ children, tone }: { children: ReactNode; tone?: string }) {
-  return <span className={cx('inline-block rounded-md px-2 py-0.5 text-[11.5px] font-bold capitalize', TONES[tone ?? String(children)] ?? 'bg-[#f1e9fb] text-[#3d096d]')}>{children}</span>
+  return <span className={cx('inline-block rounded-md px-2 py-0.5 text-[12px] font-bold capitalize', TONES[tone ?? String(children)] ?? 'bg-[#f1e9fb] text-[#3d096d]')}>{children}</span>
 }
 
 export function Modal({ open, onClose, title, children, footer, wide }: { open: boolean; onClose: () => void; title: string; children: ReactNode; footer?: ReactNode; wide?: boolean }) {

@@ -1,4 +1,4 @@
-/** Settings section — WhatsApp: mode, country code, notifications, linked device, send log (owner: assist area). */
+/** Settings section - WhatsApp: mode, country code, notifications, linked device, send log (owner: assist area). */
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CheckCheck, LogOut, MessageCircle, RotateCcw, Save, XCircle } from 'lucide-react'
@@ -108,9 +108,9 @@ export function WhatsAppSection(): JSX.Element {
 
   const columns: Array<Column<LogRow>> = [
     { key: 'created_at', header: 'Date', width: 140, render: (r) => <span className="whitespace-nowrap">{r.created_at.slice(0, 16)}</span> },
-    { key: 'party_name', header: 'Customer / supplier', render: (r) => r.party_name ?? '—' },
+    { key: 'party_name', header: 'Customer / supplier', render: (r) => r.party_name ?? '-' },
     { key: 'phone', header: 'Phone', render: (r) => <span className="num">+{r.phone}</span> },
-    { key: 'file_name', header: 'Document', render: (r) => <span title={r.file_name ?? ''}>{ENTITY_LABEL[r.entity ?? ''] ?? r.entity} · {r.file_name}</span> },
+    { key: 'file_name', header: 'Document', render: (r) => <span title={r.file_name ?? ''}>{ENTITY_LABEL[r.entity ?? ''] ?? r.entity}, {r.file_name}</span> },
     { key: 'method', header: 'Method', render: (r) => METHOD_LABEL[r.method] ?? r.method },
     {
       key: 'status',
@@ -173,7 +173,7 @@ export function WhatsAppSection(): JSX.Element {
       <Card title="Linked device">
         <div className="space-y-2 text-[13px] text-muted">
           <p>
-            The WhatsApp screen shows the real WhatsApp Web. Link your phone once: on the phone open WhatsApp → Settings (or ⋮) → <b>Linked devices</b> → <b>Link a device</b> and scan the QR code. It stays linked on this computer. The app never sends messages by itself — you always press Send in WhatsApp.
+            The WhatsApp screen shows the real WhatsApp Web. Link your phone once: on the phone open WhatsApp → Settings (or ⋮) → <b>Linked devices</b> → <b>Link a device</b> and scan the QR code. It stays linked on this computer. The app never sends messages by itself - you always press Send in WhatsApp.
           </p>
           <p>WhatsApp Web needs internet. If the QR code does not load, press Reload on the WhatsApp screen.</p>
         </div>

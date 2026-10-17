@@ -46,8 +46,8 @@ function Login() {
         <div className="mb-5 flex items-center gap-3">
           <img src="/icon.png" className="h-12 w-12 rounded-xl" alt="" />
           <div>
-            <div className="text-[19px] font-extrabold">DT Solar Pro — Super Admin</div>
-            <div className="text-[12.5px] text-[#7a6d92]">Licensing, billing & support · Digital Target</div>
+            <div className="text-[19px] font-extrabold">DT Solar Pro - Super Admin</div>
+            <div className="text-[12.5px] text-[#7a6d92]">Licensing, billing & support, Digital Target</div>
           </div>
         </div>
         {state.phase === 'bootstrap' ? (
@@ -68,7 +68,7 @@ function Login() {
           </form>
         )}
         {(msg || notice) && <div className="mt-4 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{msg || notice}</div>}
-        <div className="mt-6 text-center text-[11.5px] text-[#7a6d92]">Create the owner account first in Firebase Console → Authentication → Add user.</div>
+        <div className="mt-6 text-center text-[12px] text-[#7a6d92]">Create the owner account first in Firebase Console → Authentication → Add user.</div>
       </div>
     </div>
   )
@@ -91,7 +91,7 @@ const NAV: { to: string; label: string; icon: ReactNode; perms: string[] }[] = [
 
 function Shell() {
   const { state, signOut } = useAuth()
-  const { key } = useSigningKey()
+  const { key, restoring } = useSigningKey()
   const can = useCan()
   const items = NAV.filter((n) => n.perms.length === 0 || n.perms.some(can))
   return (
@@ -100,7 +100,7 @@ function Shell() {
       <aside className="flex w-60 shrink-0 flex-col bg-gradient-to-b from-[#1e0538] to-[#2b0750] text-[#dacdf2]">
         <div className="flex items-center gap-3 px-5 py-5">
           <img src="/icon.png" className="h-10 w-10 rounded-xl" alt="" />
-          <div className="leading-tight"><div className="font-extrabold text-white">Super Admin</div><div className="text-[11px] opacity-70">DT Solar Pro · Digital Target</div></div>
+          <div className="leading-tight"><div className="font-extrabold text-white">Super Admin</div><div className="text-[12px] opacity-70">DT Solar Pro, Digital Target</div></div>
         </div>
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-3">
           {items.map((n) => (
@@ -121,10 +121,10 @@ function Shell() {
           ))}
         </nav>
         <div className="border-t border-white/10 px-5 py-3 text-[12px]">
-          <div className={cx('mb-2 flex items-center gap-2', key ? 'text-green-300' : 'text-amber-300')}><ShieldCheck className="h-4 w-4" />{key ? 'Signing key loaded' : 'No signing key'}</div>
+          <div className={cx('mb-2 flex items-center gap-2', key ? 'text-green-300' : restoring ? 'text-white/70' : 'text-amber-300')}><ShieldCheck className="h-4 w-4" />{key ? 'Signing key loaded' : restoring ? 'Restoring signing key' : 'No signing key'}</div>
           <div className="truncate opacity-80">{state.phase === 'admin' ? state.user.email : ''}</div>
           <button className="mt-2 flex items-center gap-2 hover:text-white" onClick={() => signOut()}><LogOut className="h-4 w-4" />Sign out</button>
-          <div className="mt-3 text-[10.5px] opacity-60">© Digital Target · +92 345 1873354</div>
+          <div className="mt-3 text-[12px] opacity-60">© Digital Target, +92 345 1873354</div>
         </div>
       </aside>
       <main className="min-w-0 flex-1 overflow-y-auto px-7 py-6">

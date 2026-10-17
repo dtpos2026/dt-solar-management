@@ -13,7 +13,7 @@ const URDU_FONT = "'Noto Nastaliq Urdu', 'Jameel Noori Nastaleeq', 'Urdu Typeset
 const T = {
   en: {
     subtitle: 'Offline help assistant. Answers come from the built-in help guide on this computer; no internet is needed.',
-    placeholder: 'Ask in English, Urdu or Roman Urdu — e.g. "invoice kaise banaye"',
+    placeholder: 'Ask in English, Urdu or Roman Urdu - e.g. "invoice kaise banaye"',
     ask: 'Ask',
     examples: 'Try asking',
     where: 'Where to find it',
@@ -32,7 +32,7 @@ const T = {
   },
   ur: {
     subtitle: 'آف لائن ہیلپ اسسٹنٹ۔ جوابات اسی کمپیوٹر پر موجود ہیلپ گائیڈ سے آتے ہیں، انٹرنیٹ کی ضرورت نہیں۔',
-    placeholder: 'اردو، انگریزی یا رومن اردو میں پوچھیں — مثلاً "انوائس کیسے بنائیں"',
+    placeholder: 'اردو، انگریزی یا رومن اردو میں پوچھیں - مثلاً "انوائس کیسے بنائیں"',
     ask: 'پوچھیں',
     examples: 'یہ پوچھ کر دیکھیں',
     where: 'کہاں ملے گا',

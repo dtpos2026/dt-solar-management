@@ -127,7 +127,7 @@ export function DocumentView(): JSX.Element {
           </div>
           <div className="text-[12.5px] text-muted">
             Created by {d.created_by_name} on {dateTime(d.created_at)}
-            {d.updated_at && ` · edited by ${d.updated_by_name} on ${dateTime(d.updated_at)}`}
+            {d.updated_at && `, edited by ${d.updated_by_name} on ${dateTime(d.updated_at)}`}
           </div>
         </div>
         <Button icon={<Printer className="h-4 w-4" />} variant="primary" onClick={printDoc}>Print / PDF</Button>
@@ -162,7 +162,7 @@ export function DocumentView(): JSX.Element {
         </div>
       )}
 
-      {cancelled && <div className="rounded-xl bg-bad-soft px-4 py-3 text-[13px] text-bad">Cancelled on {dateTime(d.cancelled_at)}. Reason: {d.cancel_reason ?? '—'}</div>}
+      {cancelled && <div className="rounded-xl bg-bad-soft px-4 py-3 text-[13px] text-bad">Cancelled on {dateTime(d.cancelled_at)}. Reason: {d.cancel_reason ?? '-'}</div>}
       {meta.financial && d.delete_block && can(`${p}.delete`) && (
         <div className="flex items-start gap-2 rounded-xl bg-surface-2 px-4 py-2.5 text-[12.5px] text-muted">
           <Info className="mt-0.5 h-4 w-4 shrink-0" />
@@ -189,7 +189,7 @@ export function DocumentView(): JSX.Element {
           {d.valid_until && <Kv label="Valid until">{date(d.valid_until)}</Kv>}
           {d.project_id && (
             <Kv label="Project">
-              <button type="button" className="text-brand hover:underline cursor-pointer" onClick={() => nav(`/projects/${d.project_id}`)}>{d.project_code} · {d.project_name}</button>
+              <button type="button" className="text-brand hover:underline cursor-pointer" onClick={() => nav(`/projects/${d.project_id}`)}>{d.project_code}, {d.project_name}</button>
             </Kv>
           )}
           {d.warehouse_name && <Kv label="Warehouse">{d.warehouse_name}</Kv>}
@@ -200,7 +200,7 @@ export function DocumentView(): JSX.Element {
             </Kv>
           )}
           {d.doc_type === 'sale_invoice' && !d.deduct_stock && <div className="mt-1 text-[12px] text-info">Stock not deducted (materials costed through project issues)</div>}
-          {d.direct_to_project ? <div className="mt-1 text-[12px] text-info">Delivered directly to project site — cost charged to project</div> : null}
+          {d.direct_to_project ? <div className="mt-1 text-[12px] text-info">Delivered directly to project site - cost charged to project</div> : null}
         </Card>
         <Card title="Amounts">
           <Kv label="Net (excl. tax)">{moneyFull(d.net_total)}</Kv>
@@ -235,16 +235,16 @@ export function DocumentView(): JSX.Element {
                 <td className="text-muted">{l.line_no}</td>
                 <td>
                   <div className="font-semibold">{l.description}</div>
-                  {(l.brand || l.model) && l.description !== l.product_name && <div className="text-[12px] text-muted">{[l.brand, l.model].filter(Boolean).join(' · ')}</div>}
+                  {(l.brand || l.model) && l.description !== l.product_name && <div className="text-[12px] text-muted">{[l.brand, l.model].filter(Boolean).join(', ')}</div>}
                   {l.details && <div className="mt-0.5 max-w-[640px] text-[12.5px] leading-snug whitespace-pre-line text-ink/80">{l.details}</div>}
                   <div className="text-[12px] text-muted">
-                    {[l.sku, l.serials && `S/N: ${l.serials}`, l.warranty && `Warranty: ${l.warranty}`, l.returned_qty > 0 && `Returned: ${qty(l.returned_qty)}`].filter(Boolean).join(' · ')}
+                    {[l.sku, l.serials && `S/N: ${l.serials}`, l.warranty && `Warranty: ${l.warranty}`, l.returned_qty > 0 && `Returned: ${qty(l.returned_qty)}`].filter(Boolean).join(', ')}
                   </div>
                 </td>
                 <td className="num text-right">{qty(l.qty)} {l.unit}</td>
                 <td className="num text-right">{moneyFull(l.rate)}</td>
-                <td className="num text-right">{l.discount_amt > 0 ? moneyFull(l.discount_amt) : '—'}</td>
-                <td className="num text-right">{l.tax_amt > 0 ? `${moneyFull(l.tax_amt)} (${l.tax_rate}%)` : '—'}</td>
+                <td className="num text-right">{l.discount_amt > 0 ? moneyFull(l.discount_amt) : '-'}</td>
+                <td className="num text-right">{l.tax_amt > 0 ? `${moneyFull(l.tax_amt)} (${l.tax_rate}%)` : '-'}</td>
                 <td className="num text-right font-semibold">{moneyFull(l.line_total)}</td>
                 {l.unit_cost !== null && meta.stock !== 0 && <td className="num text-right text-muted">{money(l.cost_total)}</td>}
               </tr>

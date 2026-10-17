@@ -57,7 +57,7 @@ export function MaterialPrint({ id, ctx, setTitle }: TemplateProps): JSX.Element
             <span className="text-[#4a5568]">Movement</span>
             <span>{isReturn ? 'Site → Store (stock in)' : 'Store → Site (stock out)'}</span>
             <span className="text-[#4a5568]">Prepared by</span>
-            <span>{m.created_by_name ?? '—'}</span>
+            <span>{m.created_by_name ?? '-'}</span>
             <span className="text-[#4a5568]">Items</span>
             <span>
               {lines.length} line{lines.length === 1 ? '' : 's'} · Qty {pq(totalQty)}
@@ -97,7 +97,7 @@ export function MaterialPrint({ id, ctx, setTitle }: TemplateProps): JSX.Element
                       .map((s) => s.trim())
                       .filter(Boolean)
                       .join(', ')
-                  : '—'}
+                  : '-'}
               </td>
             )}
             {showCost && <td className="num text-right">{pm(ctx, l.unit_cost, 2)}</td>}

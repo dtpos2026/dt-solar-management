@@ -223,7 +223,7 @@ function ThermalHead({ b, title, no }: { b: Branding; title: string; no: string 
       {b.logo && <img src={b.logo} alt="" style={{ maxHeight: '14mm', maxWidth: '40mm', objectFit: 'contain', margin: '0 auto 1mm', display: 'block' }} />}
       <div style={{ fontSize: '14px', fontWeight: 800 }}>{b.companyName}</div>
       {b.address && <div style={{ fontSize: '10px' }}>{b.address}</div>}
-      <div style={{ fontSize: '10px' }}>{[b.phone, b.email].filter(Boolean).join(' · ')}</div>
+      <div style={{ fontSize: '10px' }}>{[b.phone, b.email].filter(Boolean).join(', ')}</div>
       <div style={{ fontSize: '13px', fontWeight: 800, marginTop: '2mm', letterSpacing: '0.08em' }}>{title}</div>
       <div style={{ fontSize: '11px', fontWeight: 700 }}>{no}</div>
     </div>
@@ -241,7 +241,7 @@ export function ThermalInvoice({ inv, b }: { inv: Invoice; b: Branding }) {
   const cur = inv.currency
   return (
     <div className="dt-thermal" style={{ ...T, width: '72mm', fontSize: '11px' }}>
-      <ThermalHead b={b} title={inv.status === 'cancelled' ? 'INVOICE — CANCELLED' : 'INVOICE'} no={inv.number} />
+      <ThermalHead b={b} title={inv.status === 'cancelled' ? 'INVOICE - CANCELLED' : 'INVOICE'} no={inv.number} />
       <TRow k="Date" v={fmtDate(inv.issueDate)} />
       <TRow k="Due" v={fmtDate(inv.dueDate)} />
       <TRow k="Customer" v={inv.clientName} />
@@ -271,11 +271,11 @@ export function ThermalReceipt({ inv, pay, b }: { inv: Invoice; pay: InvoicePaym
   const cur = inv.currency
   return (
     <div className="dt-thermal" style={{ ...T, width: '72mm', fontSize: '11px' }}>
-      <ThermalHead b={b} title={pay.cancelled ? 'RECEIPT — VOID' : 'PAYMENT RECEIPT'} no={pay.receiptNo} />
+      <ThermalHead b={b} title={pay.cancelled ? 'RECEIPT - VOID' : 'PAYMENT RECEIPT'} no={pay.receiptNo} />
       <TRow k="Date" v={fmtDate(pay.date)} />
       <TRow k="Received from" v={inv.clientName} />
       <TRow k="Invoice" v={inv.number} />
-      <TRow k="Method" v={pay.method || '—'} />
+      <TRow k="Method" v={pay.method || '-'} />
       {pay.reference && <TRow k="Reference" v={pay.reference} />}
       <div style={{ borderTop: '1px dashed #000', margin: '2mm 0' }} />
       <TRow k="AMOUNT" v={money(pay.amount, cur)} bold />

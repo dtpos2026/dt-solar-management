@@ -180,6 +180,8 @@ export interface LicenseServiceOptions {
    */
   getDbRemote?: () => unknown
   setDbRemote?: (r: RemoteRecord | null) => void
+  /** A signed command published for this computer in licenseStatus.commands (e.g. Administrator password reset). */
+  onCommand?: (code: string) => void
   /** True when the business DB shows the former local trial was used (app_meta.trial_started_at). Wording only. */
   hasLegacyTrial?: () => boolean
   /** Tests: clock. */
@@ -341,6 +343,11 @@ export class LicenseService {
     const tmp = this.certFile + '.tmp'
     writeFileSync(tmp, JSON.stringify(cert, null, 2))
     renameSync(tmp, this.certFile)
+  }
+
+  /** Public key that verifies certificates and commands from Digital Target. */
+  get verificationKey(): string {
+    return this.opts.publicKeyPem
   }
 
   get onlineConfigured(): boolean {
@@ -870,6 +877,15 @@ export class LicenseService {
       const doc = await this.client.get(`licenseStatus/${payload.licenseId}`)
       if (!doc) throw new AppError('License status is not published yet. Contact Digital Target.', 'LICENSE')
       const d = doc.data
+      // 0. Commands for this computer (signed by Digital Target; verified and applied by the app, never trusted here).
+      const published = d.commands && typeof d.commands === 'object' ? (d.commands as Record<string, unknown>)[this.deviceId] : undefined
+      if (typeof published === 'string' && published && this.opts.onCommand) {
+        try {
+          this.opts.onCommand(published)
+        } catch (e) {
+          this.log('warn', `A command from Digital Target could not be processed: ${(e as Error).message}`)
+        }
+      }
       // 1. Status of the license and of this device.
       const block = remoteDecision(d, this.deviceId)
       // 2. A re-signed certificate for this computer (renewal, plan / limit change, detachment) — never while the

@@ -45,6 +45,7 @@ import {
   type AuditRow,
   type ClearScope
 } from '../lib/auditLog'
+import { ClearAllActivityButton } from '../components/ClearAllActivity'
 import { planAuditClear, planLicenseHistoryClear, planReleasedDevicesClear, runAuditClear, runLicenseHistoryClear, runReleasedDevicesClear, type ClearPlan } from '../lib/clearing'
 import { invalidate } from '../lib/queryCache'
 
@@ -300,7 +301,8 @@ export function ActivityLog() {
               <button className="btn btn-secondary" onClick={() => { setDialogError(null); setDialog('archiveOlder') }}><Archive className="h-4 w-4" />Archive older…</button>
             )}
             {(canManage || canDeviceRecords) && <button className="btn btn-secondary" onClick={() => setRecordsOpen(true)}><History className="h-4 w-4" />Clear license records…</button>}
-            {canManage && <button className="btn btn-secondary text-red-700" onClick={openClear}><Eraser className="h-4 w-4" />Clear logs…</button>}
+            {canManage && <ClearAllActivityButton className="btn btn-secondary text-red-700" onCleared={(n) => { reload(); setFlash({ tone: 'success', text: `${n} entr${n === 1 ? 'y' : 'ies'} deleted. A security record of this clean-up was added to the log.` }) }} />}
+            {canManage && <button className="btn btn-secondary text-red-700" onClick={openClear}><Eraser className="h-4 w-4" />Clear by category or date…</button>}
           </>
         }
       />

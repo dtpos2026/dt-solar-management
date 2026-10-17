@@ -201,6 +201,10 @@ export interface Heartbeat {
   lastCheckAt: string
   firms: number
   users: number
+  /** Why this computer sent no location (set by the desktop app). */
+  locationNote: string
+  /** Administrator password reset progress reported by the computer: "<nonce>:received" | "<nonce>:used". */
+  resetState: string
   lastSeen: Timestamp | null
   location: HeartbeatLocation | null
 }

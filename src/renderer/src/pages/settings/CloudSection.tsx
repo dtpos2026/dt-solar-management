@@ -34,7 +34,7 @@ const when = (iso: string | null | undefined): string => (iso ? new Date(iso).to
 
 const SOURCE_LABEL: Record<string, string> = {
   device: "This computer's location service (Windows)",
-  approximate: "Approximate (internet IP — usually the ISP's city, e.g. Lahore for Burewala)",
+  approximate: "Approximate (from your internet address, city level)",
   manual: 'Entered manually'
 }
 const accuracy = (km: number): string => (!km ? 'unknown' : km < 1 ? `about ${Math.round(km * 1000)} m` : `about ${Math.round(km * 10) / 10} km`)
@@ -155,7 +155,7 @@ export function CloudSection(): JSX.Element {
               {(
                 [
                   ['device', "Use this computer's location service", 'Reads the Windows location service (GPS / Wi-Fi positioning) with its real accuracy. Windows location must be on (Settings → Privacy → Location). Refreshed at most every 6 hours. If it is unavailable, nothing is sent.'],
-                  ['approximate', "Approximate (internet IP — usually the ISP's city, e.g. Lahore for Burewala)", 'Looked up from your internet address via ipwho.is, about 25 km accurate or worse. Refreshed at most once a day.'],
+                  ['approximate', "Approximate (from your internet address, city level)", 'Looked up from your internet address via ipwho.is, about 25 km accurate or worse. Refreshed at most once a day.'],
                   ['manual', 'Exact (I enter it)', 'Type the latitude and longitude of your office, e.g. from Google Maps.']
                 ] as const
               ).map(([k, t, d]) => (
@@ -167,7 +167,7 @@ export function CloudSection(): JSX.Element {
             </div>
           )}
           {sharing && mode === 'manual' && (
-            <Field label="Coordinates" hint='Format: "lat, lng" or "lat, lng | label" — e.g. 30.1979, 71.4697 | Multan office' error={preview?.manualError ?? undefined}>
+            <Field label="Coordinates" hint='Latitude and longitude, optionally followed by a label: 30.1979, 71.4697 | Head office' error={preview?.manualError ?? undefined}>
               <Input value={manual} maxLength={200} placeholder="30.1979, 71.4697 | Head office" onChange={(e) => setManual(e.target.value)} />
             </Field>
           )}

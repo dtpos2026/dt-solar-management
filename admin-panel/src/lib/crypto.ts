@@ -214,6 +214,30 @@ export async function signPayload(payloadObject: LicensePayload, seed: Uint8Arra
   }
 }
 
+/**
+ * Commands to a computer (e.g. Administrator password reset) use the same key but sign `COMMAND_DOMAIN + payload`, so a command
+ * can never be installed as a license certificate and a certificate can never be replayed as a command.
+ * Matches src/main/license/verify.ts (desktop).
+ */
+export const COMMAND_DOMAIN = 'dtsp-cmd-v1.'
+
+export async function signCommand(payloadObject: Record<string, unknown>, seed: Uint8Array): Promise<{ payload: string; signature: string; code: string }> {
+  const payload = utf8ToBase64Url(JSON.stringify(payloadObject))
+  const sig = await ed.signAsync(new TextEncoder().encode(COMMAND_DOMAIN + payload), seed)
+  const signature = bytesToBase64Url(sig)
+  return { payload, signature, code: `${payload}.${signature}` }
+}
+
+export async function verifyCommandCode(code: string, publicKey: Uint8Array): Promise<boolean> {
+  const [payload, signature] = code.split('.')
+  if (!payload || !signature) return false
+  try {
+    return await ed.verifyAsync(base64UrlToBytes(signature), new TextEncoder().encode(COMMAND_DOMAIN + payload), publicKey)
+  } catch {
+    return false
+  }
+}
+
 /** Self-check: verifies a signature against a public key (used after signing, to be safe). */
 export async function verifyCode(code: string, publicKey: Uint8Array): Promise<boolean> {
   const [payload, signature] = code.split('.')

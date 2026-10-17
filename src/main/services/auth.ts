@@ -2,6 +2,7 @@ import { randomBytes, scryptSync, timingSafeEqual } from 'crypto'
 import type { DB } from '../db'
 import { ALL_PERMISSIONS, OWNER_ROLE_NAME, PERMISSION_GROUPS } from '../../shared/permissions'
 import { AppError, Ctx, SessionUser, audit, optText, requirePerm, requireText } from './context'
+import { consumeReset, getPendingReset, matchTemporaryPassword } from './adminReset'
 
 const SCRYPT_N = 16384
 const SCRYPT_R = 8
@@ -178,6 +179,26 @@ function checkPasswordAttempt(db: DB, u: UserRow, password: string, failAction: 
   db.prepare('UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE id = ?').run(u.id)
 }
 
+/**
+ * Administrator password reset sent by Digital Target: the owner signs in with the temporary password the Super Admin relayed
+ * (verified against the signed command's PBKDF2 verifier — no plaintext is stored anywhere). The account then gets a normal
+ * hash and must choose a new password; a locked or failed-attempt state is cleared because recovery is the point.
+ */
+function tryAdminResetLogin(db: DB, u: UserRow, password: string): boolean {
+  if (!u.is_owner) return false
+  const pending = getPendingReset(db)
+  if (!pending || !matchTemporaryPassword(pending, password)) return false
+  db.transaction(() => {
+    db.prepare("UPDATE users SET password_hash = ?, must_change_password = 1, failed_attempts = 0, locked_until = NULL, is_active = 1, updated_at = datetime('now','localtime') WHERE id = ?").run(
+      hashPassword(password),
+      u.id
+    )
+    consumeReset(db, pending)
+    auditRaw(db, u.id, u.username, 'password_reset', 'Administrator password reset by Digital Target; a new password must be chosen')
+  })()
+  return true
+}
+
 function completeLogin(db: DB, u: UserRow, method: 'password' | 'pin'): { user: SessionUser; lastFirmId: number | null } {
   db.prepare("UPDATE users SET last_login_at = datetime('now','localtime') WHERE id = ?").run(u.id)
   auditRaw(db, u.id, u.username, method === 'pin' ? 'pin_login' : 'login', method === 'pin' ? 'Signed in with PIN' : 'Signed in')
@@ -193,6 +214,7 @@ export function login(db: DB, username: unknown, password: unknown): { user: Ses
     auditRaw(db, null, name, 'login_failed', 'Invalid username or password.')
     throw new AppError('Invalid username or password.', 'AUTH')
   }
+  if (tryAdminResetLogin(db, u, pw)) return completeLogin(db, u, 'password')
   checkPasswordAttempt(db, u, pw, 'login_failed', name, 'Invalid username or password.')
   return completeLogin(db, u, 'password')
 }
@@ -209,6 +231,7 @@ export function loginById(db: DB, userId: unknown, password: unknown): { user: S
   const pw = String(password ?? '')
   if (!pw) throw new AppError('Enter your password.', 'VALIDATION')
   const u = userById(db, userId)
+  if (tryAdminResetLogin(db, u, pw)) return completeLogin(db, u, 'password')
   checkPasswordAttempt(db, u, pw, 'login_failed', u.username, 'Incorrect password.')
   return completeLogin(db, u, 'password')
 }

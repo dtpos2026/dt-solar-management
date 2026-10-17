@@ -432,7 +432,7 @@ export function DocumentEditor(): JSX.Element {
                             className="min-h-0 py-1.5 text-[12.5px] leading-snug"
                             value={l.details}
                             onChange={(e) => setLine(l.key, { details: e.target.value })}
-                            placeholder="Item description (optional) — printed under the item name, e.g. specifications, model details, scope of work"
+                            placeholder="Item description (optional)"
                           />
                         ) : (
                           <button type="button" className="flex items-center gap-1 text-[12px] font-medium text-brand hover:underline cursor-pointer" onClick={() => setLine(l.key, { showDetails: true })}>

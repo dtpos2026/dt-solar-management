@@ -11,6 +11,7 @@ import { runtime, getDb } from '../../runtime'
 import type { DB } from '../../db'
 import { AppError, SessionUser, audit, getSetting, setSetting } from '../../services/context'
 import * as auth from '../../services/auth'
+import { applyResetCodeOrThrow } from '../../services/adminReset'
 import * as firms from '../../services/firms'
 import { getAllSettings, updateSettings } from '../../services/settings'
 import { PAPER_SIZES, countPdfPages, isPaperSize, parsePrintUrl, pdfOptionsFor, printFailureText, resolvePrintJob, type PaperSize } from '../../services/printers'
@@ -117,6 +118,18 @@ export const accessRoutes: RouteMap = {
     }
   },
   /** PIN state of the signed-in user (lock screen + user menu). Public so the lock screen can ask while locked. */
+  /**
+   * Offline delivery of an Administrator password reset: the signed code from Digital Target is pasted on the sign-in screen.
+   * Public (nobody is signed in) but it only accepts a code signed by Digital Target for THIS computer, once, before it expires.
+   */
+  'auth.applyResetCode': {
+    public: true,
+    handler: (_c, a) => {
+      const lic = runtime.license
+      if (!lic) throw new AppError('The license service is not ready.', 'ERROR')
+      return { message: applyResetCodeOrThrow(getDb(), String(a.code ?? ''), { publicKeyPem: lic.verificationKey, deviceId: lic.deviceId }) }
+    }
+  },
   'auth.pinStatus': {
     public: true,
     handler: () => {

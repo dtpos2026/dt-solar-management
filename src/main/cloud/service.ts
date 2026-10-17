@@ -25,6 +25,7 @@ import {
 import { maskToken } from './install'
 import { loadCloudState, saveCloudState, type CloudState, type HeartbeatRecord } from './state'
 import * as support from './support'
+import { resetState } from '../services/adminReset'
 
 export const HEARTBEAT_EVERY_MS = 15 * 60_000
 export const SUPPORT_BACKGROUND_EVERY_MS = 15 * 60_000
@@ -299,7 +300,9 @@ export class CloudService {
       lastCheckAt: st.lastCheckAt ?? '',
       firms: biz.firms,
       users: biz.users,
-      location: loc.location
+      location: loc.location,
+      locationNote: loc.location ? null : loc.mode === 'off' ? 'Location sharing is turned off on this computer.' : loc.note || 'No position available yet.',
+      resetState: this.opts.getDb() ? resetState(this.opts.getDb()!) : ''
     })
     return { payload, location: loc }
   }

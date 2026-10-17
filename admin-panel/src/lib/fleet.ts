@@ -37,7 +37,9 @@ export function heartbeatFromSnap(s: QueryDocumentSnapshot<DocumentData>): Heart
     firms: num(d.firms),
     users: num(d.users),
     lastSeen: d.lastSeen instanceof Timestamp ? d.lastSeen : null,
-    location: validLocation(d.location)
+    location: validLocation(d.location),
+    locationNote: str(d.locationNote),
+    resetState: str(d.resetState)
   }
 }
 

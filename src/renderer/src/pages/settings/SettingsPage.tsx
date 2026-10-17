@@ -212,13 +212,13 @@ function GeneralTab({ draft, set, editable }: TabProps): JSX.Element {
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
       <Card title={<SectionTitle icon={<Coins />} title="Currency & money format" subtitle="Used on screens, reports and printed documents" />}>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Currency symbol" hint="Shown before amounts, e.g. Rs. or ₨">
+          <Field label="Currency symbol" hint="Shown before every amount">
             <Input value={symbol} maxLength={8} disabled={!editable} onChange={(e) => set('currency_symbol', e.target.value)} placeholder="Rs." />
           </Field>
-          <Field label="Currency code" hint="International code, e.g. PKR">
+          <Field label="Currency code" hint="International currency code">
             <Input value={String(draft.currency_code ?? '')} maxLength={5} disabled={!editable} onChange={(e) => set('currency_code', e.target.value.toUpperCase().replace(/[^A-Z]/g, ''))} placeholder="PKR" />
           </Field>
-          <Field label="Currency word (amount in words)" hint="e.g. Rupees — printed as “… Rupees Only”">
+          <Field label="Currency word (amount in words)" hint="Used when an amount is written in words">
             <Input value={String(draft.currency_word ?? '')} maxLength={30} disabled={!editable} onChange={(e) => set('currency_word', e.target.value)} placeholder="Rupees" />
           </Field>
           <Field label="Decimal places for money" hint="0 is typical for PKR; calculations are always exact to 2 decimals">

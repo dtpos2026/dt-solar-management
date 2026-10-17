@@ -17,7 +17,7 @@ import { doc, getDocs, serverTimestamp, writeBatch } from 'firebase/firestore'
 import { db } from '../firebase'
 import { certTermsOf } from './approve'
 import { sha256Hex, signPayload, verifyCode, type LoadedKey } from './crypto'
-import { backfillSummary, devicesCol, licenseRef, writeLog } from './licenses'
+import { backfillSummary, devicesCol, licenseRef, writeHistory } from './licenses'
 import { buildCertPayload } from './terms'
 import type { License } from './types'
 
@@ -50,7 +50,8 @@ export async function publishPass(l: License, key: LoadedKey, by: string): Promi
   const batch = writeBatch(db)
   batch.set(passRef(hash), { licenseId: l.id, cert: cert.code, updatedAt: serverTimestamp() })
   batch.update(licenseRef(l.id), { passHash: termsHash })
-  if (!l.passHash) writeLog(batch, l.id, 'instant_activation_enabled', by, 'Activation pass published: new computers activate immediately within the device limit', 'license')
+  // License history only: publishing passes for every license is housekeeping and must not flood the activity log.
+  if (!l.passHash) writeHistory(batch, l.id, 'instant_activation_enabled', by, 'Activation pass published: new computers activate immediately within the device limit')
   await batch.commit()
 }
 
@@ -58,7 +59,7 @@ export async function removePass(l: License, by: string): Promise<void> {
   const batch = writeBatch(db)
   batch.delete(passRef(await licenseKeyHash(l.licenseKey)))
   batch.update(licenseRef(l.id), { passHash: '' })
-  writeLog(batch, l.id, 'instant_activation_disabled', by, `Activation pass withdrawn (license ${l.status})`, 'license')
+  writeHistory(batch, l.id, 'instant_activation_disabled', by, `Activation pass withdrawn (license ${l.status})`)
   await batch.commit()
 }
 

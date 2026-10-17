@@ -39,6 +39,8 @@ import { actionLabel, auditRowFromData, summarizeRecentEvents, type AuditRow } f
 import { invoicesWithPaymentsSince } from '../lib/billingViews'
 import { useSharedBranding, useCachedValue, useSharedDocs } from '../lib/liveData'
 import { useCan } from '../lib/auth'
+import { ClearAllActivityButton } from '../components/ClearAllActivity'
+import { invalidate } from '../lib/queryCache'
 import { useSigningKey } from '../lib/signingKey'
 import { fmtDateTime, timeAgo } from '../lib/format'
 import { fmtCount, fmtMoney, Pill } from './licensing/kit'
@@ -231,6 +233,7 @@ export function Dashboard() {
 
 function RecentActivity({ rows, loading, error, onRefresh, licenses, clients }: { rows: AuditRow[]; loading: boolean; error: string | null; onRefresh: () => void; licenses: ReturnType<typeof licenseFromSnap>[]; clients: ReturnType<typeof clientFromSnap>[] }) {
   const [q, setQ] = useState('')
+  const canClear = useCan()('audit.manage')
   const names = useMemo(() => {
     const m = new Map<string, string>()
     for (const c of clients) m.set(c.id, c.company)
@@ -252,6 +255,7 @@ function RecentActivity({ rows, loading, error, onRefresh, licenses, clients }: 
         <>
           <SearchBox className="w-56" value={q} onChange={setQ} placeholder="Search activity…" />
           <button className="btn btn-secondary btn-sm" onClick={onRefresh} disabled={loading} aria-label="Refresh activity"><RefreshCw className={cx('h-4 w-4', loading && 'animate-spin')} /></button>
+          {canClear && <ClearAllActivityButton onCleared={() => { invalidate('audit'); onRefresh() }} />}
           <Link className="text-[12.5px] font-semibold text-[#3d096d] hover:underline" to="/activity">View all</Link>
         </>
       }

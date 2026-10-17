@@ -55,6 +55,8 @@ export interface HeartbeatLike {
   lastCheckAt: string
   lastSeenMs: number | null
   location: HeartbeatLocation | null
+  locationNote?: string
+  resetState?: string
 }
 
 export interface DeviceRow {
@@ -75,6 +77,10 @@ export interface DeviceRow {
   deviceStatus: DeviceStatus | 'unregistered'
   online: OnlineState
   location: HeartbeatLocation | null
+  /** Why no location is shown (reported by the computer itself); '' when unknown. */
+  locationNote: string
+  /** Administrator password reset progress reported by the computer ('' = none). */
+  resetState: string
   mode: string
   activationType: string
   statusNote: string
@@ -139,6 +145,8 @@ export function mergeDeviceRows(
         deviceStatus: d.status,
         online: onlineState(hb?.lastSeenMs ?? null, now),
         location: hb ? validLocation(hb.location) : null,
+        locationNote: hb?.locationNote ?? '',
+        resetState: hb?.resetState ?? '',
         mode: hb?.mode ?? '',
         activationType: d.activationType,
         statusNote: d.statusNote ?? ''
@@ -167,6 +175,8 @@ export function mergeDeviceRows(
         deviceStatus: 'unregistered',
         online: onlineState(h.lastSeenMs, now),
         location: validLocation(h.location),
+        locationNote: h.locationNote ?? '',
+        resetState: h.resetState ?? '',
         mode: h.mode,
         activationType: '',
         statusNote: ''

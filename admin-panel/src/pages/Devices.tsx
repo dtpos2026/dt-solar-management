@@ -1,7 +1,7 @@
 /** Devices: every registered computer across licenses merged with heartbeats; actions; activation requests tab. */
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Inbox, Map as MapIcon, MonitorSmartphone, RefreshCw, Trash2, WifiOff } from 'lucide-react'
+import { Inbox, KeyRound, Map as MapIcon, MonitorSmartphone, RefreshCw, Trash2, WifiOff } from 'lucide-react'
 import { PageTitle } from '../components/ui'
 import { setDeviceState, type DeviceAction } from '../lib/licenses'
 import { deviceCertSigner } from '../lib/approve'
@@ -13,6 +13,7 @@ import { fmtDateTime, timeAgo } from '../lib/format'
 import { ConfirmDialog, Empty, Loading, Notice, Pager, Panel, Pill, SearchBox, Tabs, usePaged, type ConfirmOptions, type NoticeMsg } from './licensing/kit'
 import { useFleet } from './licensing/useFleet'
 import { RemoveDeviceDialog, useRemovedRows } from './licensing/RemoveDevice'
+import { ResetPasswordDialog } from './licensing/ResetPassword'
 import { maskDeviceId, maskLicenseKey } from '../lib/terms'
 import { copy } from '../components/ui'
 import { Copy } from 'lucide-react'
@@ -36,12 +37,15 @@ export function Devices() {
   const setTab = (t: Tab) => setParams(t === 'list' ? {} : { tab: t }, { replace: true })
   const manage = can('devices.manage')
   const canRequests = manage || can('licenses.manage')
+  // Resetting a client's Administrator password needs both device and license management (also enforced by the rules).
+  const canReset = manage && can('licenses.manage')
   const pending = usePendingRequests(canRequests)
   const fleet = useFleet(tab === 'list')
   const [f, setF] = useState<DeviceFilter>({ q: '', online: '', deviceStatus: '', licenseStatus: '' })
   const [msg, setMsg] = useState<NoticeMsg | null>(null)
   const [act, setAct] = useState<{ r: DeviceRow; a: DeviceAction } | null>(null)
   const [removing, setRemoving] = useState<DeviceRow | null>(null)
+  const [resetting, setResetting] = useState<DeviceRow | null>(null)
   // Removed computers disappear at once (before the refresh that confirms it arrives).
   const { visible, hide } = useRemovedRows(fleet.rows, fleet.loading)
 
@@ -153,6 +157,7 @@ export function Devices() {
                                 {['active', 'suspended'].includes(r.deviceStatus) && r.licenseStatus !== 'detached' && <button className="btn btn-sm btn-secondary" onClick={() => setAct({ r, a: 'revoke' })}>Revoke</button>}
                                 {r.deviceStatus !== 'deactivated' && <button className="btn btn-sm btn-secondary" onClick={() => setAct({ r, a: 'release' })}>Release</button>}
                               </>}
+                              {canReset && r.licenseId && r.deviceStatus !== 'unregistered' && <button className="btn btn-sm btn-secondary" title="Reset the Administrator password of this computer's DT Solar Pro" onClick={() => setResetting(r)}><KeyRound className="h-3.5 w-3.5" />Reset admin password</button>}
                               <button className="btn btn-sm btn-danger" title="Remove device" onClick={() => setRemoving(r)}><Trash2 className="h-3.5 w-3.5" />Remove</button>
                             </div>
                           )}
@@ -168,6 +173,7 @@ export function Devices() {
         </>
       )}
       <ConfirmDialog opts={opts} onClose={() => setAct(null)} />
+      <ResetPasswordDialog row={resetting} resetState={resetting ? fleet.rows.find((x) => x.key === resetting.key)?.resetState ?? '' : ''} onClose={() => setResetting(null)} />
       <RemoveDeviceDialog
         row={removing}
         onClose={() => setRemoving(null)}

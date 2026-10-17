@@ -47,6 +47,13 @@ function popupHtml(r: DeviceRow, canRemove: boolean): string {
   </div>`
 }
 
+/** Why a computer is not on the map: what it reported itself, otherwise the honest default. Never a guessed position. */
+function unavailableReason(r: DeviceRow): string {
+  if (r.locationNote) return `Location unavailable: ${r.locationNote}`
+  if (!r.lastSeenMs) return 'Location unavailable: this computer has not connected yet.'
+  return 'Location unavailable: this computer has not shared a position (older app version or sharing off).'
+}
+
 export function DeviceMap() {
   const branding = useBranding()
   const can = useCan()
@@ -157,7 +164,7 @@ export function DeviceMap() {
                   <div className="min-w-0">
                     <div className="truncate font-semibold">{r.company || '—'}</div>
                     <div className="truncate text-[11.5px] text-[#7a6d92]">{r.deviceName || maskDeviceId(r.deviceId)}{r.licenseId && <> · <Link className="underline" to={`/licenses/${r.licenseId}`}>license</Link></>}</div>
-                    <div className="text-[11.5px] text-[#9a8fb0]">Location unavailable{r.lastSeenMs ? ` · seen ${timeAgo(r.lastSeenMs)}` : ''}</div>
+                    <div className="text-[11.5px] text-[#9a8fb0]">{unavailableReason(r)}{r.lastSeenMs ? ` · seen ${timeAgo(r.lastSeenMs)}` : ''}</div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <Pill value={r.online} />

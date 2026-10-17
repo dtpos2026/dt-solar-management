@@ -2,15 +2,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { getDoc, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore'
-import { Building2, KeyRound, LifeBuoy, MessageSquare, Monitor, Phone, Send } from 'lucide-react'
+import { Building2, Eraser, KeyRound, LifeBuoy, MessageSquare, Monitor, Phone, Send, Trash2 } from 'lucide-react'
 import { PageTitle } from '../components/ui'
 import { EmptyState, ErrorState, Loading, NoAccess, Notice, SearchBox, SkeletonRows, useToast } from '../components/kit'
-import { markThreadRead, messageFromSnap, messagesCol, replyToThread, setThreadStatus, threadFromSnap, threadsCol } from '../lib/support'
+import { clearChat, deleteChat, markThreadRead, messageFromSnap, messagesCol, replyToThread, setThreadStatus, threadFromSnap, threadsCol } from '../lib/support'
 import { licenseRef } from '../lib/licenses'
 import { errorMessage, fmtDateTime, timeAgo, toDate } from '../lib/format'
 import { useAdmin, useAdminEmail, useCan } from '../lib/auth'
 import { cx } from '../components/ui'
 import type { SupportMessage, SupportThread } from '../lib/types'
+import { ConfirmDialog, type ConfirmOptions } from './licensing/kit'
 
 const STATUS_TONE: Record<SupportThread['status'], string> = {
   open: 'bg-amber-100 text-amber-800',
@@ -119,8 +120,12 @@ function Conversation({ t }: { t: SupportThread }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [clientId, setClientId] = useState('')
+  const [confirm, setConfirm] = useState<ConfirmOptions | null>(null)
   const endRef = useRef<HTMLDivElement>(null)
   const toast = useToast()
+  const nav = useNavigate()
+  // Deleting a customer's conversation is destructive: it needs both support and audit-management rights (also enforced by the rules).
+  const canClear = can('support.manage') && can('audit.manage')
 
   useEffect(() => onSnapshot(query(messagesCol(t.id), orderBy('at', 'asc')), (r) => setMessages(r.docs.map(messageFromSnap)), (e) => { setErr(errorMessage(e)); setMessages([]) }), [t.id])
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }) }, [messages])
@@ -141,8 +146,27 @@ function Conversation({ t }: { t: SupportThread }) {
     try { await setThreadStatus(t, s, by); toast(`Conversation marked ${s}.`) } catch (e) { setErr(errorMessage(e)) }
   }
 
+  const askClear = () =>
+    setConfirm({
+      title: 'Clear chat',
+      confirmLabel: 'Clear chat',
+      tone: 'danger',
+      body: <>All {messages?.length ?? ''} message(s) of <b>{t.companyName || 'this customer'}</b> are deleted. The conversation, the customer details and the status stay, and new messages continue here. The customer keeps the copy already received in their app.</>,
+      run: async () => { const n = await clearChat(t, by); toast(`Chat cleared (${n} message${n === 1 ? '' : 's'}).`) }
+    })
+  const askDelete = () =>
+    setConfirm({
+      title: 'Delete chat',
+      confirmLabel: 'Delete chat',
+      tone: 'danger',
+      typeToConfirm: 'DELETE',
+      body: <>The whole conversation with <b>{t.companyName || 'this customer'}</b> is deleted: every message and the conversation itself. If the customer writes again, a new conversation starts. Clients, licenses and devices are not touched.</>,
+      run: async () => { await deleteChat(t, by); toast('Conversation deleted.'); nav('/support') }
+    })
+
   return (
     <div className="card flex min-h-0 flex-col">
+      <ConfirmDialog opts={confirm} onClose={() => setConfirm(null)} />
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#ece6f4] px-4 py-3">
         <div className="min-w-0">
           <div className="text-[16px] font-bold">{t.companyName || 'Unknown customer'}</div>
@@ -155,11 +179,19 @@ function Conversation({ t }: { t: SupportThread }) {
             <span>Started {fmtDateTime(t.createdAt)}</span>
           </div>
         </div>
-        <label className="flex items-center gap-2 text-[12.5px] font-semibold text-[#6b5d85]">Status
-          <select className="input h-8 w-auto py-0" value={t.status} onChange={(e) => changeStatus(e.target.value as SupportThread['status'])}>
-            {STATUSES.map((s) => <option key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</option>)}
-          </select>
-        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2 text-[12.5px] font-semibold text-[#6b5d85]">Status
+            <select className="input h-8 w-auto py-0" value={t.status} onChange={(e) => changeStatus(e.target.value as SupportThread['status'])}>
+              {STATUSES.map((s) => <option key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</option>)}
+            </select>
+          </label>
+          {canClear && (
+            <>
+              <button className="btn btn-secondary btn-sm" onClick={askClear} disabled={!messages || messages.length === 0} title="Delete the messages, keep the conversation"><Eraser className="h-4 w-4" />Clear chat</button>
+              <button className="btn btn-danger btn-sm" onClick={askDelete} title="Delete the whole conversation"><Trash2 className="h-4 w-4" />Delete chat</button>
+            </>
+          )}
+        </div>
       </div>
       <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto bg-[#faf8fd] px-4 py-4">
         {messages === null ? <Loading /> : messages.length === 0 ? <div className="py-10 text-center text-[13px] text-[#7a6d92]">No messages yet.</div> : messages.map((m) => (

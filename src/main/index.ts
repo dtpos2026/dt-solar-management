@@ -9,6 +9,7 @@ import { broadcast, createMainWindow, createSplash, getMainWindow, isTrustedSend
 import { autoBackupIfDue } from './backup'
 import { initLog, log } from './log'
 import { AppError } from './services/context'
+import { applyResetCommand } from './services/adminReset'
 import { startCloudJobs, stopCloudJobs } from './cloud/worker'
 import { registerDragHandler } from './whatsapp/outbox'
 import { readFileSync } from 'fs'
@@ -104,7 +105,14 @@ function setupLicense(): void {
     },
     // Old installations that used the former local trial (wording only — there is no local trial any more).
     hasLegacyTrial: () => !!runtime.db?.prepare("SELECT 1 FROM app_meta WHERE key = 'trial_started_at'").get(),
-    onChange: (s) => broadcast('dt:license', s)
+    onChange: (s) => broadcast('dt:license', s),
+    // Signed command published for this computer (Administrator password reset): verified, bound to this device, one-time.
+    onCommand: (code) => {
+      if (!runtime.db || !runtime.license) return
+      const r = applyResetCommand(runtime.db, code, { publicKeyPem: licensePublicKey(), deviceId: runtime.license.deviceId })
+      if (r.status === 'received') log('info', 'Administrator password reset received from Digital Target.')
+      else if (r.status === 'rejected') log('warn', `Administrator password reset refused: ${r.message}`)
+    }
   })
   runtime.license.touch()
 }

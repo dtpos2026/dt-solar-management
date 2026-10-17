@@ -720,7 +720,7 @@ function FirmEditor({ open, firmId, onClose, onSaved }: { open: boolean; firmId?
               <Field label="Firm name" required className="col-span-2">
                 <Input autoFocus value={f.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Sunrise Solar Energy" />
               </Field>
-              <Field label="Tagline / services" className="col-span-2" hint="Printed under the firm name, e.g. “Solar panels · Inverters · Batteries · Installation”.">
+              <Field label="Tagline / services" className="col-span-2" hint="Printed under the firm name">
                 <Textarea rows={2} value={f.tagline} onChange={(e) => set('tagline', e.target.value)} />
               </Field>
               <Field label="Address" className="col-span-2">
@@ -773,7 +773,7 @@ function FirmEditor({ open, firmId, onClose, onSaved }: { open: boolean; firmId?
                 <Field label="Default terms & conditions" hint="Used on invoices and quotations that do not have their own terms.">
                   <Textarea rows={5} value={f.terms} onChange={(e) => set('terms', e.target.value)} placeholder={String(settings.default_invoice_terms ?? '')} />
                 </Field>
-                <Field label="Invoice footer text" className="col-span-2" hint="A short line at the bottom of every printed page, e.g. “Thank you for choosing solar energy!”">
+                <Field label="Invoice footer text" className="col-span-2" hint="A short line at the bottom of every printed page">
                   <Input value={f.invoiceFooter} onChange={(e) => set('invoiceFooter', e.target.value)} />
                 </Field>
               </div>

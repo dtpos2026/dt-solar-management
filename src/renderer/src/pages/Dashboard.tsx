@@ -231,18 +231,26 @@ export function Dashboard(): JSX.Element {
           </Card>
           {d && (
             <Card title="Project Summary">
-              <div className="grid grid-cols-2 gap-3 text-[13px]">
-                <div className="rounded-xl bg-surface-2 p-3"><div className="text-muted">Total projects</div><div className="text-[18px] font-bold">{d.projectSummary.total}</div></div>
-                <div className="rounded-xl bg-surface-2 p-3"><div className="text-muted">In progress</div><div className="text-[18px] font-bold">{d.projectSummary.inProgress}</div></div>
-                <div className="rounded-xl bg-surface-2 p-3"><div className="text-muted">Completed</div><div className="text-[18px] font-bold">{d.projectSummary.completed}</div></div>
-                <div className="rounded-xl bg-surface-2 p-3"><div className="text-muted">Installed</div><div className="text-[18px] font-bold">{qty(d.projectSummary.installedKw)} kW</div></div>
-              </div>
-              {d.projectSummary.netProfit !== null && (
-                <div className="mt-3 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 p-4 text-white">
-                  <div className="text-[12px] opacity-85">Total project net profit (all time)</div>
-                  <div className="text-[22px] font-bold">{money(d.projectSummary.netProfit)}</div>
-                  <div className="text-[12px] opacity-85">on revenue {money(d.projectSummary.revenue)} · margin {pct(d.projectSummary.marginPct)}</div>
-                </div>
+              {d.projectSummary.total === 0 ? (
+                <Empty title="No projects yet" action={<Button size="sm" onClick={() => nav('/projects')}>Open projects</Button>}>
+                  Solar projects you create appear here with their status and profit.
+                </Empty>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-3 text-[13px]">
+                    <div className="rounded-xl bg-surface-2 p-3"><div className="text-muted">Total projects</div><div className="text-[18px] font-bold">{d.projectSummary.total}</div></div>
+                    <div className="rounded-xl bg-surface-2 p-3"><div className="text-muted">In progress</div><div className="text-[18px] font-bold">{d.projectSummary.inProgress}</div></div>
+                    <div className="rounded-xl bg-surface-2 p-3"><div className="text-muted">Completed</div><div className="text-[18px] font-bold">{d.projectSummary.completed}</div></div>
+                    <div className="rounded-xl bg-surface-2 p-3"><div className="text-muted">Installed capacity</div><div className="text-[18px] font-bold">{qty(d.projectSummary.installedKw)} kW</div></div>
+                  </div>
+                  {d.projectSummary.netProfit !== null && (d.projectSummary.revenue ?? 0) > 0 && (
+                    <div className="mt-3 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 p-4 text-white">
+                      <div className="text-[12px] opacity-85">Net profit, all projects</div>
+                      <div className="text-[22px] font-bold">{money(d.projectSummary.netProfit)}</div>
+                      <div className="text-[12px] opacity-85">Revenue {money(d.projectSummary.revenue)}{d.projectSummary.marginPct !== null && <> · margin {pct(d.projectSummary.marginPct)}</>}</div>
+                    </div>
+                  )}
+                </>
               )}
             </Card>
           )}

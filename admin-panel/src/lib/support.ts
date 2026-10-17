@@ -1,5 +1,5 @@
 /** Support conversations (supportThreads/{installToken} + messages). Only the DATA_MODEL.md thread fields are written. */
-import { Timestamp, collection, doc, serverTimestamp, updateDoc, writeBatch, type DocumentData, type DocumentSnapshot, type QueryDocumentSnapshot, type WriteBatch } from 'firebase/firestore'
+import { Timestamp, collection, doc, getDocs, serverTimestamp, updateDoc, writeBatch, type DocumentData, type DocumentSnapshot, type QueryDocumentSnapshot, type WriteBatch } from 'firebase/firestore'
 import { db } from '../firebase'
 import { writeActivity } from './audit'
 import type { SupportMessage, SupportThread } from './types'
@@ -55,4 +55,44 @@ export async function setThreadStatus(t: SupportThread, status: SupportThread['s
 export async function markThreadRead(t: SupportThread): Promise<void> {
   if (!t.unreadByAdmin) return
   await updateDoc(threadRef(t.id), { unreadByAdmin: false })
+}
+
+const BATCH = 400
+
+/** Deletes every message of a thread (batches of at most 400). Returns how many were deleted. */
+async function deleteMessages(threadId: string): Promise<number> {
+  let n = 0
+  for (;;) {
+    const snap = await getDocs(messagesCol(threadId))
+    if (snap.empty) return n
+    const docs = snap.docs.slice(0, BATCH)
+    const b = writeBatch(db)
+    docs.forEach((d) => b.delete(d.ref))
+    await b.commit()
+    n += docs.length
+    if (snap.size <= BATCH) return n
+  }
+}
+
+/**
+ * Clear chat: deletes the messages and keeps the conversation (customer, device and license link, status). The customer's
+ * app keeps its own local copy of what it already received; new messages continue in the same conversation.
+ */
+export async function clearChat(t: SupportThread, by: string): Promise<number> {
+  const n = await deleteMessages(t.id)
+  const b = writeBatch(db)
+  b.update(threadRef(t.id), { lastMessagePreview: '', unreadByAdmin: false, unreadByCustomer: false })
+  audit(b, 'Support chat cleared', by, t, `${n} message(s) deleted; the conversation was kept`)
+  await b.commit()
+  return n
+}
+
+/** Delete chat: removes the whole conversation (messages first, then the thread). A new customer message starts a new one. */
+export async function deleteChat(t: SupportThread, by: string): Promise<number> {
+  const n = await deleteMessages(t.id)
+  const b = writeBatch(db)
+  b.delete(threadRef(t.id))
+  audit(b, 'Support chat deleted', by, t, `Conversation with ${n} message(s) deleted`)
+  await b.commit()
+  return n
 }

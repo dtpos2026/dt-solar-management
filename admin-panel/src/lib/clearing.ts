@@ -24,7 +24,7 @@ import {
 import { db } from '../firebase'
 import { auditCol, devicesCol, historyCol } from './licenses'
 import { writeActivity } from './audit'
-import { auditRowFromData, clearScopeMatches, clearScopeStrategy, describeClearScope, planClearBatches, type ClearScope } from './auditLog'
+import { ALL_NON_SECURITY, auditRowFromData, clearScopeMatches, clearScopeStrategy, describeClearScope, planClearBatches, type ClearScope } from './auditLog'
 import { invalidate } from './queryCache'
 
 const SCAN_PAGE = 400
@@ -159,3 +159,7 @@ export async function runReleasedDevicesClear(licenseId: string, plan: ClearPlan
     onProgress
   )
 }
+
+/** "Clear all": every non-security activity entry of any date (clients, licenses, devices, invoices and chats are untouched). */
+export const planClearAllActivity = (onProgress?: (scanned: number) => void): Promise<ClearPlan> => planAuditClear(ALL_NON_SECURITY, onProgress)
+export const runClearAllActivity = (plan: ClearPlan, onProgress?: (done: number, total: number) => void): Promise<number> => runAuditClear(ALL_NON_SECURITY, plan, onProgress)

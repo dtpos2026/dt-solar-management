@@ -147,3 +147,53 @@ export function blockReasonOf(mode: LicenseMode): BlockReason | null {
       return 'license'
   }
 }
+
+/* ------------------------------------------------ signed commands ------------------------------------------------ */
+
+/**
+ * A command from Digital Target (for example "reset the Administrator password of this computer"). Same Ed25519 key as the
+ * licenses, but signed over `COMMAND_DOMAIN + payload`, so a command can never be installed as a license certificate and a
+ * license certificate can never be replayed as a command.
+ */
+export const COMMAND_DOMAIN = 'dtsp-cmd-v1.'
+
+export interface SignedCommand {
+  format: 'dtsp-command'
+  version: 1
+  payload: string
+  signature: string
+}
+
+/** Accepts the JSON file or the compact "payload.signature" code. */
+export function parseCommand(text: string): SignedCommand {
+  const raw = String(text ?? '').trim()
+  if (!raw.startsWith('{') && raw.includes('.')) {
+    const [payload, signature] = raw.replace(/\s+/g, '').split('.')
+    if (payload && signature) return { format: 'dtsp-command', version: 1, payload, signature }
+  }
+  try {
+    const obj = JSON.parse(raw) as SignedCommand
+    if (obj.format === 'dtsp-command' && typeof obj.payload === 'string' && typeof obj.signature === 'string') return obj
+  } catch {
+    /* fall through */
+  }
+  throw new Error('This is not a Digital Target reset code.')
+}
+
+export function verifyCommand(cmd: SignedCommand, publicKeyPem: string): { ok: true; payload: Record<string, unknown> } | { ok: false; reason: string } {
+  if (!publicKeyPem || !publicKeyPem.includes('BEGIN PUBLIC KEY')) return { ok: false, reason: 'Verification key is not configured in this build.' }
+  let valid = false
+  try {
+    valid = verify(null, Buffer.from(COMMAND_DOMAIN + cmd.payload, 'utf8'), createPublicKey(publicKeyPem), b64urlDecode(cmd.signature))
+  } catch {
+    valid = false
+  }
+  if (!valid) return { ok: false, reason: 'The reset code is not valid (signature check failed).' }
+  try {
+    const payload = JSON.parse(b64urlDecode(cmd.payload).toString('utf8')) as Record<string, unknown>
+    if (!payload || typeof payload !== 'object') throw new Error('shape')
+    return { ok: true, payload }
+  } catch {
+    return { ok: false, reason: 'The reset code is corrupt.' }
+  }
+}

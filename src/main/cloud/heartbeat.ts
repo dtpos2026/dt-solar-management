@@ -17,6 +17,10 @@ export interface HeartbeatInput {
   firms: number
   users: number
   location: HeartbeatLocation | null
+  /** Why no location is sent (sharing off, Windows location off, no fix yet). Plain text, shown in the Super Admin map. */
+  locationNote?: string | null
+  /** Progress of an Administrator password reset sent by Digital Target: "<nonce>:received" or "<nonce>:used". */
+  resetState?: string | null
 }
 
 /** Exactly the fields written (except lastSeen, which the server sets). */
@@ -32,6 +36,8 @@ export interface HeartbeatPayload {
   firms: number
   users: number
   location?: HeartbeatLocation
+  locationNote?: string
+  resetState?: string
 }
 
 const cut = (v: unknown, max: number): string => String(v ?? '').slice(0, max)
@@ -65,6 +71,8 @@ export function buildHeartbeat(i: HeartbeatInput): HeartbeatPayload {
       updatedAt: cut(l.updatedAt, 40)
     }
   }
+  else if (i.locationNote) p.locationNote = cut(i.locationNote, 160)
+  if (i.resetState) p.resetState = cut(i.resetState, 80)
   return p
 }
 

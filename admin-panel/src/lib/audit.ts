@@ -38,8 +38,18 @@ export function activityData(a: ActivityInput): Record<string, unknown> {
   }
 }
 
+/** The same entry written twice within this window (double click, a re-run effect) is one entry. */
+const DUPLICATE_WINDOW_MS = 5_000
+const recent = new Map<string, number>()
+
 export async function logActivity(a: ActivityInput): Promise<void> {
   if (!auth.currentUser) return
+  const sig = `${auth.currentUser.uid}|${a.category}|${a.action}|${a.target ?? ''}|${a.licenseId ?? ''}|${a.status ?? 'success'}|${a.details ?? ''}`
+  const now = Date.now()
+  const prev = recent.get(sig)
+  if (prev !== undefined && now - prev < DUPLICATE_WINDOW_MS) return
+  recent.set(sig, now)
+  if (recent.size > 200) for (const [k, t] of recent) if (now - t >= DUPLICATE_WINDOW_MS) recent.delete(k)
   await addDoc(auditCol(), activityData(a))
 }
 

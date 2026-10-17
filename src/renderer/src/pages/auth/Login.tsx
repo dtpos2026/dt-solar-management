@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { ArrowLeft, KeyRound, LogIn, ShieldCheck, WifiOff, BarChart3, UserRound } from 'lucide-react'
 import { api } from '../../api'
 import { useApp } from '../../store'
-import { Button, Field, Input, Spinner, cx } from '../../components/ui'
+import { Button, Field, Input, Modal, Spinner, Textarea, cx, toast } from '../../components/ui'
 import { AppLogo, VendorLine } from '../../components/Brand'
 import { Avatar, PIN_RE, PinInput } from '../users/PinInput'
 
@@ -28,6 +28,7 @@ export function Login({ onDone }: { onDone: () => void }): JSX.Element {
   const [pin, setPin] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [resetOpen, setResetOpen] = useState(false)
 
   useEffect(() => {
     api<{ showUsers: boolean; users: Tile[] }>('auth.users')
@@ -206,9 +207,62 @@ export function Login({ onDone }: { onDone: () => void }): JSX.Element {
           {license && license.mode !== 'active' && (
             <div className={`mt-6 rounded-xl px-4 py-3 text-[12.5px] ${license.canWrite ? 'bg-warn-soft text-warn' : 'bg-bad-soft text-bad'}`}>{license.message}</div>
           )}
-          <div className="mt-10 text-[11.5px] text-muted">DT Solar Pro v{version} · Forgot your password or PIN? Ask the owner/administrator to reset it from Users &amp; Permissions.</div>
+          <div className="mt-10 text-[11.5px] text-muted">
+            DT Solar Pro v{version} · Forgot your PIN or a user password? The Administrator can reset it from Users &amp; Permissions.{' '}
+            <button type="button" className="cursor-pointer font-medium text-brand hover:underline" onClick={() => setResetOpen(true)}>
+              Administrator locked out?
+            </button>
+          </div>
+          <ResetCodeDialog open={resetOpen} onClose={() => setResetOpen(false)} />
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * Offline delivery of an Administrator password reset from Digital Target: paste the reset code, then sign in as the
+ * Administrator with the temporary password Digital Target gives you. Online computers receive the code by themselves.
+ */
+function ResetCodeDialog({ open, onClose }: { open: boolean; onClose: () => void }): JSX.Element | null {
+  const [code, setCode] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const apply = async (): Promise<void> => {
+    setError(null)
+    setBusy(true)
+    try {
+      const r = await api<{ message: string }>('auth.applyResetCode', { code })
+      toast.ok(r.message)
+      setCode('')
+      onClose()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="sm"
+      title="Administrator password reset"
+      subtitle="For an Administrator who cannot sign in. Digital Target must send you the reset code and a temporary password."
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" loading={busy} disabled={code.trim().length < 40} onClick={() => void apply()}>Apply reset code</Button>
+        </>
+      }
+    >
+      <Field label="Reset code from Digital Target" hint="Computers connected to the internet receive the code automatically within a few minutes, so this is only needed offline.">
+        <Textarea rows={5} value={code} onChange={(e) => setCode(e.target.value)} spellCheck={false} className="font-mono text-[12px]" />
+      </Field>
+      {error && <div role="alert" className="mt-3 rounded-lg bg-bad-soft px-3 py-2 text-[12.5px] text-bad">{error}</div>}
+      <p className="mt-3 text-[12.5px] text-muted">
+        After the code is accepted, sign in as the Administrator with the temporary password. You will be asked to choose a new password straight away.
+      </p>
+    </Modal>
   )
 }

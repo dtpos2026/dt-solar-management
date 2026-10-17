@@ -155,7 +155,12 @@ service cloud.firestore {
     match /licenseStatus/{licenseId} {
       allow get: if true;
       allow list: if canAny(['licenses.view', 'licenses.manage', 'devices.view']);
-      allow write: if canAny(['licenses.manage', 'licenses.generate', 'devices.manage']);
+      // `commands` (signed Administrator password resets for a computer) can only be set or removed by an admin who holds
+      // BOTH device and license management; the desktop additionally verifies the Ed25519 signature, so a forged one is useless.
+      allow create, update: if canAny(['licenses.manage', 'licenses.generate', 'devices.manage'])
+        && (request.resource.data.get('commands', {}) == (resource == null ? {} : resource.data.get('commands', {}))
+            || (can('devices.manage') && can('licenses.manage')));
+      allow delete: if canAny(['licenses.manage', 'licenses.generate', 'devices.manage']);
     }
 
     /* ------------------------------------------ desktop → cloud ------------------------------------------ */
@@ -200,12 +205,12 @@ service cloud.firestore {
     }
     function validHeartbeat(d) {
       return d.keys().hasOnly(['deviceId', 'licenseId', 'deviceName', 'os', 'appVersion', 'companyName', 'mode',
-             'lastCheckAt', 'firms', 'users', 'lastSeen', 'location'])
+             'lastCheckAt', 'firms', 'users', 'lastSeen', 'location', 'locationNote', 'resetState'])
         && d.deviceId is string && d.deviceId.size() >= 10 && d.deviceId.size() <= 64
         && d.lastSeen == request.time
         && optStr(d, 'licenseId', 64) && optStr(d, 'deviceName', 200) && optStr(d, 'os', 200)
         && optStr(d, 'appVersion', 40) && optStr(d, 'companyName', 200) && optStr(d, 'mode', 30)
-        && optStr(d, 'lastCheckAt', 40)
+        && optStr(d, 'lastCheckAt', 40) && optStr(d, 'locationNote', 200) && optStr(d, 'resetState', 80)
         && (!('firms' in d) || d.firms is int) && (!('users' in d) || d.users is int)
         && (!('location' in d) || d.location == null || validLocation(d.location));
     }
@@ -244,7 +249,8 @@ service cloud.firestore {
             && (!('lastMessageAt' in changed()) || request.resource.data.lastMessageAt == request.time)
             && (!('unreadByAdmin' in changed()) || request.resource.data.unreadByAdmin == true)
             && (!('unreadByCustomer' in changed()) || request.resource.data.unreadByCustomer == false));
-      allow delete: if isOwner();
+      // Clear chat / Delete chat: support and audit-management rights together (owners have both).
+      allow delete: if can('support.manage') && can('audit.manage');
 
       match /messages/{messageId} {
         allow get, list: if secretId(token, 32) || can('support.manage');
@@ -256,7 +262,7 @@ service cloud.firestore {
           && ((secretId(token, 32) && request.resource.data.from == 'customer')
               || (can('support.manage') && request.resource.data.from == 'admin'));
         allow update: if false;
-        allow delete: if isOwner();
+        allow delete: if can('support.manage') && can('audit.manage');
       }
     }
 

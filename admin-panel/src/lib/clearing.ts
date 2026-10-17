@@ -14,6 +14,7 @@ import {
   orderBy,
   query,
   startAfter,
+  serverTimestamp,
   where,
   writeBatch,
   type DocumentData,
@@ -21,7 +22,7 @@ import {
   type QueryConstraint,
   type QueryDocumentSnapshot
 } from 'firebase/firestore'
-import { db } from '../firebase'
+import { auth, db } from '../firebase'
 import { auditCol, devicesCol, historyCol } from './licenses'
 import { writeActivity } from './audit'
 import { ALL_NON_SECURITY, auditRowFromData, clearScopeMatches, clearScopeStrategy, describeClearScope, planClearBatches, type ClearScope } from './auditLog'
@@ -33,6 +34,8 @@ type Snap = QueryDocumentSnapshot<DocumentData>
 export interface ClearPlan {
   /** Exactly the documents that will be deleted. */
   refs: DocumentReference[]
+  /** Protected (security) entries that "Clear all" hides instead of deleting (archived: kept in the database, out of every count). */
+  archiveRefs?: DocumentReference[]
   /** Entries in range that are protected (security) and will be kept. */
   kept: number
   /** Documents read while counting (cost indicator). */
@@ -160,6 +163,55 @@ export async function runReleasedDevicesClear(licenseId: string, plan: ClearPlan
   )
 }
 
-/** "Clear all": every non-security activity entry of any date (clients, licenses, devices, invoices and chats are untouched). */
-export const planClearAllActivity = (onProgress?: (scanned: number) => void): Promise<ClearPlan> => planAuditClear(ALL_NON_SECURITY, onProgress)
-export const runClearAllActivity = (plan: ClearPlan, onProgress?: (done: number, total: number) => void): Promise<number> => runAuditClear(ALL_NON_SECURITY, plan, onProgress)
+/**
+ * "Clear all": every non-security activity entry is deleted; the protected security entries are archived (they stay in the database
+ * as the audit trail, but disappear from the dashboard, its counts and the default Activity Log view). Clients, licenses, devices,
+ * invoices and chats are never touched.
+ */
+export async function planClearAllActivity(onProgress?: (scanned: number) => void): Promise<ClearPlan> {
+  const refs: DocumentReference[] = []
+  const archiveRefs: DocumentReference[] = []
+  let seen = 0
+  const scanned = await scan([orderBy('at', 'asc')], (docs) => {
+    for (const d of docs) {
+      const row = auditRowFromData(d.id, d.data())
+      if (clearScopeMatches(row, ALL_NON_SECURITY)) refs.push(d.ref)
+      else if (row.category === 'security' && d.data().archived !== true) archiveRefs.push(d.ref)
+    }
+    seen += docs.length
+    onProgress?.(seen)
+  })
+  return { refs, archiveRefs, kept: archiveRefs.length, scanned }
+}
+
+export async function runClearAllActivity(plan: ClearPlan, onProgress?: (done: number, total: number) => void): Promise<number> {
+  const total = plan.refs.length + (plan.archiveRefs?.length ?? 0)
+  let done = 0
+  for (const part of planClearBatches(plan.refs)) {
+    const b = writeBatch(db)
+    part.forEach((r) => b.delete(r))
+    await b.commit()
+    done += part.length
+    onProgress?.(done, total)
+  }
+  for (const part of planClearBatches(plan.archiveRefs ?? [])) {
+    const b = writeBatch(db)
+    part.forEach((r) => b.update(r, { archived: true, archivedAt: serverTimestamp(), archivedBy: auth.currentUser?.email ?? '' }))
+    await b.commit()
+    done += part.length
+    onProgress?.(done, total)
+  }
+  const b = writeBatch(db)
+  const n = plan.refs.length
+  const m = plan.archiveRefs?.length ?? 0
+  writeActivity(b, {
+    action: 'audit_cleared',
+    category: 'security',
+    targetType: 'audit_log',
+    details: `Clear all: ${n} activity entr${n === 1 ? 'y' : 'ies'} deleted, ${m} security entr${m === 1 ? 'y' : 'ies'} archived (kept as the audit trail)`,
+    meta: { scope: 'all', deleted: n, archived: m }
+  })
+  await b.commit()
+  invalidate('audit')
+  return n + m
+}

@@ -168,10 +168,10 @@ export function ClientForm({ open, client, prefill, linkLicense, onClose, onSave
             ))}
           </select>
         </Field>
-        <Field label="Allowed firms" hint={err('allowedFirms')}>
+        <Field label="Firms for new licenses" hint={err('allowedFirms') ?? 'Default for the next license. The limit in force is set on each license.'}>
           <input className="input" type="number" min={1} max={1000} value={f.allowedFirms} onChange={(e) => set({ allowedFirms: Number(e.target.value) })} />
         </Field>
-        <Field label="Allowed computers" hint={err('allowedDevices')}>
+        <Field label="Computers for new licenses" hint={err('allowedDevices') ?? 'Default for the next license. The limit in force is set on each license.'}>
           <input className="input" type="number" min={1} max={1000} value={f.allowedDevices} onChange={(e) => set({ allowedDevices: Number(e.target.value) })} />
         </Field>
         {client && (

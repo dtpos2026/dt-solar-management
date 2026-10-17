@@ -419,6 +419,9 @@ describe('devices merged with heartbeats', () => {
     expiresAtMs: null,
     activeDevices: 1,
     maxDevices: 2,
+    maxFirms: 2,
+    checkinDays: 30,
+    graceDays: 15,
     activatedAtMs: NOW - 10 * DAY,
     detached: false,
     ...o

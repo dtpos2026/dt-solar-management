@@ -15,6 +15,8 @@ export interface HeartbeatInput {
   mode: string
   lastCheckAt: string | null | undefined
   firms: number
+  /** Firms that are active (the license limit counts these; a deactivated firm does not use a slot). */
+  firmsActive?: number
   users: number
   location: HeartbeatLocation | null
   /** Why no location is sent (sharing off, Windows location off, no fix yet). Plain text, shown in the Super Admin map. */
@@ -36,6 +38,7 @@ export interface HeartbeatPayload {
   mode: string
   lastCheckAt: string
   firms: number
+  firmsActive: number
   users: number
   location?: HeartbeatLocation
   locationNote?: string
@@ -60,6 +63,7 @@ export function buildHeartbeat(i: HeartbeatInput): HeartbeatPayload {
     mode: cut(i.mode, 30),
     lastCheckAt: cut(i.lastCheckAt ?? '', 40),
     firms: count(i.firms),
+    firmsActive: count(i.firmsActive ?? i.firms),
     users: count(i.users)
   }
   if (i.location) {

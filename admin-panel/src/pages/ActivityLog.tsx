@@ -15,7 +15,7 @@ import {
   type QueryConstraint,
   type QueryDocumentSnapshot
 } from 'firebase/firestore'
-import { Activity, Archive, Download, Eraser, Filter, History, Loader2, RefreshCw, RotateCcw } from 'lucide-react'
+import { Activity, Archive, Download, Eraser, Filter, History, Loader2, RefreshCw, RotateCcw, Trash2 } from 'lucide-react'
 import { db } from '../firebase'
 import { Badge, Field, PageTitle, cx } from '../components/ui'
 import { ConfirmDialog, Drawer, EmptyState, ErrorState, NoAccess, Notice, Pager, SearchBox, SkeletonRows, downloadText, usePaged, useToast } from '../components/kit'
@@ -85,7 +85,7 @@ async function scanOlderThan(cutoffMs: number, visit: (docs: Snap[]) => Promise<
   }
 }
 
-type Dialog = null | 'archiveSelected' | 'archiveOlder' | 'clear'
+type Dialog = null | 'archiveSelected' | 'deleteSelected' | 'archiveOlder' | 'clear'
 
 export function ActivityLog() {
   const can = useCan()
@@ -225,6 +225,26 @@ export function ActivityLog() {
         const ids = [...selected]
         await archiveIds(ids, 'selected')
         setFlash({ tone: 'success', text: `${ids.length} entries archived.` })
+      } else if (dialog === 'deleteSelected') {
+        // Ordinary entries are deleted; protected security entries are archived instead (hidden, kept as the audit trail).
+        const sel = rows.filter((r) => selected.has(r.id))
+        const del = sel.filter((r) => r.category !== 'security').map((r) => r.id)
+        const arch = sel.filter((r) => r.category === 'security').map((r) => r.id)
+        let done = 0
+        for (const part of chunk(del, SCAN_SIZE)) {
+          const b = writeBatch(db)
+          for (const id of part) b.delete(doc(auditCol(), id))
+          await b.commit()
+          done += part.length
+          setProgress(`Deleted ${done} of ${del.length}…`)
+        }
+        if (arch.length) await archiveIds(arch, 'selected security entries')
+        await logActivity({ action: 'audit_cleared', category: 'security', targetType: 'audit_log', details: `${del.length} selected entr${del.length === 1 ? 'y' : 'ies'} deleted, ${arch.length} security entr${arch.length === 1 ? 'y' : 'ies'} archived`, meta: { deleted: del.length, archived: arch.length } })
+        invalidate('audit')
+        setRows((r) => withoutIds(r, new Set([...del, ...arch])))
+        setSelected(new Set())
+        setDetail(null)
+        setFlash({ tone: 'success', text: `${del.length} entr${del.length === 1 ? 'y' : 'ies'} deleted${arch.length ? ` and ${arch.length} security entr${arch.length === 1 ? 'y' : 'ies'} archived` : ''}.` })
       } else if (dialog === 'archiveOlder') {
         const days = Math.round(olderDays)
         if (!Number.isFinite(days) || days < 1 || days > 3650) throw new Error('Enter a number of days between 1 and 3650.')
@@ -301,6 +321,7 @@ export function ActivityLog() {
               <button className="btn btn-secondary" onClick={() => { setDialogError(null); setDialog('archiveOlder') }}><Archive className="h-4 w-4" />Archive older…</button>
             )}
             {(canManage || canDeviceRecords) && <button className="btn btn-secondary" onClick={() => setRecordsOpen(true)}><History className="h-4 w-4" />Clear license records…</button>}
+            {canManage && list.length > 0 && <button className="btn btn-secondary" onClick={() => setSelected(new Set(list.filter((r) => !r.archived).map((r) => r.id)))}>Select all</button>}
             {canManage && <ClearAllActivityButton className="btn btn-secondary text-red-700" onCleared={(n) => { reload(); setFlash({ tone: 'success', text: `${n} entr${n === 1 ? 'y' : 'ies'} deleted. A security record of this clean-up was added to the log.` }) }} />}
             {canManage && <button className="btn btn-secondary text-red-700" onClick={openClear}><Eraser className="h-4 w-4" />Clear by category or date…</button>}
           </>
@@ -349,7 +370,9 @@ export function ActivityLog() {
           <span>{selected.size} selected</span>
           <div className="flex gap-2">
             <button className="btn btn-sm bg-white/15 text-white hover:bg-white/25" onClick={() => setSelected(new Set())}>Clear selection</button>
-            <button className="btn btn-sm bg-white text-[#3d096d]" onClick={() => { setDialogError(null); setDialog('archiveSelected') }}><Archive className="h-4 w-4" />Archive selected</button>
+            <button className="btn btn-sm bg-white/15 text-white hover:bg-white/25" onClick={() => setSelected(new Set(list.filter((r) => !r.archived).map((r) => r.id)))}>Select all {list.filter((r) => !r.archived).length}</button>
+            <button className="btn btn-sm bg-white/15 text-white hover:bg-white/25" onClick={() => { setDialogError(null); setDialog('archiveSelected') }}><Archive className="h-4 w-4" />Archive selected</button>
+            <button className="btn btn-sm bg-white text-red-700" onClick={() => { setDialogError(null); setDialog('deleteSelected') }}><Trash2 className="h-4 w-4" />Delete selected</button>
           </div>
         </div>
       )}
@@ -417,6 +440,11 @@ export function ActivityLog() {
       <Drawer open={!!detail} onClose={() => setDetail(null)} title="Activity details">
         {detail && <DetailView r={detail} />}
       </Drawer>
+
+      <ConfirmDialog open={dialog === 'deleteSelected'} title="Delete selected entries" confirmLabel={`Delete ${selected.size}`} danger busy={busy} error={dialogError} onConfirm={runDialog} onClose={() => setDialog(null)}>
+        <p>Delete {selected.size} selected entr{selected.size === 1 ? 'y' : 'ies'} permanently? Security entries among them are archived instead of deleted, so the audit trail stays complete. Clients, licenses and devices are not touched.</p>
+        {progress && <p className="text-[12.5px] text-[#6b5d85]">{progress}</p>}
+      </ConfirmDialog>
 
       <ConfirmDialog open={dialog === 'archiveSelected'} title="Archive entries" confirmLabel={`Archive ${selected.size}`} busy={busy} error={dialogError} onConfirm={runDialog} onClose={() => setDialog(null)}>
         <p>Archive {selected.size} selected entr{selected.size === 1 ? 'y' : 'ies'}? Archived entries are hidden by default but never changed — tick “Show archived” to see them. Archiving cannot be undone.</p>

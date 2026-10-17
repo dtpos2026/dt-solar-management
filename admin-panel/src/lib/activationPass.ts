@@ -15,7 +15,7 @@
  */
 import { doc, getDocs, serverTimestamp, writeBatch } from 'firebase/firestore'
 import { db } from '../firebase'
-import { certTermsOf } from './approve'
+import { certTermsOf, publishCertificates } from './approve'
 import { sha256Hex, signPayload, verifyCode, type LoadedKey } from './crypto'
 import { backfillSummary, devicesCol, licenseRef, writeHistory } from './licenses'
 import { buildCertPayload } from './terms'
@@ -78,7 +78,12 @@ export function syncPasses(licenses: License[], key: LoadedKey, by: string): Pro
         if (passWanted(l)) {
           // Instant registration needs the device summary on the license (older licenses may lack it).
           if (l.devicesSummary === null) await backfillSummary(l.id, (await getDocs(devicesCol(l.id))).docs, l.updatedAt?.toMillis() ?? null)
-          if (l.passHash !== (await passTermsHash(l, key))) await publishPass(l, key, by)
+          if (l.passHash !== (await passTermsHash(l, key))) {
+            // The terms changed (renewal, firm / computer limit, plan, customer details): re-sign what the active computers hold, so
+            // the change reaches the software at its next check-in without anyone pressing Publish.
+            if (l.passHash && Object.values(l.devicesSummary ?? {}).some((d) => d.status === 'active')) await publishCertificates(l.id, key, by, 'terms changed')
+            await publishPass(l, key, by)
+          }
         } else if (l.passHash) {
           await removePass(l, by)
         }

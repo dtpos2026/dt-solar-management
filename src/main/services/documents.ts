@@ -601,7 +601,8 @@ export function updateDocument(ctx: Ctx, rawInput: DocInput): number {
   const input = inheritReturnFlags(ctx, { ...rawInput, refDocId: rawInput.refDocId ?? before.ref_doc_id })
   if (before.doc_type !== input.docType) throw new AppError('Document type cannot be changed.', 'VALIDATION')
   if (before.status === 'cancelled') throw new AppError('Cancelled documents cannot be edited.', 'VALIDATION')
-  if (before.status === 'converted') throw new AppError('This document has already been converted and cannot be edited.', 'VALIDATION')
+  // A converted quotation may still be corrected: it is a separate document, the sale created from it keeps its own lines.
+  if (before.status === 'converted' && before.doc_type !== 'quotation') throw new AppError('This document has already been converted and cannot be edited.', 'VALIDATION')
   assertCanEdit(ctx, before.doc_type, before.id, 'edit')
   assertOpenFor(ctx, before.doc_type, before.date)
   assertOpenFor(ctx, before.doc_type, requireDate(input.date))
@@ -622,7 +623,7 @@ export function updateDocument(ctx: Ctx, rawInput: DocInput): number {
     if (before.party_id && allocated > 0 && h.party_id !== before.party_id) {
       throw new AppError('Party cannot be changed on a document that has payments.', 'VALIDATION')
     }
-    if (before.doc_type !== 'quotation') h.status = before.status
+    if (before.doc_type !== 'quotation' || before.status === 'converted') h.status = before.status
     const cols = Object.keys(h).filter((c) => !['firm_id', 'doc_type'].includes(c))
     db.prepare(
       `UPDATE documents SET ${cols.map((c) => `${c} = @${c}`).join(', ')}, updated_by = @uid, updated_at = datetime('now','localtime') WHERE id = @id`
@@ -671,13 +672,15 @@ export function cancelDocument(ctx: Ctx, id: number, reason?: string): void {
   })()
 }
 
-export function setQuotationStatus(ctx: Ctx, id: number, status: string): void {
+export function setQuotationStatus(ctx: Ctx, id: number, status: string, reason?: string): void {
   requirePerm(ctx, 'quotations.manage')
   const d = getDocRow(ctx, id)
   if (d.doc_type !== 'quotation') throw new AppError('Not a quotation.', 'VALIDATION')
   if (!QUOTATION_STATUSES.includes(status) || status === 'converted') throw new AppError('Invalid status.', 'VALIDATION')
+  if (d.status === 'cancelled') throw new AppError('A cancelled quotation cannot change status.', 'VALIDATION')
+  if (d.status === 'converted') throw new AppError('This quotation was converted to a sale. Cancel it instead if it should no longer count.', 'VALIDATION')
   ctx.db.prepare('UPDATE documents SET status = ? WHERE id = ?').run(status, id)
-  audit(ctx, 'status', 'quotation', id, `Quotation ${d.number} marked ${status}`)
+  audit(ctx, 'status', 'quotation', id, `Quotation ${d.number} marked ${status}${status === 'rejected' && reason ? `. Reason: ${optText(reason, 300)}` : ''}`, { from: d.status, to: status, reason: optText(reason, 300) })
 }
 
 export function deleteDraft(ctx: Ctx, id: number): void {
@@ -732,7 +735,8 @@ function blockReason(ctx: Ctx, d: DocRow): { message: string; code: string } | n
        ORDER BY p.id LIMIT 3`
     )
     .all(d.id) as Array<{ number: string }>
-  if (alloc.length) {
+  // A paid purchase may be deleted: its payments are not lost, they become unallocated advance with the supplier (same as a cancel).
+  if (alloc.length && d.doc_type !== 'purchase_invoice') {
     return {
       message: `${d.number} has payments allocated to it (${alloc.map((a) => a.number).join(', ')}), so it cannot be deleted. ${VOID_HINT}`,
       code: 'VALIDATION'
@@ -790,12 +794,16 @@ export function deleteDocument(ctx: Ctx, id: number): void {
     const lineRows = db.prepare('SELECT * FROM document_lines WHERE document_id = ? ORDER BY line_no').all(id)
     if (d.status !== 'cancelled') unpostStock(ctx, d)
     const movements = db.prepare('SELECT * FROM stock_movements WHERE ref_type = ? AND ref_id = ? ORDER BY id').all(d.doc_type, id)
+    // Payments that were settled against a deleted purchase stay as the supplier's advance; only the allocation goes.
+    const releasedAllocations = db.prepare('SELECT * FROM payment_allocations WHERE document_id = ?').all(id)
+    db.prepare('DELETE FROM payment_allocations WHERE document_id = ?').run(id)
     const reopened = reopenSource(ctx, d)
     db.prepare('DELETE FROM document_lines WHERE document_id = ?').run(id)
     db.prepare('DELETE FROM documents WHERE id = ?').run(id)
     audit(ctx, 'delete', d.doc_type, id, `Deleted ${DOC_TYPES[d.doc_type].label} ${d.number} permanently (${round2(d.grand_total)})`, {
       snapshot: { document: docRow, lines: lineRows },
       stockMovements: movements,
+      releasedAllocations,
       sourceReopened: reopened
     })
   })()
@@ -864,7 +872,8 @@ export function getDocument(ctx: Ctx, id: number): Record<string, unknown> {
       `SELECT d.*, pa.name AS party_master_name, pa.phone AS party_master_phone, pa.address AS party_master_address, pa.city AS party_city,
          pa.ntn AS party_ntn, pa.strn AS party_strn, pa.cnic AS party_cnic, pa.email AS party_email,
          pr.name AS project_name, pr.code AS project_code, pr.capacity_kw AS project_capacity, pr.site_address AS project_site,
-         w.name AS warehouse_name, u.full_name AS created_by_name, uu.full_name AS updated_by_name, rd.number AS ref_doc_number, rd.doc_type AS ref_doc_type
+         w.name AS warehouse_name, u.full_name AS created_by_name, uu.full_name AS updated_by_name, rd.number AS ref_doc_number, rd.doc_type AS ref_doc_type,
+         (SELECT c.number FROM documents c WHERE c.ref_doc_id = d.id AND c.doc_type NOT IN ('sale_return','purchase_return') ORDER BY c.id LIMIT 1) AS converted_to
        FROM documents d LEFT JOIN parties pa ON pa.id = d.party_id LEFT JOIN projects pr ON pr.id = d.project_id
        LEFT JOIN warehouses w ON w.id = d.warehouse_id LEFT JOIN users u ON u.id = d.created_by LEFT JOIN users uu ON uu.id = d.updated_by
        LEFT JOIN documents rd ON rd.id = d.ref_doc_id

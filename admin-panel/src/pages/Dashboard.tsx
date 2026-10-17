@@ -113,7 +113,7 @@ async function loadAttention(): Promise<ThreadRow[]> {
 
 async function loadRecent(): Promise<AuditRow[]> {
   const s = await getDocs(query(auditCol(), orderBy('at', 'desc'), limit(RECENT_PAGE)))
-  return s.docs.map((d) => auditRowFromData(d.id, d.data()))
+  return s.docs.map((d) => auditRowFromData(d.id, d.data())).filter((r) => !r.archived)
 }
 
 export function Dashboard() {

@@ -196,24 +196,60 @@ export function saveParty(ctx: Ctx, input: PartyInput): number {
   return id
 }
 
+export interface PartyDependencies {
+  documents: number
+  payments: number
+  expenses: number
+  projects: number
+  adjustments: number
+  /** The party carries an opening balance. */
+  openingBalance: boolean
+  /** Nothing refers to the party: it may be deleted. */
+  deletable: boolean
+  /** Plain-words list of what refers to the party ("12 invoices and bills, 5 payments"). */
+  summary: string
+}
+
+/** Everything that refers to a customer / supplier, so a delete is refused with a clear reason (never silently turned into something else). */
+export function partyDependencies(ctx: Ctx, id: number): PartyDependencies {
+  const p = getParty(ctx, id)
+  const db = ctx.db
+  const n = (sql: string): number => (db.prepare(sql).get(id) as { c: number }).c
+  const documents = n('SELECT COUNT(*) AS c FROM documents WHERE party_id = ?')
+  const payments = n('SELECT COUNT(*) AS c FROM payments WHERE party_id = ?')
+  const expenses = n('SELECT COUNT(*) AS c FROM expenses WHERE party_id = ?')
+  const projects = n('SELECT COUNT(*) AS c FROM projects WHERE customer_id = ?')
+  const adjustments = n('SELECT COUNT(*) AS c FROM party_adjustments WHERE party_id = ?')
+  const openingBalance = Number(p.opening_balance) !== 0
+  const parts = [
+    documents && `${documents} invoice${documents === 1 ? '' : 's'}, bill${documents === 1 ? '' : 's'} or quotation${documents === 1 ? '' : 's'}`,
+    payments && `${payments} payment${payments === 1 ? '' : 's'}`,
+    expenses && `${expenses} expense${expenses === 1 ? '' : 's'}`,
+    projects && `${projects} project${projects === 1 ? '' : 's'}`,
+    adjustments && `${adjustments} balance adjustment${adjustments === 1 ? '' : 's'}`,
+    openingBalance && 'an opening balance'
+  ].filter(Boolean) as string[]
+  return { documents, payments, expenses, projects, adjustments, openingBalance, deletable: parts.length === 0, summary: parts.join(', ') }
+}
+
+/** Deactivate (hide from new documents, keep every record) or reactivate a customer / supplier. */
+export function setPartyActive(ctx: Ctx, id: number, active: boolean): void {
+  const p = getParty(ctx, id)
+  requirePerm(ctx, permFor(String(p.type) === 'supplier' ? 'supplier' : 'customer', 'manage'))
+  ctx.db.prepare("UPDATE parties SET is_active = ?, updated_at = datetime('now','localtime') WHERE id = ?").run(active ? 1 : 0, id)
+  audit(ctx, active ? 'reactivate' : 'deactivate', 'party', id, `${active ? 'Reactivated' : 'Deactivated'} ${String(p.name)}`)
+}
+
+/** Permanent delete: only when nothing refers to the party. Otherwise it is refused with the reason; deactivate instead. */
 export function deleteParty(ctx: Ctx, id: number): { deleted: boolean } {
   const p = getParty(ctx, id)
   requirePerm(ctx, permFor(String(p.type) === 'supplier' ? 'supplier' : 'customer', 'manage'))
-  const db = ctx.db
-  const used =
-    db.prepare('SELECT 1 FROM documents WHERE party_id = ? LIMIT 1').get(id) ||
-    db.prepare('SELECT 1 FROM payments WHERE party_id = ? LIMIT 1').get(id) ||
-    db.prepare('SELECT 1 FROM expenses WHERE party_id = ? LIMIT 1').get(id) ||
-    db.prepare('SELECT 1 FROM projects WHERE customer_id = ? LIMIT 1').get(id) ||
-    db.prepare('SELECT 1 FROM party_adjustments WHERE party_id = ? LIMIT 1').get(id) ||
-    Number(p.opening_balance) !== 0
-  if (used) {
-    db.prepare('UPDATE parties SET is_active = 0 WHERE id = ?').run(id)
-    audit(ctx, 'deactivate', 'party', id, `Deactivated ${String(p.name)} (has transactions)`)
-    return { deleted: false }
+  const dep = partyDependencies(ctx, id)
+  if (!dep.deletable) {
+    throw new AppError(`${String(p.name)} cannot be deleted because it has ${dep.summary}. Deactivate it instead: it is hidden from new documents and all records stay.`, 'VALIDATION')
   }
-  db.prepare('DELETE FROM parties WHERE id = ?').run(id)
-  audit(ctx, 'delete', 'party', id, `Deleted ${String(p.name)}`)
+  ctx.db.prepare('DELETE FROM parties WHERE id = ?').run(id)
+  audit(ctx, 'delete', 'party', id, `Deleted ${String(p.name)}`, { snapshot: p })
   return { deleted: true }
 }
 

@@ -24,8 +24,10 @@ export function DocumentView(): JSX.Element {
   const meta = DOC_TYPES[d.doc_type as DocType]
   const p = meta.perm
   const cancelled = d.status === 'cancelled'
-  const canEdit = !cancelled && d.status !== 'converted' && (p === 'quotations' ? can('quotations.manage') : can(`${p}.edit`) && (!d.locked || can(`${p}.edit_locked`)))
-  const canCancel = !cancelled && meta.financial && can(`${p}.cancel`) && (!d.locked || can(`${p}.edit_locked`))
+  const isQuote = d.doc_type === 'quotation'
+  // A converted quotation can still be corrected or cancelled; the sale made from it is a separate document and stays as it is.
+  const canEdit = !cancelled && (isQuote ? can('quotations.manage') : d.status !== 'converted' && can(`${p}.edit`) && (!d.locked || can(`${p}.edit_locked`)))
+  const canCancel = !cancelled && (isQuote ? can('quotations.manage') : meta.financial && can(`${p}.cancel`) && (!d.locked || can(`${p}.edit_locked`)))
   // The server explains why a document cannot be deleted (permission, payments, references, closed period); the
   // button is shown only when the delete would be accepted.
   const canDelete = !d.delete_block
@@ -54,7 +56,9 @@ export function DocumentView(): JSX.Element {
   const doCancel = async (): Promise<void> => {
     const reason = await promptDialog({
       title: `Cancel ${meta.label} ${d.number}?`,
-      message: 'Stock movements will be reversed. Any payments recorded against it will remain as advance (unallocated) balance. This is recorded in the audit log.',
+      message: isQuote
+        ? `The quotation is marked cancelled and can no longer be edited or converted.${d.status === 'converted' ? ` The sale created from it (${d.converted_to ?? 'linked document'}) is not changed.` : ''} This is recorded in the audit log.`
+        : 'Stock movements will be reversed. Any payments recorded against it will remain as advance (unallocated) balance. This is recorded in the audit log.',
       confirmLabel: 'Cancel document',
       danger: true,
       input: { label: 'Reason for cancellation', required: true }
@@ -70,7 +74,7 @@ export function DocumentView(): JSX.Element {
   }
   const doDelete = async (): Promise<void> => {
     const message = meta.financial
-      ? `${meta.label} ${d.number} (${moneyFull(d.grand_total)}) will be removed permanently.${meta.stock !== 0 && !cancelled ? ' Its stock movements and serial numbers are reversed exactly like a cancellation.' : ''} A full copy is kept in the audit log. This cannot be undone.`
+      ? `${meta.label} ${d.number} (${moneyFull(d.grand_total)}) will be removed permanently.${meta.stock !== 0 && !cancelled ? ' Its stock movements and serial numbers are reversed exactly like a cancellation.' : ''}${d.paid > 0 && d.doc_type === 'purchase_invoice' ? ` The ${moneyFull(d.paid)} already paid is kept as an advance with the supplier.` : ''} A full copy is kept in the audit log. This cannot be undone.`
       : `${meta.label} ${d.number} will be removed permanently. This cannot be undone.`
     if (!(await confirmDialog({ title: `Delete ${d.number} permanently?`, message, danger: true, confirmLabel: 'Delete permanently' }))) return
     try {
@@ -83,8 +87,14 @@ export function DocumentView(): JSX.Element {
     }
   }
   const setStatus = async (status: string): Promise<void> => {
+    let reason: string | undefined
+    if (status === 'rejected') {
+      const r = await promptDialog({ title: `Reject quotation ${d.number}?`, message: 'The customer did not accept it. You can note why; the quotation stays on file as rejected.', confirmLabel: 'Reject quotation', danger: true, input: { label: 'Reason (optional)' } })
+      if (r === null || r === undefined) return
+      reason = r
+    }
     try {
-      await api('docs.setQuotationStatus', { id: d.id, status })
+      await api('docs.setQuotationStatus', { id: d.id, status, reason })
       reload()
     } catch (e) {
       toast.error(e)

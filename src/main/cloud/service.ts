@@ -23,9 +23,11 @@ import { maskToken } from './install'
 import { loadCloudState, saveCloudState, type CloudState, type HeartbeatRecord } from './state'
 import * as support from './support'
 import { resetState } from '../services/adminReset'
+import { describeVersion, type VersionInfo } from '../../shared/version'
 
 export const HEARTBEAT_EVERY_MS = 15 * 60_000
 export const SUPPORT_BACKGROUND_EVERY_MS = 15 * 60_000
+export const VERSION_CHECK_MS = 6 * 3600_000
 
 export interface LicenseLike {
   readonly deviceId: string
@@ -99,12 +101,13 @@ export class CloudService {
   /* ------------------------------------------------ business info ------------------------------------------------ */
 
   /** Active firm (signed-in user) or the default firm; registration company name before setup. */
-  businessInfo(): { companyName: string; firmPhone: string; firms: number; users: number; ownerName: string } {
+  businessInfo(): { companyName: string; firmPhone: string; firms: number; firmsActive: number; users: number; ownerName: string } {
     const db = this.opts.getDb()
     const reg = this.opts.license.registration()
     let companyName = ''
     let firmPhone = ''
     let firms = 0
+    let firmsActive = 0
     let users = 0
     let ownerName = ''
     if (db) {
@@ -115,13 +118,14 @@ export class CloudService {
         companyName = firm?.name ?? ''
         firmPhone = firm?.phone ?? ''
         firms = (db.prepare('SELECT COUNT(*) AS c FROM firms').get() as { c: number }).c
+        firmsActive = (db.prepare('SELECT COUNT(*) AS c FROM firms WHERE is_active = 1').get() as { c: number }).c
         users = (db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_active = 1').get() as { c: number }).c
         ownerName = session?.fullName || ((db.prepare('SELECT full_name FROM users WHERE is_owner = 1 ORDER BY id LIMIT 1').get() as { full_name: string } | undefined)?.full_name ?? '')
       } catch (e) {
         this.opts.log?.('warn', `Heartbeat: could not read business info: ${(e as Error).message}`)
       }
     }
-    return { companyName: companyName || reg?.companyName || '', firmPhone, firms, users, ownerName: reg?.ownerName || ownerName }
+    return { companyName: companyName || reg?.companyName || '', firmPhone, firms, firmsActive, users, ownerName: reg?.ownerName || ownerName }
   }
 
   /* ------------------------------------------------ location ------------------------------------------------ */
@@ -233,6 +237,7 @@ export class CloudService {
       mode: st.mode,
       lastCheckAt: st.lastCheckAt ?? '',
       firms: biz.firms,
+      firmsActive: biz.firmsActive,
       users: biz.users,
       location: loc.location,
       locationStatus: loc.status,
@@ -264,6 +269,7 @@ export class CloudService {
           rec.error = null
           rec.lastOkAt = new Date().toISOString()
           rec.lastPayload = payload
+          void this.checkLatestVersion().catch(() => undefined)
         } catch (e) {
           rec.ok = false
           rec.error = (e as Error).message
@@ -289,6 +295,30 @@ export class CloudService {
       preview: { documentId: `heartbeats/${maskToken(this.opts.license.installToken)}`, ...payload, lastSeen: '(server time)' },
       heartbeat: this.heartbeatRecord()
     }
+  }
+
+  /* ------------------------------------------------ version ------------------------------------------------ */
+
+  /** Installed version and the latest one Digital Target published (read from publicSettings/version, at most every 6 hours). */
+  versionInfo(): VersionInfo {
+    return describeVersion(this.opts.license.appVersion, this.state.version)
+  }
+
+  async checkLatestVersion(force = false): Promise<VersionInfo> {
+    const client = this.opts.license.client
+    const last = this.state.version?.checkedAt ? Date.parse(this.state.version.checkedAt) : 0
+    if (client && (force || !(this.nowMs() - last < VERSION_CHECK_MS && this.nowMs() >= last))) {
+      try {
+        const doc = await client.get('publicSettings/version')
+        const d = (doc?.data ?? {}) as Record<string, unknown>
+        const str = (v: unknown, n: number): string => (typeof v === 'string' ? v.trim().slice(0, n) : '')
+        this.state.version = { latest: str(d.latest, 20), minimum: str(d.minimum, 20), notes: str(d.notes, 500), url: /^https:\/\//.test(str(d.url, 300)) ? str(d.url, 300) : '', checkedAt: new Date(this.nowMs()).toISOString() }
+        this.save()
+      } catch {
+        /* offline: keep what was read before */
+      }
+    }
+    return this.versionInfo()
   }
 
   /* ------------------------------------------------ support ------------------------------------------------ */

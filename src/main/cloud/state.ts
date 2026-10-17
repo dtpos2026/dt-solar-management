@@ -30,6 +30,8 @@ export interface CloudState {
   deviceError: string | null
   deviceErrorKind: DeviceErrorKind | null
   deviceAttemptAt: string | null
+  /** Latest version published by Digital Target (publicSettings/version) and when it was read. */
+  version: { latest: string; minimum: string; notes: string; url: string; checkedAt: string } | null
   support: SupportRecord
 }
 
@@ -40,6 +42,7 @@ export function emptyState(): CloudState {
     deviceError: null,
     deviceErrorKind: null,
     deviceAttemptAt: null,
+    version: null,
     support: {}
   }
 }
@@ -54,6 +57,7 @@ export function loadCloudState(dir: string): CloudState {
       deviceError: j.deviceError ?? null,
       deviceErrorKind: j.deviceErrorKind ?? null,
       deviceAttemptAt: j.deviceAttemptAt ?? null,
+      version: j.version ?? null,
       support: { ...(j.support ?? {}) }
     }
   } catch {

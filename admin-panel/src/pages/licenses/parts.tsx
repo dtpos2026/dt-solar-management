@@ -57,3 +57,34 @@ export function LocationLine({ loc, compact = false }: { loc: HeartbeatLocation 
     </span>
   )
 }
+
+/** Plain-language explanation of the check-in interval and the grace period, with the real numbers of the license. */
+export function GraceExplainer({ checkinDays, graceDays, detached = false, className = '' }: { checkinDays: number; graceDays: number; detached?: boolean; className?: string }) {
+  if (detached || checkinDays <= 0) {
+    return (
+      <div className={`rounded-xl border border-[#e2d6f3] bg-[#f6f0fd] px-3.5 py-3 text-[13px] text-[#3d096d] ${className}`}>
+        <b>No online check-in is required for this license.</b> The software never needs to reach Digital Target after activation, so the grace period does not apply. Only the expiry date of the license counts.
+      </div>
+    )
+  }
+  return (
+    <div className={`rounded-xl border border-[#e2d6f3] bg-[#f6f0fd] px-3.5 py-3 text-[13px] leading-relaxed text-[#3d096d] ${className}`}>
+      <div className="mb-1 font-bold">How check-in and grace days work</div>
+      <ul className="list-disc space-y-1 pl-5">
+        <li>
+          <b>Check-in every {checkinDays} day{checkinDays === 1 ? '' : 's'}.</b> When the computer is online, the software verifies the license with Digital Target, so a suspension or renewal reaches it within minutes. The number is how long a computer may stay without any successful check.
+        </li>
+        <li>
+          <b>Grace period of {graceDays} day{graceDays === 1 ? '' : 's'}.</b> If a computer could not verify for {checkinDays} days (for example it was offline), the software keeps working for {graceDays} more day{graceDays === 1 ? '' : 's'}. It shows the days left, and the Devices page shows the same countdown.
+        </li>
+        <li>
+          <b>When grace ends</b>, the software stops and shows that verification is required. Everything returns as soon as the computer connects and verifies. Data is never deleted.
+        </li>
+        <li>
+          <b>Expiry is different.</b> At the expiry date of the license the software stops, with no grace period. Renew the license to continue.
+        </li>
+        <li>A suspended or revoked license is enforced at the next check, with no grace.</li>
+      </ul>
+    </div>
+  )
+}

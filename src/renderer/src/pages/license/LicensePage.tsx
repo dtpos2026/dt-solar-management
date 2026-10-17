@@ -1,5 +1,5 @@
 import { CSSProperties, ReactNode, useCallback, useEffect, useRef, useState } from 'react'
-import { AlertTriangle, BadgeCheck, CheckCircle2, ClipboardPaste, Copy, Cpu, FileUp, Fingerprint, Info, KeyRound, Loader2, Mail, MessageCircle, Phone, RefreshCw, ShieldCheck, Unplug, Wifi, WifiOff, X } from 'lucide-react'
+import { AlertTriangle, BadgeCheck, CheckCircle2, ClipboardPaste, Copy, Cpu, Download, FileUp, Fingerprint, Info, KeyRound, Loader2, Mail, MessageCircle, Phone, RefreshCw, ShieldCheck, Unplug, Wifi, WifiOff, X } from 'lucide-react'
 import { api } from '../../api'
 import { LicenseStatus, useApp, useCan } from '../../store'
 import { Badge, Button, Card, Field, Input, Kv, Loading, PageHeader, Tabs, Textarea, confirmDialog, cx, toast } from '../../components/ui'
@@ -8,6 +8,7 @@ import { VENDOR } from '@shared/branding'
 import appIcon from '../../assets/app-icon.png'
 import dtLogo from '../../assets/dt-logo.jpg'
 import { pollDelay } from './pollDelay'
+import type { VersionInfo } from '@shared/version'
 
 /* ------------------------------------------------ types ------------------------------------------------ */
 interface LicPayload {
@@ -672,6 +673,10 @@ function StatusSection({ lic }: { lic: Lic }): JSX.Element {
 /* ------------------------------------------------ about ------------------------------------------------ */
 function About({ version }: { version: string }): JSX.Element {
   const tel = `tel:${VENDOR.phone.replace(/[^\d+]/g, '')}`
+  const [vi, setVi] = useState<VersionInfo | null>(null)
+  useEffect(() => {
+    api<VersionInfo>('app.versionInfo', { refresh: true }).then(setVi).catch(() => undefined)
+  }, [])
   return (
     <Card title={<span className="inline-flex items-center gap-2"><Info className="h-4 w-4 text-brand" /> About</span>}>
       <div className="grid gap-6 md:grid-cols-2">
@@ -683,9 +688,17 @@ function About({ version }: { version: string }): JSX.Element {
             </div>
             <div className="text-[12.5px] text-muted">{VENDOR.tagline}</div>
             <div className="mt-2 flex flex-wrap gap-2 text-[12.5px]">
-              <Badge tone="brand">Version {version || '—'}</Badge>
-              <Badge tone="muted">Offline desktop edition</Badge>
+              <Badge tone="brand">Installed version {version || 'unknown'}</Badge>
+              {vi?.latest && <Badge tone={vi.updateRequired ? 'bad' : vi.updateAvailable ? 'warn' : 'ok'}>Available version {vi.latest}</Badge>}
             </div>
+            {vi?.updateRequired && <div className="mt-2 text-[13px] font-semibold text-bad">This version is no longer supported. Please update to {vi.latest}.</div>}
+            {vi?.updateAvailable && !vi.updateRequired && <div className="mt-2 text-[13px] text-warn">A newer version is available.{vi.notes ? ` ${vi.notes}` : ''}</div>}
+            {vi?.updateAvailable && vi.url && (
+              <Button size="sm" className="mt-2" icon={<Download className="h-4 w-4" />} onClick={() => openExternal(vi.url)}>
+                Download version {vi.latest}
+              </Button>
+            )}
+            {vi && vi.latest && !vi.updateAvailable && <div className="mt-2 text-[12.5px] text-muted">You have the latest version.</div>}
             <div className="mt-2 text-[12px] text-muted">© {new Date().getFullYear()} {VENDOR.company}. All rights reserved.</div>
           </div>
         </div>

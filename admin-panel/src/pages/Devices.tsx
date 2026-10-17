@@ -5,13 +5,15 @@ import { Inbox, KeyRound, Map as MapIcon, MonitorSmartphone, RefreshCw, Trash2, 
 import { PageTitle } from '../components/ui'
 import { setDeviceState, type DeviceAction } from '../lib/licenses'
 import { deviceCertSigner } from '../lib/approve'
-import { DEVICE_STATUS_LABEL, accuracyText, filterDeviceRows, locationStatusLabel, sortDeviceRows, type DeviceFilter, type DeviceRow } from '../lib/devices'
+import { DEVICE_STATUS_LABEL, accuracyText, filterDeviceRows, locationStatusLabel, sortDeviceRows, verificationText, type DeviceFilter, type DeviceRow } from '../lib/devices'
 import { countOnline, ONLINE_THRESHOLD_LABEL } from '../lib/stats'
 import { useAdminEmail, useCan } from '../lib/auth'
 import { useSigningKey } from '../lib/signingKey'
 import { fmtDateTime, timeAgo } from '../lib/format'
 import { ConfirmDialog, Empty, Loading, Notice, Pager, Panel, Pill, SearchBox, Tabs, usePaged, type ConfirmOptions, type NoticeMsg } from './licensing/kit'
 import { useFleet } from './licensing/useFleet'
+import { usePublishedVersion } from '../lib/versionStore'
+import { versionState } from '../lib/version'
 import { RemoveDeviceDialog, useRemovedRows } from './licensing/RemoveDevice'
 import { ResetPasswordDialog } from './licensing/ResetPassword'
 import { maskDeviceId, maskLicenseKey } from '../lib/terms'
@@ -41,6 +43,7 @@ export function Devices() {
   const canReset = manage && can('licenses.manage')
   const pending = usePendingRequests(canRequests)
   const fleet = useFleet(tab === 'list')
+  const published = usePublishedVersion(tab === 'list')
   const [f, setF] = useState<DeviceFilter>({ q: '', online: '', deviceStatus: '', licenseStatus: '' })
   const [msg, setMsg] = useState<NoticeMsg | null>(null)
   const [act, setAct] = useState<{ r: DeviceRow; a: DeviceAction } | null>(null)
@@ -127,7 +130,7 @@ export function Devices() {
                 <table className="w-full text-[13px]">
                   <thead className="text-left text-[12px] text-[#7a6d92]">
                     <tr>
-                      <th className="px-3 py-2">Computer</th><th className="px-3 py-2">Company / license</th><th className="px-3 py-2">OS · version</th>
+                      <th className="px-3 py-2">Computer</th><th className="px-3 py-2">Company / license</th><th className="px-3 py-2">Software</th><th className="px-3 py-2">Firms</th>
                       <th className="px-3 py-2">Registered</th><th className="px-3 py-2">Last seen</th><th className="px-3 py-2">Location</th><th className="px-3 py-2">Last verified</th>
                       <th className="px-3 py-2">Status</th><th className="px-3 py-2" />
                     </tr>
@@ -140,7 +143,29 @@ export function Devices() {
                           <div>{r.company || '—'}</div>
                           {r.licenseId ? <span className="flex items-center gap-1"><Link className="text-[11.5px] text-[#3d096d] underline" to={`/licenses/${r.licenseId}`}>{r.licenseKey ? maskLicenseKey(r.licenseKey) : 'license'}</Link>{r.licenseKey && <MaskedCopy value={r.licenseKey} />}</span> : <span className="text-[11.5px] text-[#7a6d92]">no license</span>}
                         </td>
-                        <td className="px-3 py-2">{r.os || '—'}<div className="text-[11.5px] text-[#7a6d92]">{r.appVersion || '—'}{r.mode ? ` · ${r.mode}` : ''}</div></td>
+                        <td className="px-3 py-2">
+                          <div>Installed {r.appVersion || 'unknown'}</div>
+                          {published.value.latest && (
+                            <div className="text-[12px] text-[#6b5d85]">
+                              Available {published.value.latest}
+                              {versionState(r.appVersion, published.value) === 'update' && <span className="ml-1.5 rounded-md bg-amber-50 px-1.5 py-0.5 text-[11.5px] font-semibold text-amber-800">Update available</span>}
+                              {versionState(r.appVersion, published.value) === 'required' && <span className="ml-1.5 rounded-md bg-red-50 px-1.5 py-0.5 text-[11.5px] font-semibold text-red-700">Update required</span>}
+                              {versionState(r.appVersion, published.value) === 'current' && <span className="ml-1.5 rounded-md bg-green-50 px-1.5 py-0.5 text-[11.5px] font-semibold text-green-700">Up to date</span>}
+                            </div>
+                          )}
+                          <div className="text-[12px] text-[#7a6d92]">{r.os || 'OS not reported'}</div>
+                        </td>
+                        <td className="px-3 py-2">
+                          {r.firms === null ? (
+                            <span className="text-[12.5px] text-[#7a6d92]">Not reported</span>
+                          ) : (
+                            <>
+                              <div className="num font-semibold">{r.firmsActive ?? r.firms}{r.maxFirms ? ` of ${r.maxFirms}` : ''} active</div>
+                              {r.firmsActive !== null && r.firms > r.firmsActive && <div className="text-[12px] text-[#6b5d85]">{r.firms - r.firmsActive} deactivated</div>}
+                              {r.maxFirms && (r.firmsActive ?? r.firms) > r.maxFirms && <div className="text-[12px] font-semibold text-red-700">Above the limit</div>}
+                            </>
+                          )}
+                        </td>
                         <td className="px-3 py-2">{fmtDateTime(r.registeredMs)}</td>
                         <td className="px-3 py-2"><Pill value={r.online} />{r.lastSeenMs && <div className="text-[11.5px] text-[#7a6d92]" title={fmtDateTime(r.lastSeenMs)}>{timeAgo(r.lastSeenMs)}</div>}</td>
                         <td className="px-3 py-2">
@@ -154,7 +179,10 @@ export function Devices() {
                             <span title={r.locationNote || 'Location permission reported by the computer'} className={`inline-block rounded-md px-2 py-0.5 text-[12px] font-semibold ${r.locationStatus === 'os_denied' || r.locationStatus === 'service_off' ? 'bg-red-50 text-red-700' : r.locationStatus === 'unavailable' || r.locationStatus === 'waiting' ? 'bg-amber-50 text-amber-800' : 'bg-[#f1ecf7] text-[#6b5d85]'}`}>{locationStatusLabel(r)}</span>
                           )}
                         </td>
-                        <td className="px-3 py-2">{r.lastCheckAt ? fmtDateTime(r.lastCheckAt) : 'Never'}</td>
+                        <td className="px-3 py-2">
+                          <div>{r.lastCheckAt ? fmtDateTime(r.lastCheckAt) : 'Never'}</div>
+                          <div className={`text-[12px] ${r.verification.kind === 'overdue' ? 'font-semibold text-red-700' : r.verification.kind === 'grace' ? 'font-semibold text-amber-800' : 'text-[#6b5d85]'}`}>{verificationText(r.verification)}</div>
+                        </td>
                         <td className="px-3 py-2">
                           <div className="flex flex-col items-start gap-1"><Pill value={r.deviceStatus} title="Device status" /><Pill value={r.licenseStatus} title="License status" label={`license: ${r.licenseStatus === 'none' ? '—' : r.licenseStatus}`} /></div>
                           {r.statusNote && <div className="text-[11px] text-[#7a6d92]">{r.statusNote}</div>}

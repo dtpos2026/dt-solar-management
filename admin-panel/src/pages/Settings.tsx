@@ -6,6 +6,7 @@ import {
   Check,
   Clock,
   CreditCard,
+  Download,
   ExternalLink,
   FileText,
   ImageOff,
@@ -41,8 +42,9 @@ import { errorMessage, fmtDateTime } from '../lib/format'
 import { SAVE_DEADLINE_MS, withDeadline } from '../lib/deadline'
 import { DEFAULT_BRANDING, type Branding } from '../lib/types'
 import { SigningKeyPanel } from './SigningKey'
+import { VersionPanel } from './VersionPanel'
 
-type TabId = 'branding' | 'invoices' | 'bank' | 'support' | 'portal' | 'key'
+type TabId = 'branding' | 'invoices' | 'bank' | 'support' | 'portal' | 'version' | 'key'
 
 const TABS: { id: TabId; label: string; icon: ReactNode }[] = [
   { id: 'branding', label: 'Branding', icon: <Building2 /> },
@@ -50,6 +52,7 @@ const TABS: { id: TabId; label: string; icon: ReactNode }[] = [
   { id: 'bank', label: 'Bank & payment', icon: <CreditCard /> },
   { id: 'support', label: 'Support', icon: <LifeBuoy /> },
   { id: 'portal', label: 'Portal', icon: <MonitorCog /> },
+  { id: 'version', label: 'Software version', icon: <Download /> },
   { id: 'key', label: 'Signing key', icon: <KeyRound /> }
 ]
 
@@ -248,7 +251,7 @@ export function Settings() {
 
       {flash && <Notice tone={flash.tone} className="mb-4" onClose={() => setFlash(null)}>{flash.text}</Notice>}
       {st.error && <Notice tone="error" className="mb-4">Settings could not be loaded: {st.error}</Notice>}
-      {!canEdit && tab !== 'key' && (
+      {!canEdit && tab !== 'key' && tab !== 'version' && (
         <Notice tone="info" className="mb-4">
           <span className="inline-flex items-center gap-1.5"><Lock className="h-3.5 w-3.5" />Read only — changing these settings needs the “Branding, invoice & portal settings” permission.</span>
         </Notice>
@@ -261,6 +264,8 @@ export function Settings() {
 
       {tab === 'key' ? (
         <SigningKeyPanel />
+      ) : tab === 'version' ? (
+        <VersionPanel />
       ) : st.loading && !st.cached ? (
         <div className="card"><Loading label="Loading settings…" /></div>
       ) : (
@@ -332,6 +337,7 @@ export function Settings() {
                 <div className="space-y-3">
                   {text('invoiceFooter', 'Invoice footer', { area: 2, max: 500, hint: `${draft.invoiceFooter.length}/500` })}
                   {text('terms', 'Terms & conditions', { area: 4, max: 3000, hint: `${draft.terms.length}/3000` })}
+                  {text('signatoryName', 'Signatory name', { max: 80 })}
                   {image('signature')}
                 </div>
               </Section>

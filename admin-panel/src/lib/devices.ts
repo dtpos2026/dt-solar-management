@@ -29,6 +29,10 @@ export interface LicenseInfo {
   expiresAtMs: number | null
   activeDevices: number
   maxDevices: number
+  maxFirms: number
+  /** The app must verify with Digital Target at least this often; after that the grace period starts. */
+  checkinDays: number
+  graceDays: number
   activatedAtMs: number | null
   detached: boolean
 }
@@ -58,6 +62,8 @@ export interface HeartbeatLike {
   locationNote?: string
   locationStatus?: string
   resetState?: string
+  firms?: number
+  firmsActive?: number | null
 }
 
 export interface DeviceRow {
@@ -82,6 +88,12 @@ export interface DeviceRow {
   locationNote: string
   /** Location permission state reported by the computer ('' = older app version). */
   locationStatus: string
+  /** Firms reported by the computer: total, active (null = older app version) and the license limit. */
+  firms: number | null
+  firmsActive: number | null
+  maxFirms: number | null
+  /** Where the computer stands in its check-in / grace cycle. */
+  verification: VerificationState
   /** Administrator password reset progress reported by the computer ('' = none). */
   resetState: string
   mode: string
@@ -150,6 +162,10 @@ export function mergeDeviceRows(
         location: hb ? validLocation(hb.location) : null,
         locationNote: hb?.locationNote ?? '',
         locationStatus: hb?.locationStatus ?? '',
+        firms: hb?.firms ?? null,
+        firmsActive: hb?.firmsActive ?? null,
+        maxFirms: l.maxFirms,
+        verification: verificationState(hb?.lastCheckAt ? Date.parse(hb.lastCheckAt) || null : null, l.checkinDays, l.graceDays, l.detached, now),
         resetState: hb?.resetState ?? '',
         mode: hb?.mode ?? '',
         activationType: d.activationType,
@@ -181,6 +197,10 @@ export function mergeDeviceRows(
         location: validLocation(h.location),
         locationNote: h.locationNote ?? '',
         locationStatus: h.locationStatus ?? '',
+        firms: h.firms ?? null,
+        firmsActive: h.firmsActive ?? null,
+        maxFirms: l ? l.maxFirms : null,
+        verification: l ? verificationState(h.lastCheckAt ? Date.parse(h.lastCheckAt) || null : null, l.checkinDays, l.graceDays, l.detached, now) : { kind: 'unknown', dueMs: null, graceEndMs: null, daysLeft: null },
         resetState: h.resetState ?? '',
         mode: h.mode,
         activationType: '',
@@ -292,4 +312,47 @@ export function locationStatusLabel(r: Pick<DeviceRow, 'locationStatus' | 'lastS
   if (r.location) return LOCATION_STATUS_LABEL.sharing
   if (!r.lastSeenMs) return 'Computer has not connected yet'
   return LOCATION_STATUS_LABEL[r.locationStatus] ?? 'Not reported by this app version'
+}
+
+/* ------------------------------------------------ check-in and grace period ------------------------------------------------ */
+
+const DAY_MS = 86400000
+
+export interface VerificationState {
+  /**
+   * verified: inside the check-in interval. grace: the interval passed without a successful check, the computer still works.
+   * overdue: grace ended, the computer is blocked until it reaches Digital Target. not_required: detached or no check-in needed.
+   */
+  kind: 'verified' | 'grace' | 'overdue' | 'not_required' | 'unknown'
+  /** When the next check-in is due (end of the check-in interval). */
+  dueMs: number | null
+  /** When the grace period ends (access stops). */
+  graceEndMs: number | null
+  /** Days until due (verified) or until access stops (grace), rounded up. */
+  daysLeft: number | null
+}
+
+export function verificationState(lastCheckMs: number | null, checkinDays: number, graceDays: number, detached: boolean, now = Date.now()): VerificationState {
+  if (detached || !(checkinDays > 0)) return { kind: 'not_required', dueMs: null, graceEndMs: null, daysLeft: null }
+  if (lastCheckMs === null) return { kind: 'unknown', dueMs: null, graceEndMs: null, daysLeft: null }
+  const dueMs = lastCheckMs + checkinDays * DAY_MS
+  const graceEndMs = dueMs + Math.max(0, graceDays) * DAY_MS
+  if (now <= dueMs) return { kind: 'verified', dueMs, graceEndMs, daysLeft: Math.max(0, Math.ceil((dueMs - now) / DAY_MS)) }
+  if (now <= graceEndMs) return { kind: 'grace', dueMs, graceEndMs, daysLeft: Math.max(0, Math.ceil((graceEndMs - now) / DAY_MS)) }
+  return { kind: 'overdue', dueMs, graceEndMs, daysLeft: 0 }
+}
+
+export function verificationText(v: VerificationState): string {
+  switch (v.kind) {
+    case 'verified':
+      return `Next check-in due in ${v.daysLeft} day${v.daysLeft === 1 ? '' : 's'}`
+    case 'grace':
+      return `Grace period: ${v.daysLeft} day${v.daysLeft === 1 ? '' : 's'} left`
+    case 'overdue':
+      return 'Grace period ended, access stopped'
+    case 'not_required':
+      return 'No check-in required'
+    default:
+      return 'Not verified yet'
+  }
 }

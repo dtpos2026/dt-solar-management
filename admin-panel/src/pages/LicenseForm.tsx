@@ -11,6 +11,7 @@ import { PLAN_TYPES, PLAN_TYPE_LABEL, clientDetailsFromLicense, findDuplicateCli
 import { clientSyncFor, loadClients } from '../lib/clientsDb'
 import { loadBranding } from '../lib/fleet'
 import { logActivitySafe } from '../lib/audit'
+import { GraceExplainer } from './licenses/parts'
 
 export interface LicenseFormProps {
   open: boolean
@@ -265,12 +266,13 @@ export function LicenseForm({ open, license, client, onClose, onSaved }: License
         {errs.limits && <div className="col-span-2 -mt-1 text-[12.5px] text-red-600">{errs.limits}</div>}
         {!(license?.detached) && (
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Online check every (days)" hint="0 = never needs internet">
+            <Field label="Online check every (days)" hint="0 means no check-in is ever required">
               <input className="input" type="number" min={0} value={f.checkinDays} onChange={(e) => set({ checkinDays: Number(e.target.value) })} />
             </Field>
-            <Field label="Grace days">
+            <Field label="Grace days" hint="Extra days a computer keeps working after the check-in interval passed without a check">
               <input className="input" type="number" min={0} value={f.graceDays} onChange={(e) => set({ graceDays: Number(e.target.value) })} />
             </Field>
+            <GraceExplainer className="col-span-2" checkinDays={f.checkinDays} graceDays={f.graceDays} />
           </div>
         )}
         {!license && (

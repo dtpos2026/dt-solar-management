@@ -116,6 +116,19 @@ export function money(n: number, currency = 'PKR'): string {
   return `${currency} ${round2(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
+/** Invoice style amount: "Rs 32,320" (decimals only when needed). Other currencies keep their code. */
+export function rs(n: number, currency = 'PKR'): string {
+  const v = round2(n)
+  const text = v.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(v) ? 0 : 2, maximumFractionDigits: 2 })
+  return `${currency === 'PKR' ? 'Rs' : currency} ${text}`
+}
+
+/** The same amount without a currency prefix, for table cells. */
+export function plainAmount(n: number): string {
+  const v = round2(n)
+  return v.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(v) ? 0 : 2, maximumFractionDigits: 2 })
+}
+
 export function monthKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }

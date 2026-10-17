@@ -20,21 +20,23 @@ export function ClearAllActivityButton({ onCleared, className }: { onCleared?: (
     try {
       const plan = await planClearAllActivity()
       const n = plan.refs.length
-      if (n === 0) {
-        setError(plan.kept ? `Nothing to clear: the ${plan.kept} remaining entr${plan.kept === 1 ? 'y is a' : 'ies are'} protected security record${plan.kept === 1 ? '' : 's'}.` : 'The activity log is already empty.')
+      const m = plan.archiveRefs?.length ?? 0
+      if (n + m === 0) {
+        setError('The activity log is already empty.')
         return
       }
       setOpts({
         title: 'Clear all activity',
-        confirmLabel: `Delete ${n} entr${n === 1 ? 'y' : 'ies'}`,
+        confirmLabel: `Clear ${n + m} entr${n + m === 1 ? 'y' : 'ies'}`,
         tone: 'danger',
-        typeToConfirm: n > 50 ? 'CLEAR' : undefined,
+        typeToConfirm: n + m > 50 ? 'CLEAR' : undefined,
         body: (
           <div className="space-y-2">
             <p>
-              <b>{n}</b> activity entr{n === 1 ? 'y' : 'ies'} will be deleted from the activity log and the dashboard. Clients, licenses, devices, invoices and support chats are not touched.
+              <b>{n}</b> activity entr{n === 1 ? 'y' : 'ies'} will be deleted and <b>{m}</b> security entr{m === 1 ? 'y' : 'ies'} (sign-ins, permission changes) will be archived. All of them leave the dashboard, its counts and the Activity Log.
+              Clients, licenses, devices, invoices and support chats are not touched.
             </p>
-            <p className="text-[12.5px] text-[#6b5d85]">Security entries ({plan.kept} kept) are the protected audit trail; this clean-up is recorded there.</p>
+            <p className="text-[13px] text-[#6b5d85]">Archived security entries stay in the database as the protected audit trail and can be shown again with Show archived. This clean-up is recorded.</p>
           </div>
         ),
         run: async () => {

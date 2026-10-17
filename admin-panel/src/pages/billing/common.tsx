@@ -83,7 +83,7 @@ export type Paper = 'a4' | '80mm'
  * A4 (`@page size A4`) or an 80 mm thermal roll (`@page size 80mm auto`, no margins, 72 mm printable width).
  */
 export function PrintPortal({ children, paper = 'a4' }: { children: ReactNode; paper?: Paper }) {
-  const page = paper === '80mm' ? '@page { size: 80mm auto; margin: 0; }' : '@page { size: A4; margin: 12mm; }'
+  const page = paper === '80mm' ? '@page { size: 80mm auto; margin: 0; }' : '@page { size: A4; margin: 0; }'
   return createPortal(
     <div className={`dt-print-root dt-paper-${paper}`}>
       <style>{`
@@ -95,8 +95,7 @@ export function PrintPortal({ children, paper = 'a4' }: { children: ReactNode; p
           body { background: #fff !important; margin: 0 !important; }
           .dt-print-root { display: block; color: #1a1030; font-size: 12px; }
           .dt-print-root * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          .dt-print-root .dt-a4 { width: auto !important; min-height: 270mm !important; padding: 0 !important; box-shadow: none !important; }
-          .dt-print-root .dt-a4 > .absolute.bottom-6 { left: 0; right: 0; bottom: 0; }
+          .dt-print-root .dt-a4 { width: 210mm !important; box-shadow: none !important; }
           .dt-paper-80mm .dt-thermal { width: 72mm !important; margin: 0 auto; padding: 3mm 0 6mm; color: #000; }
         }
       `}</style>

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, HandCoins, Pencil, Phone, Plus, Printer, MapPin, Mail, Scale, Trash2 } from 'lucide-react'
+import { ArrowLeft, Ban, HandCoins, Pencil, Phone, Plus, Printer, MapPin, Mail, Scale, Trash2 } from 'lucide-react'
 import { api } from '../../api'
 import { WhatsAppButton } from '../../components/WhatsAppButton'
 import { useCan } from '../../store'
@@ -33,6 +33,46 @@ export function PartyDetail(): JSX.Element {
     ledger.reload()
   }
   const L = ledger.data
+  const manage = can(isCust ? 'customers.manage' : 'suppliers.manage')
+  const noun = p.type === 'supplier' ? 'supplier' : p.type === 'customer' ? 'customer' : 'customer / supplier'
+  const toggleActive = async (): Promise<void> => {
+    const active = !p.is_active
+    if (!active) {
+      const ok = await confirmDialog({
+        title: `Deactivate ${p.name}?`,
+        confirmLabel: 'Deactivate',
+        message: `${p.name} is hidden from new documents and payments. Every invoice, payment and balance stays, and you can reactivate the ${noun} at any time.${Math.abs(p.balance) > 0.5 ? ` The balance of ${money(Math.abs(p.balance))} remains open.` : ''}`
+      })
+      if (!ok) return
+    }
+    try {
+      await api('parties.setActive', { id: p.id, active })
+      toast.ok(active ? `${p.name} reactivated.` : `${p.name} deactivated.`)
+      reloadAll()
+    } catch (e) {
+      toast.error(e)
+    }
+  }
+  const remove = async (): Promise<void> => {
+    try {
+      const dep = await api<{ deletable: boolean; summary: string }>('parties.dependencies', { id: p.id })
+      if (!dep.deletable) {
+        const deactivate = await confirmDialog({
+          title: `${p.name} cannot be deleted`,
+          confirmLabel: p.is_active ? 'Deactivate instead' : 'Close',
+          message: `The ${noun} has ${dep.summary}, so deleting would break the books.${p.is_active ? ' Deactivate it instead: it is hidden from new documents and all records stay.' : ' It is already deactivated.'}`
+        })
+        if (deactivate && p.is_active) await toggleActive()
+        return
+      }
+      if (!(await confirmDialog({ title: `Delete ${p.name}?`, danger: true, confirmLabel: 'Delete permanently', message: `Nothing refers to this ${noun}, so it is removed permanently. This cannot be undone. A copy is kept in the audit log.` }))) return
+      await api('parties.delete', { id: p.id })
+      toast.ok(`${p.name} deleted.`)
+      nav(isCust ? '/customers' : '/suppliers')
+    } catch (e) {
+      toast.error(e)
+    }
+  }
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -53,7 +93,9 @@ export function PartyDetail(): JSX.Element {
             {isCust ? 'Receive payment' : 'Pay supplier'}
           </Button>
         )}
-        {can(isCust ? 'customers.manage' : 'suppliers.manage') && <Button icon={<Pencil className="h-4 w-4" />} onClick={() => setEdit(true)}>Edit</Button>}
+        {manage && <Button icon={<Pencil className="h-4 w-4" />} onClick={() => setEdit(true)}>Edit</Button>}
+        {manage && <Button variant="ghost" icon={<Ban className="h-4 w-4" />} onClick={toggleActive}>{p.is_active ? 'Deactivate' : 'Reactivate'}</Button>}
+        {manage && <Button variant="ghost" className="text-bad" icon={<Trash2 className="h-4 w-4" />} onClick={remove}>Delete</Button>}
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

@@ -33,6 +33,8 @@ import { openPrintWindow } from '../windows'
 import { reopenDatabase } from '../database'
 import { VENDOR } from '../../shared/branding'
 import { blockedAllows, isFullyBlocked } from '../../shared/licenseBlock'
+import { describeVersion } from '../../shared/version'
+import { getCloud } from '../cloud/worker'
 
 const coreRoutes: Record<string, Route> = {
   /* ---------------- app & session ---------------- */
@@ -52,6 +54,17 @@ const coreRoutes: Record<string, Route> = {
     }
   },
   'app.activity': { handler: () => true },
+  /** Installed version and the latest version Digital Target published (separate values; the latest is read at most every 6 h). */
+  'app.versionInfo': {
+    public: true,
+    handler: async (_c, a) => {
+      try {
+        return await getCloud().checkLatestVersion(a.refresh === true)
+      } catch {
+        return describeVersion(runtime.appVersion, null)
+      }
+    }
+  },
   'app.openExternal': {
     public: true,
     handler: (_c, a) => {
@@ -217,6 +230,8 @@ const coreRoutes: Record<string, Route> = {
   'parties.get': { handler: (c, a) => parties.getParty(c.ctx, Number(a.id)) },
   'parties.save': { write: true, handler: (c, a) => parties.saveParty(c.ctx, a as never) },
   'parties.delete': { write: true, handler: (c, a) => parties.deleteParty(c.ctx, Number(a.id)) },
+  'parties.dependencies': { handler: (c, a) => parties.partyDependencies(c.ctx, Number(a.id)) },
+  'parties.setActive': { write: true, handler: (c, a) => parties.setPartyActive(c.ctx, Number(a.id), a.active === true) },
   'parties.ledger': { handler: (c, a) => parties.partyLedger(c.ctx, Number(a.id), a) },
   'parties.aging': { handler: (c, a) => parties.agingReport(c.ctx, a.side, a.asOf) },
   'partyAdjustments.create': { perm: 'accounts.manage', write: true, handler: (c, a) => parties.createPartyAdjustment(c.ctx, a as never) },
@@ -231,7 +246,7 @@ const coreRoutes: Record<string, Route> = {
   'docs.cancel': { write: true, handler: (c, a) => docs.cancelDocument(c.ctx, Number(a.id), a.reason) },
   'docs.deleteDraft': { write: true, handler: (c, a) => docs.deleteDraft(c.ctx, Number(a.id)) },
   'docs.convert': { handler: (c, a) => docs.prepareConversion(c.ctx, Number(a.id), a.target) },
-  'docs.setQuotationStatus': { write: true, handler: (c, a) => docs.setQuotationStatus(c.ctx, Number(a.id), a.status) },
+  'docs.setQuotationStatus': { write: true, handler: (c, a) => docs.setQuotationStatus(c.ctx, Number(a.id), a.status, typeof a.reason === 'string' ? a.reason : undefined) },
   'docs.applyAdvances': { perm: 'accounts.manage', write: true, handler: (c, a) => c.ctx.db.transaction(() => pay.applyAdvances(c.ctx, Number(a.id)))() },
 
   /* ---------------- payments & accounts ---------------- */

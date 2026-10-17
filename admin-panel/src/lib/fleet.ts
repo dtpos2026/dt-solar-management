@@ -35,6 +35,7 @@ export function heartbeatFromSnap(s: QueryDocumentSnapshot<DocumentData>): Heart
     mode: str(d.mode),
     lastCheckAt: str(d.lastCheckAt),
     firms: num(d.firms),
+    firmsActive: typeof d.firmsActive === 'number' ? d.firmsActive : null,
     users: num(d.users),
     lastSeen: d.lastSeen instanceof Timestamp ? d.lastSeen : null,
     location: validLocation(d.location),
@@ -45,7 +46,7 @@ export function heartbeatFromSnap(s: QueryDocumentSnapshot<DocumentData>): Heart
 }
 
 export function heartbeatLike(h: Heartbeat): HeartbeatLike & { firms: number; users: number } {
-  return { ...h, lastSeenMs: h.lastSeen ? h.lastSeen.toMillis() : null, firms: h.firms, users: h.users }
+  return { ...h, lastSeenMs: h.lastSeen ? h.lastSeen.toMillis() : null, firms: h.firms, firmsActive: h.firmsActive, users: h.users }
 }
 
 export function licenseInfo(l: License): LicenseInfo {
@@ -59,6 +60,9 @@ export function licenseInfo(l: License): LicenseInfo {
     expiresAtMs: l.expiresAt ? l.expiresAt.toMillis() : null,
     activeDevices: l.activeDevices,
     maxDevices: l.maxDevices,
+    maxFirms: l.maxFirms,
+    checkinDays: l.checkinDays,
+    graceDays: l.graceDays,
     activatedAtMs: l.activatedAt ? l.activatedAt.toMillis() : null,
     detached: l.detached
   }

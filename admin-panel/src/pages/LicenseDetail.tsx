@@ -27,7 +27,7 @@ import { PAID_PLANS, PLAN_PRESETS, type ActivationRequest, type Device, type Hea
 import { ConfirmDialog, Empty, Loading, Notice, Panel, Pill, type ConfirmOptions, type NoticeMsg } from './licensing/kit'
 import { BILLING_READ_PERMS, HEARTBEAT_READ_PERMS, useClients, useInvoices } from './licensing/hooks'
 import { HistoryPanel } from './licenses/HistoryPanel'
-import { LocationLine } from './licenses/parts'
+import { GraceExplainer, LocationLine } from './licenses/parts'
 import { LicenseForm } from './LicenseForm'
 import { ClientForm } from './licensing/ClientForm'
 import { licenseDisplayStatus } from './Licenses'
@@ -376,8 +376,9 @@ export function LicenseDetail() {
           <div><span className="text-[#7a6d92]">Product / plan: </span>DT Solar Pro · {PLAN_PRESETS[lic.plan]?.label ?? lic.plan} · {PLAN_TYPE_LABEL[lic.planType]}</div>
           <div><span className="text-[#7a6d92]">Device limit: </span>{lic.maxDevices} computer(s) · new computers need approval</div>
           <div><span className="text-[#7a6d92]">Firms: </span>{lic.maxFirms} · <span className="text-[#7a6d92]">Users: </span>{lic.maxUsers}</div>
-          <div><span className="text-[#7a6d92]">Check-in: </span>{lic.detached ? 'none (detached)' : `every ${lic.checkinDays} d, grace ${lic.graceDays} d`}</div>
+          <div><span className="text-[#7a6d92]">Check-in: </span>{lic.detached || lic.checkinDays <= 0 ? 'Not required' : `every ${lic.checkinDays} days, grace period ${lic.graceDays} days`}</div>
           <div><span className="text-[#7a6d92]">Powered by line: </span>{lic.poweredBy ? 'shown' : 'hidden'}</div>
+          <GraceExplainer className="col-span-2 mt-2" checkinDays={lic.checkinDays} graceDays={lic.graceDays} detached={lic.detached} />
           <div><span className="text-[#7a6d92]">Created: </span>{fmtDateTime(lic.createdAt)}</div>
           <div><span className="text-[#7a6d92]">First activation: </span>{fmtDateTime(lic.activatedAt)}</div>
           <div>

@@ -200,6 +200,8 @@ export interface Heartbeat {
   mode: string
   lastCheckAt: string
   firms: number
+  /** Active firms (the license limit counts these); older apps do not report it. */
+  firmsActive: number | null
   users: number
   /** Why this computer sent no location (set by the desktop app). */
   locationNote: string
@@ -294,6 +296,7 @@ export interface Branding {
   companyName: string
   logo: string | null
   signature: string | null
+  signatoryName: string
   paymentQr: string | null
   phone: string
   email: string
@@ -324,6 +327,7 @@ export const DEFAULT_BRANDING: Branding = {
   companyName: 'Digital Target',
   logo: null,
   signature: null,
+  signatoryName: 'Digital Target',
   paymentQr: null,
   phone: '+92 345 1873354',
   email: 'digitaltarget.digital@gmail.com',
@@ -338,8 +342,8 @@ export const DEFAULT_BRANDING: Branding = {
   receiptPrefix: 'DT-RCP-',
   taxName: 'Tax',
   taxRate: 0,
-  invoiceFooter: 'Thank you for choosing DT Solar Pro.',
-  terms: 'License fees are non-refundable once the license is activated.',
+  invoiceFooter: 'Thank you for your business!',
+  terms: 'Payment is due on receipt of this invoice.\nLicense fees are non-refundable once the license is activated.\nThis invoice can be verified by scanning its QR code.',
   supportPhone: '+92 345 1873354',
   supportWhatsapp: '923451873354',
   supportEmail: 'digitaltarget.digital@gmail.com',

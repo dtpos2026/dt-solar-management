@@ -22,6 +22,13 @@ import { licenseDisplayStatus } from './Licenses'
 
 type Dlg = 'suspended' | 'active' | 'archived' | 'delete'
 
+/** The limit in force comes from the client's licenses (the client's own number is only the default for the next license). */
+function limitText(perLicense: number[], fallback: number): string {
+  if (perLicense.length === 0) return `${fallback} (default for the next license)`
+  const distinct = Array.from(new Set(perLicense))
+  return distinct.length === 1 ? String(distinct[0]) : `${perLicense.join(' and ')} (per license)`
+}
+
 export function ClientDetail({ id }: { id: string }) {
   const nav = useNavigate()
   const can = useCan()
@@ -196,7 +203,7 @@ export function ClientDetail({ id }: { id: string }) {
         <Panel title="Profile">
           <div className="space-y-1.5 px-4 py-3 text-[13px]">
             {client.logo && <img src={client.logo} alt="logo" className="mb-2 h-16 max-w-[200px] object-contain" />}
-            {([['Owner', client.ownerName], ['Phone', client.phone], ['Email', client.email], ['Address', client.address], ['City', client.city], ['Plan', `${client.plan || '—'} · ${PLAN_TYPE_LABEL[client.planType]}`], ['Allowed firms', client.allowedFirms], ['Allowed computers', client.allowedDevices], ['Registered', fmtDate(client.registeredAt)], ['Created', `${fmtDateTime(client.createdAt)}${client.createdBy ? ` by ${client.createdBy}` : ''}`]] as [string, unknown][]).map(([k, v]) => (
+            {([['Owner', client.ownerName], ['Phone', client.phone], ['Email', client.email], ['Address', client.address], ['City', client.city], ['Plan', `${client.plan || '—'} · ${PLAN_TYPE_LABEL[client.planType]}`], ['Firms allowed', limitText(licenses.map((l) => l.maxFirms), client.allowedFirms)], ['Computers allowed', limitText(licenses.map((l) => l.maxDevices), client.allowedDevices)], ['Registered', fmtDate(client.registeredAt)], ['Created', `${fmtDateTime(client.createdAt)}${client.createdBy ? ` by ${client.createdBy}` : ''}`]] as [string, unknown][]).map(([k, v]) => (
               <div key={k} className="flex gap-2"><span className="w-32 shrink-0 text-[#7a6d92]">{k}</span><span>{String(v || '—')}</span></div>
             ))}
             {client.notes && <div className="pt-2 text-[#5d4f78]">{client.notes}</div>}

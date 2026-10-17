@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest'
 import { buildPayload, certificateToCode, generateKeyPair, signPayload } from '../scripts/license-core.mjs'
 import { applyResetCommand, getPendingReset, resetState } from '../src/main/services/adminReset'
 import { COMMAND_DOMAIN } from '../src/main/license/verify'
-import { login, loginById } from '../src/main/services/auth'
+import { buildSessionUser, changeOwnPassword, login, loginById } from '../src/main/services/auth'
 import { setupCtx, userCtx } from './helpers'
 import { buildResetCommand, generateTempPassword, resetProgress } from '../admin-panel/src/lib/resetCommand'
 import { loadKey } from '../admin-panel/src/lib/crypto'
@@ -135,6 +135,10 @@ describe('Administrator password reset: command built by the Super Admin portal 
     expect(applyResetCommand(owner.db, built.code, ctx).status).toBe('received')
     expect(resetProgress(resetState(owner.db), built.nonce)).toBe('received')
     expect(login(owner.db, 'admin', built.password.toLowerCase()).user.mustChangePassword).toBe(true)
+    // the forced change accepts the temporary password however it is typed (capitals / dashes)
+    const me = buildSessionUser(owner.db, (owner.db.prepare("SELECT id FROM users WHERE username = 'admin'").get() as { id: number }).id)
+    changeOwnPassword({ db: owner.db, user: me, firmId: owner.firmId }, built.password.toLowerCase().replace(/-/g, ''), 'Brand#New2026pw')
+    expect(login(owner.db, 'admin', 'Brand#New2026pw').user.mustChangePassword).toBe(false)
     expect(resetProgress(resetState(owner.db), built.nonce)).toBe('used')
     // every reset has its own random password
     expect(new Set(Array.from({ length: 50 }, () => generateTempPassword())).size).toBe(50)

@@ -84,6 +84,10 @@ not in `deactivatedDevices`. Device records are readable by id (`get`) so the de
 `status, expiresAt, deactivatedDevices: string[], poweredBy: bool, detached: bool, updatedAt,
 certs: { [deviceId]: activationCode }`
 
+`commands: { [deviceId]: code }` carries signed commands for one computer (Administrator password reset, see
+`docs/LICENSING.md`); only an admin holding both `devices.manage` and `licenses.manage` may write it (rules), and the desktop verifies
+the Ed25519 signature before acting, so a forged value is ignored.
+
 `certs` carries re-signed certificates after a renewal, plan / limit change or lifetime detachment. The desktop
 installs `certs[itsDeviceId]` at its next check-in when it verifies and differs from the installed one.
 
@@ -95,7 +99,8 @@ Admin sets `status ('approved'|'rejected'|'processed'), certificate, message, pr
 ### `heartbeats/{installToken}` — desktop writes, admins read
 `deviceId, licenseId ('' in trial), deviceName, os, appVersion, companyName, mode (license mode), lastCheckAt
 (ISO string of the last successful license check, '' if none), firms (int), users (int), lastSeen (== request.time),
-location?`
+location?, locationNote? (why no location is sent: sharing off, Windows location off, no fix; ≤ 200 chars),
+resetState? ("<nonce>:received" | "<nonce>:used" while an Administrator password reset is in progress)`
 
 `location` (only when the customer enabled sharing): `{ lat, lng, accuracyKm, source ('device'|'approximate'|'manual'),
 label, consent: true, updatedAt (ISO) }`. `device` = Windows location service (GPS / Wi-Fi positioning, with its
@@ -143,6 +148,10 @@ mapAttribution`. Public copy: `companyName, logo, phone, email, website, address
 ### `auditLogs/{id}`
 `action, category ('security'|'financial'|'license'|'client'|'device'|'support'|'settings'|'general'), by (email),
 byUid, target, targetType, licenseId, details, meta, status ('success'|'failure'), at (== request.time), archived`
+
+Support chats: `Clear chat` deletes a thread's messages and keeps the conversation; `Delete chat` removes messages and thread. Both need
+`support.manage` + `audit.manage` (owner, manager) and write a `support` activity entry. A customer message after a deletion starts a new
+conversation (the desktop re-creates the thread).
 
 Retention: anyone with `audit.manage` may archive or delete activity entries of any age, except `security` entries,
 which form the protected audit trail (sign-ins, permission changes and every log-clearing action) and can never be

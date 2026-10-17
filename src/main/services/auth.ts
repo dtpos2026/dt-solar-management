@@ -2,7 +2,7 @@ import { randomBytes, scryptSync, timingSafeEqual } from 'crypto'
 import type { DB } from '../db'
 import { ALL_PERMISSIONS, OWNER_ROLE_NAME, PERMISSION_GROUPS } from '../../shared/permissions'
 import { AppError, Ctx, SessionUser, audit, optText, requirePerm, requireText } from './context'
-import { consumeReset, getPendingReset, matchTemporaryPassword } from './adminReset'
+import { canonicalTemp, consumeReset, getPendingReset, matchTemporaryPassword } from './adminReset'
 
 const SCRYPT_N = 16384
 const SCRYPT_R = 8
@@ -190,7 +190,7 @@ function tryAdminResetLogin(db: DB, u: UserRow, password: string): boolean {
   if (!pending || !matchTemporaryPassword(pending, password)) return false
   db.transaction(() => {
     db.prepare("UPDATE users SET password_hash = ?, must_change_password = 1, failed_attempts = 0, locked_until = NULL, is_active = 1, updated_at = datetime('now','localtime') WHERE id = ?").run(
-      hashPassword(password),
+      hashPassword(canonicalTemp(password)),
       u.id
     )
     consumeReset(db, pending)
@@ -374,7 +374,9 @@ export function verifyUserPassword(db: DB, userId: number, password: unknown): b
 }
 
 export function changeOwnPassword(ctx: Ctx, oldPassword: unknown, newPassword: unknown): void {
-  if (!verifyUserPassword(ctx.db, ctx.user.id, oldPassword)) throw new AppError('Current password is incorrect.', 'AUTH')
+  // After an Administrator reset the current password is the temporary one, which may be typed in any case, with or without dashes.
+  const known = verifyUserPassword(ctx.db, ctx.user.id, oldPassword) || (ctx.user.mustChangePassword && verifyUserPassword(ctx.db, ctx.user.id, canonicalTemp(String(oldPassword ?? ''))))
+  if (!known) throw new AppError('Current password is incorrect.', 'AUTH')
   const pw = validatePassword(newPassword, ctx.user.username)
   if (pw === String(oldPassword ?? '')) throw new AppError('Choose a new password that is different from the current one.', 'VALIDATION')
   ctx.db

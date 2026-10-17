@@ -35,6 +35,9 @@ export interface PendingReset {
 /** What the Administrator typed, normalised the same way the portal normalised the generated password. */
 export const normalizeTemp = (s: string): string => String(s ?? '').replace(/[\s-]/g, '').toUpperCase()
 
+/** The one stored form of a temporary password: capitals in groups of four ("K7MQ-2WXP-9TDH-4RNC"), however it was typed. */
+export const canonicalTemp = (s: string): string => normalizeTemp(s).replace(/(.{4})(?=.)/g, '$1-')
+
 export function getPendingReset(db: DB, now = Date.now()): PendingReset | null {
   const p = getSetting<PendingReset | null>(db, PENDING_KEY, null)
   if (!p || typeof p.verifier !== 'string') return null

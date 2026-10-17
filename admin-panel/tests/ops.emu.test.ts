@@ -118,6 +118,26 @@ describe.runIf(run)('operations on the emulator (real rules, portal code)', () =
     expect(await approveRequest(req, key, 'owner@test')).toBe('processed')
   })
 
+  it('approving with the license already known needs no lookup query at all, and a wrong key is still refused', async () => {
+    const { approveRequest } = await import('../src/lib/approve')
+    const { requestFromSnap, requestRef } = await import('../src/lib/licenses')
+    const key = await signingKey()
+    await seedLicense('ap2', 'DTSP-APP2-AAAA-BBBB-CCCC')
+    const seedReq = async (id: string, licenseKey: string, dev: string) =>
+      env.withSecurityRulesDisabled(async (c) => setDoc(doc(admin(c), 'activationRequests', id), { type: 'activate', licenseKey, deviceId: DEV(dev), deviceName: 'PC', appVersion: '1.3.0', os: 'Windows 11', status: 'pending', createdAt: Timestamp.now() }))
+    await seedReq('reqApprove000000000000002', 'DTSP-APP2-AAAA-BBBB-CCCC', 'APP2')
+    const req = requestFromSnap(await getDoc(requestRef('reqApprove000000000000002')))
+    st.tx = 0
+    st.getDocs = 0
+    expect(await approveRequest(req, key, 'owner@test', { licenseId: 'ap2' })).toBe('approved')
+    expect({ tx: st.tx, getDocs: st.getDocs }).toEqual({ tx: 1, getDocs: 0 })
+    // a hint pointing at another license cannot approve a key that is not that license's
+    await seedReq('reqApprove000000000000003', 'DTSP-ZZZZ-AAAA-BBBB-CCCC', 'APP3')
+    const bad = requestFromSnap(await getDoc(requestRef('reqApprove000000000000003')))
+    expect(await approveRequest(bad, key, 'owner@test', { licenseId: 'ap2' })).toBe('rejected')
+    expect((await getDoc(doc(admin({ firestore: () => st.db }), 'licenses', 'ap2'))).data()!.activeDevices).toBe(1)
+  })
+
   it('reactivating a computer publishes its certificate in the same transaction and clears the block', async () => {
     const { setDeviceState, deviceFromSnap } = await import('../src/lib/licenses')
     const { deviceCertSigner } = await import('../src/lib/approve')

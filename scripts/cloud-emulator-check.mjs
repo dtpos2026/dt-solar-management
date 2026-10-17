@@ -351,7 +351,8 @@ console.log('\nReactivation after a block (admin releases, then reactivates; the
   await admin.patch(`licenses/${lid3}`, { licenseKey: key3, businessName: 'React Solar', status: 'active', maxDevices: 3, activeDevices: 0, devicesSummary: {}, expiresAt: M.timestamp(exp) })
   await admin.patch(`licenseStatus/${lid3}`, { status: 'active', expiresAt: M.timestamp(exp), deactivatedDevices: [] })
   await admin.patch(`activationPasses/${createHash('sha256').update(key3).digest('hex')}`, { licenseId: lid3, cert: pass })
-  const G = new M.LicenseService({ dir: mkdtempSync(join(tmpdir(), 'react-G-')), machineId: 'machine-G', publicKeyPem: keys.publicPem, firestore: { projectId: PROJECT, apiKey: 'emulator' }, appVersion: '1.3.0', env })
+  const gdir = mkdtempSync(join(tmpdir(), 'react-G-'))
+  const G = new M.LicenseService({ dir: gdir, machineId: 'machine-G', publicKeyPem: keys.publicPem, firestore: { projectId: PROJECT, apiKey: 'emulator' }, appVersion: '1.3.0', env })
   const r0 = await G.activateOnline(key3, reg)
   ok(r0.state === 'approved' && G.status(true).canWrite, 'computer G activated instantly')
   const sumOf = async () => (await admin.get(`licenses/${lid3}`)).data.devicesSummary
@@ -380,6 +381,18 @@ console.log('\nReactivation after a block (admin releases, then reactivates; the
   ok(G.needsCheck() === true, 'a blocked computer re-verifies at the next retry / unlock after 8 s (not after the 5 minute window)')
   const st3 = await G.ensureFresh()
   ok(st3.mode === 'active' && st3.canWrite, 'ensureFresh unblocks it right after reactivation')
+
+  // A signed command published for this computer reaches the app at check-in (and only for this computer).
+  const got = []
+  const GC = new M.LicenseService({ dir: gdir, machineId: 'machine-G', publicKeyPem: keys.publicPem, firestore: { projectId: PROJECT, apiKey: 'emulator' }, appVersion: '1.3.0', env, onCommand: (c) => got.push(c) })
+  await admin.patch(`licenseStatus/${lid3}`, { commands: { [G.deviceId]: 'COMMAND-FOR-G', 'OTHER-DEVICE-0000-1111': 'COMMAND-FOR-OTHER' } }, ['commands'])
+  await GC.checkIn(true)
+  ok(got.length === 1 && got[0] === 'COMMAND-FOR-G', 'a command published for this computer is delivered at check-in (not the one for another computer)')
+  // The desktop may report the reset progress and the location note in its heartbeat (strict shape).
+  const hbTok = 'R'.repeat(40)
+  await accepted('heartbeat with locationNote + resetState', () =>
+    anon.commit([{ path: `heartbeats/${hbTok}`, fields: { ...M.buildHeartbeat({ deviceId: G.deviceId, licenseId: lid3, deviceName: 'G', os: 'win', appVersion: '1.3.0', companyName: 'React Solar', mode: 'active', lastCheckAt: '', firms: 1, users: 1, location: null, locationNote: 'Location sharing is turned off on this computer.', resetState: 'abc:received' }) }, serverTime: ['lastSeen'] }])
+  )
 }
 
 console.log(`\n${passed} passed, ${failed} failed`)

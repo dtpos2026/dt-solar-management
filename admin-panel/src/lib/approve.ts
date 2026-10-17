@@ -7,7 +7,7 @@
  */
 import { getDoc, getDocs, runTransaction, serverTimestamp, writeBatch } from 'firebase/firestore'
 import { db } from '../firebase'
-import { signPayload, verifyCode, type LicensePayload, type LoadedKey, type SignedCertificate } from './crypto'
+import { normaliseLicenseKey, signPayload, verifyCode, type LicensePayload, type LoadedKey, type SignedCertificate } from './crypto'
 import {
   deactivateDeviceInTx,
   deviceFromSnap,
@@ -86,6 +86,8 @@ export interface IssueOptions {
   note?: string
   /** Pending activation request to approve in the SAME transaction (certificate + request + slot are one atomic write). */
   requestId?: string
+  /** License id when the caller already looked the key up: skips the lookup query (the transaction re-checks the key). */
+  licenseId?: string
   /** Client to link when the license has none yet (same transaction). */
   clientId?: string
   clientLabel?: string
@@ -141,7 +143,8 @@ export async function issueForDevice(
   activationType: 'online' | 'offline' | 'instant',
   opts: IssueOptions = {}
 ): Promise<IssueResult> {
-  const found = await findLicenseByKey(licenseKey)
+  const hinted = opts.licenseId?.trim() || ''
+  const found = hinted ? { id: hinted } : await findLicenseByKey(licenseKey)
   if (!found) throw new ActivationRefusedError('Invalid license key')
   const replaceId = opts.replaceDeviceId?.trim() || ''
   const { license, kind, cert } = await runTransaction(db, async (tx) => {
@@ -155,6 +158,7 @@ export async function issueForDevice(
     if (reqSnap && (!reqSnap.exists() || reqSnap.data()?.status !== 'pending')) throw new RequestProcessedError()
     if (!licSnap.exists()) throw new ActivationRefusedError('Invalid license key')
     const lic = licenseFromSnap(licSnap)
+    if (hinted && lic.licenseKey !== normaliseLicenseKey(licenseKey)) throw new ActivationRefusedError('Invalid license key')
     const existing = devSnap.exists() ? deviceFromSnap(devSnap) : null
     const plan = classifyActivation(
       { status: lic.status, expiresAtMs: lic.expiresAt ? lic.expiresAt.toMillis() : null, activeDevices: lic.activeDevices, maxDevices: lic.maxDevices },
@@ -290,7 +294,7 @@ export async function approveRequest(
   req: ActivationRequest,
   key: LoadedKey,
   by: string,
-  opts: { clientId?: string; clientLabel?: string; replaceDeviceId?: string; note?: string } = {}
+  opts: { clientId?: string; clientLabel?: string; replaceDeviceId?: string; note?: string; licenseId?: string } = {}
 ): Promise<ApproveOutcome> {
   if (req.type === 'deactivate') {
     await runTransaction(db, async (tx) => {
@@ -309,6 +313,7 @@ export async function approveRequest(
       replaceDeviceId: opts.replaceDeviceId,
       note: opts.note,
       requestId: req.id,
+      licenseId: opts.licenseId,
       clientId: opts.clientId,
       clientLabel: opts.clientLabel
     })

@@ -15,6 +15,7 @@ import { createRequire } from 'module'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { tmpdir } from 'os'
+import { createPrivateKey, pbkdf2Sync, randomBytes, sign as edSign } from 'node:crypto'
 import { buildPayload, certificateToCode, decodeRequestCode, generateKeyPair, signPayload } from './license-core.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -193,6 +194,47 @@ for (const [name, args] of prints) {
     return data.toString('base64')
   })
   if (b64) writeFileSync(join(out, `${name}.pdf`), Buffer.from(b64, 'base64'))
+}
+
+// ---- Administrator password reset sent by Digital Target (signed, device-bound, one-time) ----
+{
+  const b64u = (b) => Buffer.from(b).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  const lic = await page.evaluate(() => window.dt.call('license.status'))
+  const TEMP = 'K7MQ-2WXP-9TDH-4RNC'
+  const makeCode = (deviceId) => {
+    const salt = randomBytes(16)
+    const payload = b64u(JSON.stringify({ v: 1, type: 'admin_password_reset', licenseId: 'E2E', deviceId, nonce: b64u(randomBytes(16)), issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString(), kdf: { alg: 'pbkdf2-sha256', iter: 200000, salt: salt.toString('base64') }, verifier: pbkdf2Sync(TEMP.replace(/-/g, ''), salt, 200000, 32, 'sha256').toString('base64') }))
+    return `${payload}.${b64u(edSign(null, Buffer.from('dtsp-cmd-v1.' + payload, 'utf8'), createPrivateKey(testKeys.privatePem)))}`
+  }
+  const call = (m, a) => page.evaluate(([m, a]) => window.dt.call(m, a).then((r) => ({ ok: true, r }), (e) => ({ ok: false, e: String(e?.message ?? e) })), [m, a])
+  await page.evaluate(() => window.dt.call('auth.logout'))
+  await page.reload()
+  await page.waitForSelector('text=Welcome back', { timeout: 20000 })
+  // the sign-in screen offers the offline route; a wrong code is refused with a clear message
+  await page.click('text=Administrator locked out?')
+  await page.waitForSelector('text=Reset code from Digital Target')
+  await page.locator('textarea').fill('x'.repeat(60))
+  await page.click('button:has-text("Apply reset code")')
+  await page.waitForSelector('text=not a Digital Target reset code', { timeout: 5000 })
+  await page.screenshot({ path: join(out, '50-admin-reset-dialog.png') })
+  await page.keyboard.press('Escape')
+  const bad = await call('auth.applyResetCode', { code: makeCode('SOME-OTHER-DEVICE-1234') })
+  if (bad.ok || !/different computer/.test(bad.e)) throw new Error('reset code for another computer must be refused: ' + JSON.stringify(bad))
+  const good = await call('auth.applyResetCode', { code: makeCode(lic.deviceId) })
+  if (!good.ok) throw new Error('valid reset code refused: ' + good.e)
+  const wrong = await call('auth.login', { username: 'admin', password: 'K7MQ-2WXP-9TDH-4RNX' })
+  if (wrong.ok) throw new Error('a wrong temporary password signed in')
+  const login = await call('auth.login', { username: 'admin', password: TEMP.toLowerCase() })
+  if (!login.ok || !login.r.user.mustChangePassword) throw new Error('temporary password sign-in failed or did not force a change: ' + JSON.stringify(login))
+  const blocked = await call('docs.list', { docType: 'sale_invoice' })
+  if (blocked.ok) throw new Error('the forced password change was not enforced')
+  const changed = await call('auth.changePassword', { oldPassword: TEMP, newPassword: 'Solar#Reset2026x' })
+  if (!changed.ok) throw new Error('changing the temporary password failed: ' + changed.e)
+  await call('auth.logout')
+  if ((await call('auth.login', { username: 'admin', password: TEMP })).ok) throw new Error('the temporary password still works after the change')
+  if (!(await call('auth.login', { username: 'admin', password: 'Solar#Reset2026x' })).ok) throw new Error('the new password does not sign in')
+  const replay = await call('auth.applyResetCode', { code: makeCode(lic.deviceId) })
+  console.log('Administrator reset OK: foreign code refused, temp password signs in once, change forced, a fresh code from Digital Target is accepted =', replay.ok)
 }
 
 writeFileSync(join(out, 'console-errors.txt'), errors.join('\n') || 'No console errors.')

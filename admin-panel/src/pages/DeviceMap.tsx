@@ -49,9 +49,9 @@ function popupHtml(r: DeviceRow, canRemove: boolean): string {
 
 /** Why a computer is not on the map: what it reported itself, otherwise the honest default. Never a guessed position. */
 function unavailableReason(r: DeviceRow): string {
-  if (r.locationNote) return `Location unavailable: ${r.locationNote}`
-  if (!r.lastSeenMs) return 'Location unavailable: this computer has not connected yet.'
-  return 'Location unavailable: this computer has not shared a position (older app version or sharing off).'
+  if (r.locationNote) return r.locationNote
+  if (!r.lastSeenMs) return 'This computer has not connected yet.'
+  return 'This computer has not shared a position (sharing off, or an older app version).'
 }
 
 export function DeviceMap() {
@@ -156,7 +156,7 @@ export function DeviceMap() {
             <div className="pointer-events-none absolute inset-x-0 top-3 z-[500] mx-auto w-fit rounded-lg bg-white/90 px-3 py-1.5 text-[13px] shadow">No computer with a shared location matches.</div>
           )}
         </div>
-        <Panel title={`Location unavailable (${hidden.length})`} sub="No shared location (sharing off or no position yet) — these computers are not on the map">
+        <Panel title={`Location unavailable (${hidden.length})`} sub="These computers are not on the map because they have not shared a position">
           {hidden.length === 0 ? <Empty icon={<MapPinOff className="h-5 w-5" />} title="None" /> : (
             <ul className="max-h-[500px] divide-y divide-[#f1ecf7] overflow-y-auto text-[13px]">
               {hidden.map((r) => (

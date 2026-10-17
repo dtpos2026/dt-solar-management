@@ -120,8 +120,9 @@ export function Requests({ embedded = false }: { embedded?: boolean }) {
   const quickApprove = async (r: ActivationRequest) => {
     if (!key) return setMsg({ tone: 'warn', text: 'Load the signing key first (Settings → Signing key).' })
     setBusy(r.id)
+    const known = licenses?.find((l) => l.licenseKey === normaliseLicenseKey(r.licenseKey ?? ''))
     try {
-      const res = await approveRequest(r, key, by)
+      const res = await approveRequest(r, key, by, { ...(known ? { licenseId: known.id } : {}) })
       setMsg({ tone: res === 'rejected' ? 'warn' : 'success', text: `Request from ${r.deviceName || shortId(r.deviceId)} ${res}.` })
     } catch (e) {
       setMsg({ tone: 'error', text: errorMessage(e) })
@@ -385,12 +386,13 @@ function ApproveDialog({ req, onClose, onDone }: { req: ActivationRequest | null
 
   const go = async () => {
     if (!key) return setErr('Load the signing key first.')
+    if (plan?.kind === 'reassign' && !replaceId) return setErr('Choose the computer this one replaces, or reject the request.')
     setBusy(true)
     setErr(null)
-    if (plan?.kind === 'reassign' && !replaceId) return setErr('Choose the computer this one replaces, or reject the request.')
     try {
       const linkTo = choice === 'link' && linkId ? clients.data.find((c) => c.id === linkId) : undefined
       const res: ApproveOutcome = await approveRequest(req, key, by, {
+        ...(license ? { licenseId: license.id } : {}),
         ...(linkTo ? { clientId: linkTo.id, clientLabel: `${linkTo.code} ${linkTo.company}` } : {}),
         ...(plan?.kind === 'reassign' ? { replaceDeviceId: replaceId, note } : {})
       })

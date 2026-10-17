@@ -32,6 +32,30 @@ Code: `src/main/license/*` (certificate, evaluation, check-ins), `src/main/ipc/r
   When the Super Admin later publishes per-device certificates (`licenseStatus.certs`), they replace the pass at check-in.
 - License keys and full device ids are never written to logs or the audit trail (the UI shows a masked installation id).
 
+## Command sync, retry and reactivation
+- **While the app runs** it asks Digital Target every **5 minutes** for the license status, this computer's decision (suspended,
+  revoked, released) and a re-signed certificate; **every 30 s while blocked**; on window focus (at most every 20 s); after a failure
+  it retries with back-off (2, 4, 8, max 10 min) and catches up as soon as the connection is back. That is one Firestore read per check
+  (about 120 reads per computer per working day).
+- **Sign-in, unlock (password entry), a protected write and the "Check again" button** re-verify when the last answer is older than
+  **8 s while blocked** (5 min while healthy). A reactivation by the Super Admin is therefore picked up at the next retry; a stored
+  block is also cleared by online proof (pass registration / check-in), so a reactivated computer is not kept blocked by stale state.
+- **Nothing is claimed while disconnected:** an offline computer keeps following its signed policy (check-in days + grace); a
+  suspension or revocation reaches it the moment it can reach Digital Target. The stored decision still cannot be bypassed by deleting files.
+
+## Administrator password reset (Super Admin → Devices → Reset admin password)
+1. The portal (signing key loaded) generates a one-time temporary password in the browser and signs a command
+   (`type admin_password_reset`, licenseId, **deviceId**, random nonce, issuedAt, expiresAt ≤ 72 h, PBKDF2-SHA256 salt + verifier).
+   Only the **verifier** is in the command; the password is shown once to the Super Admin and stored nowhere.
+2. Delivery: online computers read `licenseStatus/{licenseId}.commands[deviceId]` at their next check-in; offline computers paste the
+   code on the sign-in screen (**Administrator locked out?**, route `auth.applyResetCode`).
+3. The app verifies the Ed25519 signature (domain-separated: a command can never be installed as a certificate and vice versa), the
+   device id, the expiry and the one-time nonce, then stores it as *pending* (`settings.admin_reset_pending`). Nothing changes yet.
+4. The Administrator (owner account) signs in with the temporary password (any case, dashes optional). The app verifies it against
+   the verifier, stores a normal scrypt hash, clears any lock-out, forces a new password and burns the nonce. Progress
+   (`received` / `used`) is reported to the portal with the heartbeat. Other users and PINs are not touched.
+5. The Super Admin can withdraw an unused reset; every issue / withdrawal is a protected `security` entry in the activity log.
+
 ## Modes
 `not_activated`, `trial`, `active`, `grace` (writes allowed in the last three only), `trial_expired`, `expired`, `suspended`,
 `revoked`, `device_deactivated`, `lease_expired` (check-in overdue), `clock_error`, `invalid`.

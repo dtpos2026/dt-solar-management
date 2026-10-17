@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { buildPayload, certificateToCode, generateKeyPair, signPayload } from '../scripts/license-core.mjs'
 import { decodeFields, double, encodeFields, encodeValue, FirestoreError, resolveFirestoreConfig } from '../src/main/cloud/firestore'
 import { buildHeartbeat, heartbeatWrite } from '../src/main/cloud/heartbeat'
-import { buildLocation, normalizeMode, parseDeviceLocationOutput, parseGeoIp, parseManualLocation, readDeviceLocation } from '../src/main/cloud/location'
+import { DeviceLocationError, buildLocation, normalizeMode, parseDeviceLocationOutput, readDeviceLocation } from '../src/main/cloud/location'
 import { CloudService } from '../src/main/cloud/service'
 import { setSetting } from '../src/main/services/context'
 import { mkdtempSync } from 'fs'
@@ -51,33 +51,19 @@ describe('firestore REST values', () => {
 describe('heartbeat payload', () => {
   const base = { deviceId: 'D1', licenseId: '', deviceName: 'PC', os: 'Windows', appVersion: '1.1.0', companyName: 'WETCO', mode: 'trial', lastCheckAt: '', firms: 2, users: 3 }
   it('has no location when sharing is off', () => {
-    const p = buildHeartbeat({ ...base, location: buildLocation('off', { manual: '30.1,71.4' }) })
+    const p = buildHeartbeat({ ...base, location: buildLocation('off', {}) })
     expect(p.location).toBeUndefined()
     const w = heartbeatWrite('T'.repeat(40), p)
     expect(w.path).toBe(`heartbeats/${'T'.repeat(40)}`)
     expect(w.serverTime).toContain('lastSeen')
     expect(w.mask).toBeUndefined()
   })
-  it('manual and approximate shapes', () => {
-    const m = buildHeartbeat({ ...base, location: buildLocation('manual', { manual: '30.1979, 71.4697 | Office', manualAt: '2026-10-01T00:00:00Z' }) })
-    expect(m.location).toMatchObject({ lat: 30.1979, lng: 71.4697, source: 'manual', label: 'Office', consent: true, updatedAt: '2026-10-01T00:00:00Z' })
-    const geo = parseGeoIp({ success: true, latitude: 30.2, longitude: 71.5, city: 'Multan', region: 'Punjab', country: 'Pakistan' })
-    expect(geo).not.toBeNull()
-    const a = buildHeartbeat({ ...base, location: buildLocation('approximate', { geo }) })
-    expect(a.location).toMatchObject({ lat: 30.2, lng: 71.5, source: 'approximate', accuracyKm: 25, consent: true })
-    expect(a.location?.label.toLowerCase()).toContain('approximate')
-    // No lookup result → no coordinates invented.
-    expect(buildLocation('approximate', { geo: null })).toBeNull()
-    expect(parseGeoIp({ success: false })).toBeNull()
-  })
-  it('validates manual input', () => {
-    expect(parseManualLocation('30.15,71.52').ok).toBe(true)
-    expect(parseManualLocation('').ok).toBe(false)
-    expect(parseManualLocation('91,10').ok).toBe(false)
-    expect(parseManualLocation('10,181').ok).toBe(false)
-    expect(parseManualLocation('0,0').ok).toBe(false)
-    expect(parseManualLocation('Multan').ok).toBe(false)
-    expect(buildLocation('manual', { manual: 'bad' })).toBeNull()
+  it('only the Windows location service can produce a location; IP and typed positions no longer exist', () => {
+    expect(normalizeMode('approximate')).toBe('off')
+    expect(normalizeMode('manual')).toBe('off')
+    expect(normalizeMode('device')).toBe('device')
+    expect(buildLocation('device', { device: null })).toBeNull()
+    expect(buildLocation('off', { device: { lat: 1, lng: 2, accuracyKm: 0.01, fetchedAt: 'x' } })).toBeNull()
   })
 })
 
@@ -218,7 +204,7 @@ describe('Windows location service (device source)', () => {
     const r = parseDeviceLocationOutput(`noise\r\n${ok}\r\n`, new Date('2026-10-16T00:00:00Z'))
     expect(r).toEqual({ ok: true, fix: { lat: 30.0457, lng: 72.3489, accuracyKm: 0.035, fetchedAt: '2026-10-16T00:00:00.000Z' } })
     const bad = (o: Record<string, unknown>) => parseDeviceLocationOutput(JSON.stringify({ started: true, status: 'Ready', permission: 'Granted', unknown: false, lat: '30', lng: '72', acc: '10', ...o }))
-    expect(bad({ permission: 'Denied' })).toMatchObject({ ok: false, error: expect.stringMatching(/unavailable.*denied/i) })
+    expect(bad({ permission: 'Denied' })).toMatchObject({ ok: false, error: expect.stringMatching(/does not allow this app/), kind: 'os_denied' })
     expect(bad({ status: 'Disabled' })).toMatchObject({ ok: false, error: expect.stringMatching(/turned off/) })
     expect(bad({ started: false, status: 'NoData' })).toMatchObject({ ok: false, error: expect.stringMatching(/no location provider/) })
     expect(bad({ unknown: true, lat: 'NaN', lng: 'NaN' })).toMatchObject({ ok: false, error: expect.stringMatching(/no position/) })
@@ -229,6 +215,12 @@ describe('Windows location service (device source)', () => {
     expect(buildLocation('device', { device: null })).toBeNull()
     expect(normalizeMode('device')).toBe('device')
   })
+  it('reports why the position cannot be read (Windows denied, service off, nothing available)', () => {
+    expect(parseDeviceLocationOutput('{"started":true,"status":"Disabled","permission":"Granted","unknown":true}')).toMatchObject({ ok: false, kind: 'service_off' })
+    expect(parseDeviceLocationOutput('{"started":true,"status":"Ready","permission":"Denied","unknown":true}')).toMatchObject({ ok: false, kind: 'os_denied' })
+    expect(parseDeviceLocationOutput('{"started":false,"status":"NoData","permission":"Granted","unknown":true}')).toMatchObject({ ok: false, kind: 'unavailable' })
+    expect(new DeviceLocationError('x', 'os_denied').kind).toBe('os_denied')
+  })
   it('runs PowerShell hidden with a timeout, and only on Windows', async () => {
     await expect(readDeviceLocation({ platform: 'linux' })).rejects.toThrow(/only available on Windows/)
     const calls: Array<{ file: string; opts: { timeout: number; windowsHide: boolean } }> = []
@@ -238,9 +230,10 @@ describe('Windows location service (device source)', () => {
     expect(calls[0].opts.timeout).toBeGreaterThan(10_000)
     await expect(readDeviceLocation({ platform: 'win32', exec: async () => Promise.reject(Object.assign(new Error('t'), { killed: true })) })).rejects.toThrow(/did not answer in time/)
   })
-  it('caches a fix for 6 h, retries a failure after 1 h, never falls back to another source', async () => {
+  it('caches a fix for 30 minutes, retries a failure after 15 minutes, never falls back to another source', async () => {
     const db = freshDb()
     setSetting(db, 'location_sharing', 'device')
+    setSetting(db, 'location_prompted', true)
     const dir = mkdtempSync(join(tmpdir(), 'dtsp-loc-'))
     let now = Date.parse('2026-10-16T00:00:00Z')
     let calls = 0
@@ -251,7 +244,6 @@ describe('Windows location service (device source)', () => {
       license: lic,
       getDb: () => db,
       now: () => now,
-      geoFetch: async () => { throw new Error('IP lookup must not be used') },
       deviceLocate: async () => {
         calls++
         if (fail) throw new Error('Windows location is unavailable: the Windows location service is turned off.')
@@ -261,20 +253,20 @@ describe('Windows location service (device source)', () => {
     let info = await cloud.location(true)
     expect(info.location).toMatchObject({ source: 'device', lat: 30.05 })
     await cloud.location(true)
-    now += 5 * 3600_000
+    now += 20 * 60_000
     await cloud.location(true)
     expect(calls).toBe(1)
-    now += 2 * 3600_000
+    now += 15 * 60_000
     fail = true
     info = await cloud.location(true)
     expect(calls).toBe(2)
     expect(info.location).toBeNull()
     expect(info.deviceError).toMatch(/unavailable/)
-    expect(info.note).toMatch(/No location is sent/)
-    now += 30 * 60_000
+    expect(info.status).toBe('unavailable')
+    now += 10 * 60_000
     await cloud.location(true)
     expect(calls).toBe(2)
-    now += 31 * 60_000
+    now += 6 * 60_000
     fail = false
     info = await cloud.location(true)
     expect(calls).toBe(3)

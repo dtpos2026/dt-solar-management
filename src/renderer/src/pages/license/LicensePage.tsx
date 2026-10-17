@@ -332,31 +332,6 @@ export function LicensePage({ embedded = false }: { embedded?: boolean } = {}): 
     }
   }
 
-  const deactivate = async (): Promise<void> => {
-    if (!lic?.payload) return
-    const ok = await confirmDialog({
-      title: 'Deactivate this computer?',
-      danger: true,
-      confirmLabel: 'Deactivate',
-      message: (
-        <div className="space-y-2">
-          <p>
-            The license for <b>{lic.payload.businessName}</b> will be removed from this computer and Digital Target will be notified, so it can be activated on another computer.
-          </p>
-          <p>
-            Your business data is <b>not deleted</b>. Without a license the app becomes read-only (view, print, export and backup still work) until a license is activated again.
-          </p>
-        </div>
-      )
-    })
-    if (!ok) return
-    const st = await run('deactivate', () => api<Lic>('license.deactivate'))
-    if (!st) return
-    setLic(st)
-    setActivated(null)
-    toast.ok('This computer has been deactivated.')
-  }
-
   const reconnect = async (): Promise<void> => {
     const r = await run('reconnect', () => api<{ installed: boolean; message: string; status?: Lic }>('license.reconnect'))
     if (!r) return
@@ -378,11 +353,11 @@ export function LicensePage({ embedded = false }: { embedded?: boolean } = {}): 
     <div className="space-y-4">
       {embedded ? (
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-[13px] text-muted">License status, activation and product information</div>
+          <div className="text-[13px] text-muted">License status and product information</div>
           {checkBtn}
         </div>
       ) : (
-        <PageHeader title="License & About" subtitle="License status, activation and product information" icon={<BadgeCheck className="h-5 w-5" />} actions={checkBtn} />
+        <PageHeader title="License & About" subtitle="License status and product information" icon={<BadgeCheck className="h-5 w-5" />} actions={checkBtn} />
       )}
 
       {lic?.detached && (
@@ -467,10 +442,11 @@ export function LicensePage({ embedded = false }: { embedded?: boolean } = {}): 
         </div>
       )}
 
-      {lic ? <StatusSection lic={lic} canManage={canManage} busy={busy} onDeactivate={deactivate} /> : <Card>Could not load the license status.</Card>}
+      {lic ? <StatusSection lic={lic} /> : <Card>Could not load the license status.</Card>}
 
-      {/* ------------------------------ Activation ------------------------------ */}
-      <Card title={<span className="inline-flex items-center gap-2"><KeyRound className="h-4 w-4 text-brand" /> {lic?.payload ? 'Activate a new or renewed license' : 'Activate your license'}</span>}>
+      {/* ------------------------------ Activation (only while no license is installed; renewals come from Digital Target) ------------------------------ */}
+      {!lic?.payload && (
+      <Card title={<span className="inline-flex items-center gap-2"><KeyRound className="h-4 w-4 text-brand" /> Activate your license</span>}>
         {!canManage ? (
           <div className="flex items-start gap-2 text-[13px] text-muted">
             <Info className="mt-0.5 h-4 w-4 shrink-0" /> Only users with the “Activate / change license” permission can activate or change the license. Please ask the owner.
@@ -589,6 +565,7 @@ export function LicensePage({ embedded = false }: { embedded?: boolean } = {}): 
           </div>
         )}
       </Card>
+      )}
 
       {/* ------------------------------ About ------------------------------ */}
       <About version={version} />
@@ -597,7 +574,7 @@ export function LicensePage({ embedded = false }: { embedded?: boolean } = {}): 
 }
 
 /* ------------------------------------------------ status ------------------------------------------------ */
-function StatusSection({ lic, canManage, busy, onDeactivate }: { lic: Lic; canManage: boolean; busy: string | null; onDeactivate: () => void }): JSX.Element {
+function StatusSection({ lic }: { lic: Lic }): JSX.Element {
   const m = MODES[lic.mode] ?? { label: lic.mode, tone: 'bad' as const }
   const p = lic.payload
   const daysLeft = lic.mode === 'trial' || lic.mode === 'trial_expired' ? lic.trialDaysLeft : lic.mode === 'grace' || lic.mode === 'lease_expired' ? lic.graceDaysLeft : lic.daysLeft
@@ -635,7 +612,7 @@ function StatusSection({ lic, canManage, busy, onDeactivate }: { lic: Lic; canMa
           <Kv label="Next online check-in">{nextCheckIn(lic)}</Kv>
           <Kv label="Last check-in">{lic.lastCheckAt ? localDateTime(lic.lastCheckAt) : 'Never'}</Kv>
         </div>
-        {(lic.lastCheckError || (p && p.features?.length > 0) || (p && canManage)) && (
+        {(lic.lastCheckError || (p && p.features?.length > 0)) && (
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-3">
             <div className="min-w-0 space-y-1">
               {p && p.features?.length > 0 && (
@@ -653,11 +630,6 @@ function StatusSection({ lic, canManage, busy, onDeactivate }: { lic: Lic; canMa
                 </div>
               )}
             </div>
-            {p && canManage && (
-              <Button size="sm" variant="ghost" className="text-bad" icon={<Unplug className="h-4 w-4" />} loading={busy === 'deactivate'} disabled={!!busy && busy !== 'deactivate'} onClick={onDeactivate}>
-                Deactivate this computer
-              </Button>
-            )}
           </div>
         )}
       </div>
@@ -677,14 +649,18 @@ function StatusSection({ lic, canManage, busy, onDeactivate }: { lic: Lic; canMa
           <div className="mt-1 text-[11.5px] text-muted">A license is tied to this Device ID. Share it with Digital Target when asked.</div>
         </Card>
         <Card title={<span className="inline-flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-brand" /> How licensing works</span>}>
-          <ul className="list-disc space-y-1.5 pl-5 text-[12.5px] leading-relaxed text-muted">
+          <ul className="list-disc space-y-1.5 pl-5 text-[13px] leading-relaxed text-muted">
             <li>
-              <b className="text-ink">Works offline.</b> After activation the app runs without internet.
+              <b className="text-ink">Managed by Digital Target.</b> Activation, renewal, suspension and the limits of your plan are handled by Digital Target. A renewal reaches this computer automatically.
             </li>
-            <li>When internet is available, the app quietly verifies the license from time to time.</li>
-            <li>If it cannot verify for a long time, a grace period starts — connect to the internet and click “Check license now”.</li>
             <li>
-              <b className="text-ink">Your data is never deleted.</b> If there is a license problem the app becomes read-only: you can still view, print, export and back up everything.
+              <b className="text-ink">Works offline.</b> The app keeps working without internet and verifies the license whenever it is online.
+            </li>
+            <li>
+              <b className="text-ink">Grace period.</b> If the license cannot be verified for the allowed number of days, a grace period begins and the days left are shown here. Connect to the internet and press Check license now.
+            </li>
+            <li>
+              <b className="text-ink">Your data is never deleted.</b> If access is stopped, the screen explains why and you can still take a backup.
             </li>
           </ul>
         </Card>

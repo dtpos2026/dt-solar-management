@@ -6,6 +6,7 @@ import { useAccounts, useParties, useProjects } from '../lib/hooks'
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from '@shared/docTypes'
 import { date, label, money, today } from '../lib/format'
 import { round2 } from '@shared/money'
+import { DateInput } from './DateInput'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export interface PaymentPreset {
@@ -100,7 +101,7 @@ export function PaymentModal({ open, onClose, onSaved, preset }: { open: boolean
           <Combobox options={partyOptions} value={f.partyId} onChange={(v) => setF({ ...f, partyId: v })} placeholder="Select party (optional for general payments)" allowClear />
         </Field>
         <Field label="Date">
-          <Input type="date" value={f.date ?? ''} onChange={(e) => setF({ ...f, date: e.target.value })} />
+          <DateInput value={f.date ?? ''} onChange={(e) => setF({ ...f, date: e.target.value })} />
         </Field>
         <Field label="Amount" required>
           <NumberInput value={f.amount} onChange={(v) => setF({ ...f, amount: v })} autoFocus />

@@ -136,7 +136,7 @@ export const RETRY_AFTER_FAILURE_MS = 60_000
 /** While the app is blocked (or its check-in is overdue) a retry must really ask Digital Target again, not reuse a stale answer. */
 export const BLOCKED_RECHECK_MS = 8_000
 /** Background command sync: how often a running app asks Digital Target for suspend / revoke / reactivate / certificate changes. */
-export const SYNC_EVERY_MS = 5 * 60_000
+export const SYNC_EVERY_MS = 2 * 60_000
 export const SYNC_BLOCKED_EVERY_MS = 30_000
 export const SYNC_OFFLINE_FIRST_RETRY_MS = 2 * 60_000
 export const SYNC_OFFLINE_MAX_MS = 10 * 60_000

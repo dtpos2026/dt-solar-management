@@ -56,6 +56,7 @@ import {
 } from '../admin-panel/src/lib/terms'
 import {
   LOCATION_SOURCE_LABEL,
+  locationStatusLabel,
   accuracyMetres,
   accuracyText,
   filterDeviceRows,
@@ -442,7 +443,7 @@ describe('devices merged with heartbeats', () => {
       [L({}), L({ id: 'L2', licenseKey: 'DTSP-2222-2222-2222-2222', businessName: 'Bright', activeDevices: 0, activatedAtMs: null, status: 'suspended' })],
       { L1: [dev({}), dev({ deviceId: 'DEV-0000000002', deviceName: 'PC-2', status: 'suspended' })], L2: [] },
       [
-        hb({ location: { lat: 30.2, lng: 71.47, accuracyKm: 25, source: 'approximate', label: 'Multan', consent: true } }),
+        hb({ location: { lat: 30.2, lng: 71.47, accuracyKm: 0.035, source: 'device', label: 'Windows location service', consent: true } }),
         hb({ deviceId: 'DEV-0000000002', lastSeenMs: NOW - 3 * DAY, location: { lat: 999, lng: 1, source: 'manual', consent: true } as never }),
         hb({ deviceId: 'DEV-TRIAL-000099', licenseId: '', companyName: 'Trial Co', lastSeenMs: NOW - 2 * HOUR, location: { lat: 31.5, lng: 74.3, source: 'manual', consent: false } as never })
       ],
@@ -452,7 +453,7 @@ describe('devices merged with heartbeats', () => {
     expect(rows).toHaveLength(3)
     const r1 = rows.find((r) => r.deviceId === 'DEV-0000000001')!
     expect(r1).toMatchObject({ online: 'online', deviceStatus: 'active', licenseStatus: 'active', appVersion: '1.1.0', company: 'WETCO' })
-    expect(r1.location).toMatchObject({ lat: 30.2, lng: 71.47, accuracyKm: 25, source: 'approximate' })
+    expect(r1.location).toMatchObject({ lat: 30.2, lng: 71.47, accuracyKm: 0.035, source: 'device' })
     const r2 = rows.find((r) => r.deviceId === 'DEV-0000000002')!
     expect(r2).toMatchObject({ online: 'offline', deviceStatus: 'suspended', location: null })
     const trial = rows.find((r) => r.deviceStatus === 'unregistered')!
@@ -466,11 +467,14 @@ describe('devices merged with heartbeats', () => {
 
   it('never invents coordinates', () => {
     expect(validLocation(null)).toBeNull()
-    expect(validLocation({ lat: 10, lng: 10, source: 'approximate' })).toBeNull() // no consent
-    expect(validLocation({ lat: '10', lng: 10, source: 'manual', consent: true })).toBeNull()
-    expect(validLocation({ lat: 10, lng: 200, source: 'manual', consent: true })).toBeNull()
+    expect(validLocation({ lat: 10, lng: 10, source: 'device' })).toBeNull() // no consent
+    expect(validLocation({ lat: '10', lng: 10, source: 'device', consent: true })).toBeNull()
+    expect(validLocation({ lat: 10, lng: 200, source: 'device', consent: true })).toBeNull()
     expect(validLocation({ lat: 10, lng: 20, source: 'gps', consent: true })).toBeNull()
-    expect(validLocation({ lat: 10, lng: 20, source: 'manual', consent: true, accuracyKm: -1 })).toEqual({ lat: 10, lng: 20, source: 'manual', consent: true, accuracyKm: undefined, label: undefined, updatedAt: undefined })
+    // an internet-address guess or a typed point (sent by older app versions) is not a device position
+    expect(validLocation({ lat: 10, lng: 20, source: 'approximate', consent: true, accuracyKm: 25 })).toBeNull()
+    expect(validLocation({ lat: 10, lng: 20, source: 'manual', consent: true })).toBeNull()
+    expect(validLocation({ lat: 10, lng: 20, source: 'device', consent: true, accuracyKm: -1 })).toEqual({ lat: 10, lng: 20, source: 'device', consent: true, accuracyKm: undefined, label: undefined, updatedAt: undefined })
   })
 
   it('license status shows detached and pending', () => {
@@ -551,15 +555,15 @@ describe('location display', () => {
     expect(accuracyText(dev)).toBe('±35 m')
     expect(LOCATION_SOURCE_LABEL[locationSource(dev)]).toBe('Device location service')
   })
-  it('IP points are approximate, never precise, with a kilometre accuracy circle', () => {
-    const ip = validLocation({ ...base, source: 'approximate', accuracyKm: 25 })
-    expect(LOCATION_SOURCE_LABEL[locationSource(ip)]).toBe('Approximate (internet IP) — usually the ISP’s city')
-    expect(LOCATION_SOURCE_LABEL[locationSource(ip)].toLowerCase()).not.toContain('precise')
-    expect(accuracyText(ip)).toBe('±25 km')
-    expect(accuracyMetres(ip)).toBe(25000)
+  it('older IP or typed points are not shown as a position; the permission status is shown instead', () => {
+    expect(validLocation({ ...base, source: 'approximate', accuracyKm: 25 })).toBeNull()
+    expect(locationStatusLabel({ location: null, lastSeenMs: NOW, locationStatus: 'os_denied' })).toBe('Blocked by Windows')
+    expect(locationStatusLabel({ location: null, lastSeenMs: NOW, locationStatus: 'declined' })).toBe('Declined by the owner')
+    expect(locationStatusLabel({ location: null, lastSeenMs: NOW, locationStatus: '' })).toBe('Not reported by this app version')
+    expect(locationStatusLabel({ location: null, lastSeenMs: null, locationStatus: '' })).toBe('Computer has not connected yet')
+    expect(locationStatusLabel({ location: validLocation({ ...base, source: 'device' }), lastSeenMs: NOW, locationStatus: 'sharing' })).toBe('Sharing')
   })
   it('manual and unavailable', () => {
-    expect(LOCATION_SOURCE_LABEL[locationSource(validLocation({ ...base, source: 'manual' }))]).toMatch(/^Manual/)
     expect(locationSource(validLocation({ ...base, source: 'device', consent: false }))).toBe('unavailable')
     expect(locationSource(null)).toBe('unavailable')
     expect(accuracyText(null)).toBe('')

@@ -24,7 +24,7 @@ import {
 } from 'lucide-react'
 import { api } from '../../api'
 import { useApp, useCan } from '../../store'
-import { Badge, Button, Card, Checkbox, Empty, Input, Loading, PageHeader, PeriodPicker, Select, StatCard, Tabs, cx, toast } from '../../components/ui'
+import { Badge, Button, Card, Checkbox, Empty, Loading, PageHeader, PeriodPicker, Select, StatCard, Tabs, cx, toast } from '../../components/ui'
 import { Column, DataTable } from '../../components/DataTable'
 import { BarChart, Donut, HBar } from '../../components/Charts'
 import { useLoad } from '../../lib/hooks'
@@ -58,6 +58,7 @@ import {
   reportParams,
   totalsLead
 } from '../../print/ReportPrint'
+import { DateInput } from '../../components/DateInput'
 
 
 const ICONS: Record<ReportKey, ReactNode> = {
@@ -339,7 +340,7 @@ export function ReportsPage(): JSX.Element {
               {def.period === 'asOf' && (
                 <label className="flex items-center gap-2 text-[13px] text-muted">
                   As of
-                  <Input sm type="date" className="w-40" value={asOf} onChange={(e) => e.target.value && setAsOf(e.target.value)} />
+                  <DateInput sm className="w-40" value={asOf} onChange={(e) => e.target.value && setAsOf(e.target.value)} />
                 </label>
               )}
               {def.period === 'none' && <span className="text-[12.5px] text-muted">Current position as of {date(today())}</span>}

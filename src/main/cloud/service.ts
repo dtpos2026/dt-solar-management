@@ -9,18 +9,15 @@ import type { FirestoreRest } from './firestore'
 import { buildHeartbeat, heartbeatWrite, type HeartbeatPayload } from './heartbeat'
 import {
   DEVICE_RETRY_MS,
-  GEO_CACHE_MS,
-  LOCATION_MODES,
+  DeviceLocationError,
   buildLocation,
   deviceFixFresh,
-  geoCacheFresh,
-  lookupApproximate,
   normalizeMode,
-  parseManualLocation,
   readDeviceLocation,
   type DeviceFix,
   type HeartbeatLocation,
-  type LocationMode
+  type LocationMode,
+  type LocationStatus
 } from './location'
 import { maskToken } from './install'
 import { loadCloudState, saveCloudState, type CloudState, type HeartbeatRecord } from './state'
@@ -29,8 +26,6 @@ import { resetState } from '../services/adminReset'
 
 export const HEARTBEAT_EVERY_MS = 15 * 60_000
 export const SUPPORT_BACKGROUND_EVERY_MS = 15 * 60_000
-/** An approximate location older than this is not sent even when a refresh fails. */
-const GEO_MAX_STALE_MS = 7 * GEO_CACHE_MS
 
 export interface LicenseLike {
   readonly deviceId: string
@@ -48,8 +43,6 @@ export interface CloudServiceOptions {
   license: LicenseLike
   getDb: () => DB | null
   getSession?: () => { firmId: number; fullName: string } | null
-  geoUrl?: string
-  geoFetch?: NonNullable<Parameters<typeof lookupApproximate>[0]>['fetchImpl']
   /** Tests: Windows location service reader (default: PowerShell GeoCoordinateWatcher). */
   deviceLocate?: () => Promise<DeviceFix>
   /** Tests: clock. */
@@ -62,14 +55,13 @@ export interface CloudServiceOptions {
 
 export interface LocationInfo {
   mode: LocationMode
-  manual: string
-  manualError: string | null
+  /** The owner has been asked (answered yes or no). */
+  prompted: boolean
+  status: LocationStatus
   location: HeartbeatLocation | null
-  /** Why no location is sent although sharing is on (lookup failed, invalid entry). */
+  /** Why no position is sent (plain text). */
   note: string | null
-  geo: { label: string; fetchedAt: string } | null
-  geoError: string | null
-  /** Windows location service: last fix (accuracy, time) and why it is unavailable. */
+  /** Windows location service: last position (accuracy, time) and why it is unavailable. */
   device: { accuracyKm: number; fetchedAt: string } | null
   deviceError: string | null
 }
@@ -134,152 +126,94 @@ export class CloudService {
 
   /* ------------------------------------------------ location ------------------------------------------------ */
 
-  locationSettings(): { mode: LocationMode; manual: string } {
+  /** Consent (mode) and whether the owner has been asked yet. Earlier IP / manual modes count as "off, not asked". */
+  locationSettings(): { mode: LocationMode; prompted: boolean } {
     const db = this.opts.getDb()
-    if (!db) return { mode: 'off', manual: '' }
-    return { mode: normalizeMode(getSetting(db, 'location_sharing', 'off')), manual: String(getSetting(db, 'location_manual', '') ?? '') }
+    if (!db) return { mode: 'off', prompted: false }
+    const raw = getSetting<unknown>(db, 'location_sharing', 'off')
+    const mode = normalizeMode(raw)
+    const legacy = raw === 'approximate' || raw === 'manual'
+    return { mode, prompted: legacy ? false : getSetting<boolean>(db, 'location_prompted', false) === true }
   }
 
-  /** Resolves the location to send now. `lookup` = allowed to ask ipwho.is when the cache is stale. */
-  async location(lookup = true): Promise<LocationInfo> {
-    const { mode, manual } = this.locationSettings()
-    const parsed = manual ? parseManualLocation(manual) : null
-    const info: LocationInfo = {
-      mode,
-      manual,
-      manualError: parsed && !parsed.ok ? parsed.error : null,
-      location: null,
-      note: null,
-      geo: this.state.geo ? { label: this.state.geo.label, fetchedAt: this.state.geo.fetchedAt } : null,
-      geoError: this.state.geoError,
-      device: null,
-      deviceError: null
+  /** The owner still has to be asked: licensed installation, never asked. */
+  locationPromptNeeded(): boolean {
+    const { prompted } = this.locationSettings()
+    return !prompted && !!this.opts.license.status().payload
+  }
+
+  /**
+   * Resolves the location to send now and why there is none. `read` = allowed to read the Windows location service when the
+   * last reading is stale (30 minutes; 15 minutes after a failure). No other source is ever used.
+   */
+  async location(read = true): Promise<LocationInfo> {
+    const { mode, prompted } = this.locationSettings()
+    const info: LocationInfo = { mode, prompted, status: 'not_asked', location: null, note: null, device: null, deviceError: null }
+    if (mode !== 'device') {
+      info.status = prompted ? 'declined' : 'not_asked'
+      info.note = prompted ? 'Location sharing is turned off on this computer.' : 'Location sharing has not been set up on this computer yet.'
+      return info
     }
-    if (mode === 'device') {
-      const now = this.nowMs()
-      const lastTry = this.state.deviceAttemptAt ? Date.parse(this.state.deviceAttemptAt) : 0
-      const retryOk = !(Number.isFinite(lastTry) && now - lastTry < DEVICE_RETRY_MS && now >= lastTry)
-      // Refresh at most every 6 h; after a failure wait an hour — never re-query on every heartbeat.
-      if (lookup && !deviceFixFresh(this.state.device, now) && (retryOk || !this.state.deviceError)) {
-        this.state.deviceAttemptAt = new Date(now).toISOString()
-        try {
-          this.state.device = await (this.opts.deviceLocate ?? (() => readDeviceLocation()))()
-          this.state.deviceError = null
-        } catch (e) {
-          // Unavailable: report it; an old fix is not reused and no other source is used silently.
-          this.state.device = null
-          this.state.deviceError = (e as Error).message
-        }
-        this.save()
+    const now = this.nowMs()
+    const lastTry = this.state.deviceAttemptAt ? Date.parse(this.state.deviceAttemptAt) : 0
+    const retryOk = !(Number.isFinite(lastTry) && now - lastTry < DEVICE_RETRY_MS && now >= lastTry)
+    if (read && !deviceFixFresh(this.state.device, now) && (retryOk || !this.state.deviceError)) {
+      this.state.deviceAttemptAt = new Date(now).toISOString()
+      try {
+        this.state.device = await (this.opts.deviceLocate ?? (() => readDeviceLocation()))()
+        this.state.deviceError = null
+        this.state.deviceErrorKind = null
+      } catch (e) {
+        // Unavailable: report why. An old fix is not reused and no other source is used.
+        this.state.device = null
+        this.state.deviceError = (e as Error).message
+        this.state.deviceErrorKind = e instanceof DeviceLocationError ? e.kind : 'unavailable'
       }
-      const d = deviceFixFresh(this.state.device, now) ? this.state.device : null
-      info.device = this.state.device ? { accuracyKm: this.state.device.accuracyKm, fetchedAt: this.state.device.fetchedAt } : null
-      info.deviceError = this.state.deviceError
-      info.location = buildLocation('device', { device: d })
-      if (!info.location) {
-        info.note = this.state.deviceError
-          ? `${this.state.deviceError} No location is sent — turn on Windows location or choose another option.`
-          : 'The Windows location service has not been read yet. It is read when you save and then at most every 6 hours.'
-      }
-    } else if (mode === 'approximate') {
-      if (lookup && this.online && !geoCacheFresh(this.state.geo)) {
-        try {
-          this.state.geo = await lookupApproximate({ url: this.opts.geoUrl, fetchImpl: this.opts.geoFetch })
-          this.state.geoError = null
-        } catch (e) {
-          this.state.geoError = (e as Error).message
-        }
-        this.save()
-        info.geo = this.state.geo ? { label: this.state.geo.label, fetchedAt: this.state.geo.fetchedAt } : null
-        info.geoError = this.state.geoError
-      }
-      const g = this.state.geo
-      const usable = g && Date.now() - Date.parse(g.fetchedAt) < GEO_MAX_STALE_MS ? g : null
-      info.location = buildLocation('approximate', { geo: usable })
-      if (!info.location) info.note = this.state.geoError ? `Approximate location not available: ${this.state.geoError}` : 'The approximate location has not been looked up yet.'
-    } else if (mode === 'manual') {
-      if (!this.state.manual || this.state.manual.value !== manual) {
-        this.state.manual = { value: manual, at: new Date().toISOString() }
-        this.save()
-      }
-      info.location = buildLocation('manual', { manual, manualAt: this.state.manual.at })
-      if (!info.location) info.note = info.manualError ?? 'Enter your coordinates to share your location.'
+      this.save()
+    }
+    const d = deviceFixFresh(this.state.device, now) ? this.state.device : null
+    info.device = this.state.device ? { accuracyKm: this.state.device.accuracyKm, fetchedAt: this.state.device.fetchedAt } : null
+    info.deviceError = this.state.deviceError
+    info.location = buildLocation('device', { device: d })
+    if (info.location) {
+      info.status = 'sharing'
+    } else if (this.state.deviceError) {
+      info.status = this.state.deviceErrorKind ?? 'unavailable'
+      info.note = this.state.deviceError
+    } else {
+      info.status = 'waiting'
+      info.note = 'The position is read from Windows shortly; it is then updated automatically.'
     }
     return info
   }
 
   /**
-   * What WOULD be sent with a draft choice (not saved, no network): lets the customer see exactly what is shared
-   * before giving consent.
+   * The owner's answer to the consent question (or a later change in Settings). `allow` turns precise sharing on: the position is
+   * read from Windows right away so the answer shows whether Windows allows it. Declining is final until the owner changes it.
    */
-  previewLocation(input: { mode: unknown; manual?: unknown }): { location: HeartbeatLocation | null; note: string | null; manualError: string | null } {
-    const mode = normalizeMode(input.mode)
-    const manual = String(input.manual ?? '').trim()
-    if (mode === 'manual') {
-      const p = parseManualLocation(manual)
-      if (!p.ok) return { location: null, note: p.error, manualError: p.error }
-      const at = this.state.manual && this.state.manual.value === manual ? this.state.manual.at : new Date().toISOString()
-      return { location: buildLocation('manual', { manual, manualAt: at }), note: null, manualError: null }
-    }
-    if (mode === 'device') {
-      const d = deviceFixFresh(this.state.device, this.nowMs()) ? this.state.device : null
-      const location = buildLocation('device', { device: d })
-      return {
-        location,
-        note: location ? null : "This computer's location is read from the Windows location service when you save (Windows location must be on). If it is unavailable nothing is sent.",
-        manualError: null
-      }
-    }
-    if (mode === 'approximate') {
-      const g = this.state.geo && Date.now() - Date.parse(this.state.geo.fetchedAt) < GEO_MAX_STALE_MS ? this.state.geo : null
-      const location = buildLocation('approximate', { geo: g })
-      return {
-        location,
-        note: location ? null : 'The approximate place is looked up from your internet address (ipwho.is) when you save and at each heartbeat.',
-        manualError: null
-      }
-    }
-    return { location: null, note: null, manualError: null }
-  }
-
-  /** Saves the customer's choice (consent). Turning sharing on requires a valid manual entry for "manual". */
-  setLocation(ctx: Ctx, input: { mode: unknown; manual?: unknown }): LocationInfo['mode'] {
-    const mode = normalizeMode(input.mode)
-    if (input.mode !== undefined && !(LOCATION_MODES as string[]).includes(String(input.mode))) throw new AppError('Unknown location mode.', 'VALIDATION')
+  async answerLocation(ctx: Ctx, allow: boolean): Promise<LocationInfo> {
     const prev = this.locationSettings()
-    let manual = prev.manual
-    if (input.manual !== undefined) {
-      manual = String(input.manual ?? '').trim()
-      if (manual) {
-        const p = parseManualLocation(manual)
-        if (!p.ok) throw new AppError(p.error, 'VALIDATION')
-      }
-    }
-    if (mode === 'manual' && !manual) throw new AppError('Enter your coordinates (latitude, longitude) to share an exact location.', 'VALIDATION')
+    const mode: LocationMode = allow ? 'device' : 'off'
     ctx.db.transaction(() => {
       setSetting(ctx.db, 'location_sharing', mode)
-      setSetting(ctx.db, 'location_manual', manual.slice(0, 200))
+      setSetting(ctx.db, 'location_prompted', true)
     })()
-    if (manual !== prev.manual) this.state.manual = manual ? { value: manual, at: new Date().toISOString() } : null
-    if (mode !== 'approximate' && prev.mode === 'approximate') {
-      // Forget the looked-up place when the customer withdraws consent.
-      this.state.geo = null
-      this.state.geoError = null
-    }
-    if (mode !== 'device' && prev.mode === 'device') {
+    if (!allow) {
       this.state.device = null
       this.state.deviceError = null
+      this.state.deviceErrorKind = null
       this.state.deviceAttemptAt = null
-    }
-    if (mode === 'device' && prev.mode !== 'device') {
-      // Read right away when the customer turns it on (the heartbeat sent after saving does the lookup).
+    } else {
       this.state.deviceAttemptAt = null
       this.state.deviceError = null
+      this.state.deviceErrorKind = null
     }
     this.save()
-    const label = { off: 'off', device: "this computer's location service (Windows)", approximate: 'approximate (internet address)', manual: 'exact (entered manually)' }[mode]
-    audit(ctx, 'update', 'settings', null, `Location sharing with Digital Target: ${label}`, { before: prev.mode, after: mode })
-    return mode
+    audit(ctx, 'update', 'settings', null, `Location sharing with Digital Target: ${allow ? "on (this computer's location service)" : 'off'}`, { before: prev.mode, after: mode })
+    const info = await this.location(true)
+    // The change (a withdrawn position included) reaches Digital Target right away when online.
+    if (this.online) await this.sendHeartbeat().catch(() => undefined)
+    return info
   }
 
   /* ------------------------------------------------ heartbeat ------------------------------------------------ */
@@ -301,7 +235,8 @@ export class CloudService {
       firms: biz.firms,
       users: biz.users,
       location: loc.location,
-      locationNote: loc.location ? null : loc.mode === 'off' ? 'Location sharing is turned off on this computer.' : loc.note || 'No position available yet.',
+      locationStatus: loc.status,
+      locationNote: loc.location ? null : loc.note || 'No position available yet.',
       resetState: this.opts.getDb() ? resetState(this.opts.getDb()!) : ''
     })
     return { payload, location: loc }

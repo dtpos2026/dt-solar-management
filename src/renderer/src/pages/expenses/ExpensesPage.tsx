@@ -12,6 +12,7 @@ import { useLoad, useParties } from '../../lib/hooks'
 import { date, money, statusTone, today, PERIODS } from '../../lib/format'
 import { COST_HEADS, COST_HEAD_LABELS, PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from '@shared/docTypes'
 import { EPS } from '@shared/money'
+import { DateInput } from '../../components/DateInput'
 
 type Tab = 'expenses' | 'categories'
 
@@ -670,7 +671,7 @@ function ExpenseFormBody({ expense, preset, onClose, onSaved }: ExpenseFormProps
               </div>
             )}
             <Field label="Date" required>
-              <Input type="date" value={f.date} onChange={(e) => set('date', e.target.value)} />
+              <DateInput value={f.date} onChange={(e) => set('date', e.target.value)} />
             </Field>
             <Field label="Category" required className="col-span-2">
               <Select value={f.categoryId ?? ''} onChange={(e) => set('categoryId', e.target.value ? Number(e.target.value) : null)} autoFocus={!editing}>

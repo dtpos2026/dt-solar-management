@@ -5,7 +5,7 @@ import { Inbox, KeyRound, Map as MapIcon, MonitorSmartphone, RefreshCw, Trash2, 
 import { PageTitle } from '../components/ui'
 import { setDeviceState, type DeviceAction } from '../lib/licenses'
 import { deviceCertSigner } from '../lib/approve'
-import { DEVICE_STATUS_LABEL, filterDeviceRows, sortDeviceRows, type DeviceFilter, type DeviceRow } from '../lib/devices'
+import { DEVICE_STATUS_LABEL, accuracyText, filterDeviceRows, locationStatusLabel, sortDeviceRows, type DeviceFilter, type DeviceRow } from '../lib/devices'
 import { countOnline, ONLINE_THRESHOLD_LABEL } from '../lib/stats'
 import { useAdminEmail, useCan } from '../lib/auth'
 import { useSigningKey } from '../lib/signingKey'
@@ -128,7 +128,7 @@ export function Devices() {
                   <thead className="text-left text-[12px] text-[#7a6d92]">
                     <tr>
                       <th className="px-3 py-2">Computer</th><th className="px-3 py-2">Company / license</th><th className="px-3 py-2">OS · version</th>
-                      <th className="px-3 py-2">Registered</th><th className="px-3 py-2">Last seen</th><th className="px-3 py-2">Last verified</th>
+                      <th className="px-3 py-2">Registered</th><th className="px-3 py-2">Last seen</th><th className="px-3 py-2">Location</th><th className="px-3 py-2">Last verified</th>
                       <th className="px-3 py-2">Status</th><th className="px-3 py-2" />
                     </tr>
                   </thead>
@@ -143,7 +143,18 @@ export function Devices() {
                         <td className="px-3 py-2">{r.os || '—'}<div className="text-[11.5px] text-[#7a6d92]">{r.appVersion || '—'}{r.mode ? ` · ${r.mode}` : ''}</div></td>
                         <td className="px-3 py-2">{fmtDateTime(r.registeredMs)}</td>
                         <td className="px-3 py-2"><Pill value={r.online} />{r.lastSeenMs && <div className="text-[11.5px] text-[#7a6d92]" title={fmtDateTime(r.lastSeenMs)}>{timeAgo(r.lastSeenMs)}</div>}</td>
-                        <td className="px-3 py-2">{r.lastCheckAt ? fmtDateTime(r.lastCheckAt) : '—'}</td>
+                        <td className="px-3 py-2">
+                          {r.location ? (
+                            <>
+                              <div className="num">{r.location.lat.toFixed(4)}, {r.location.lng.toFixed(4)}</div>
+                              <div className="text-[12px] text-[#6b5d85]">{accuracyText(r.location) || 'Accuracy not reported'}{r.location.updatedAt ? `, ${timeAgo(Date.parse(r.location.updatedAt))}` : ''}</div>
+                              <Link className="text-[12px] text-[#3d096d] underline" to="/map">Show on map</Link>
+                            </>
+                          ) : (
+                            <span title={r.locationNote || 'Location permission reported by the computer'} className={`inline-block rounded-md px-2 py-0.5 text-[12px] font-semibold ${r.locationStatus === 'os_denied' || r.locationStatus === 'service_off' ? 'bg-red-50 text-red-700' : r.locationStatus === 'unavailable' || r.locationStatus === 'waiting' ? 'bg-amber-50 text-amber-800' : 'bg-[#f1ecf7] text-[#6b5d85]'}`}>{locationStatusLabel(r)}</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2">{r.lastCheckAt ? fmtDateTime(r.lastCheckAt) : 'Never'}</td>
                         <td className="px-3 py-2">
                           <div className="flex flex-col items-start gap-1"><Pill value={r.deviceStatus} title="Device status" /><Pill value={r.licenseStatus} title="License status" label={`license: ${r.licenseStatus === 'none' ? '—' : r.licenseStatus}`} /></div>
                           {r.statusNote && <div className="text-[11px] text-[#7a6d92]">{r.statusNote}</div>}

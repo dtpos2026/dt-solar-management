@@ -27,6 +27,8 @@ import { BackupPage } from './pages/backup/BackupPage'
 import { HelpPage } from './pages/help/HelpPage'
 import { WhatsAppPage } from './pages/whatsapp/WhatsAppPage'
 import { ClosingPage } from './pages/closing/ClosingPage'
+import { LicenseBlockedScreen } from './pages/license/LicenseBlockedScreen'
+import { isFullyBlocked } from '@shared/licenseBlock'
 
 interface AppInfo {
   version: string
@@ -40,7 +42,7 @@ function Boot(): JSX.Element {
   const loc = useLocation()
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [authed, setAuthed] = useState<boolean | null>(null)
-  const { refresh, setLicense, setLocked, clear } = useApp()
+  const { refresh, setLicense, setLocked, clear, license } = useApp()
 
   const load = useCallback(async () => {
     const i = await api<AppInfo>('app.info')
@@ -82,6 +84,10 @@ function Boot(): JSX.Element {
   if (info.dbError) return <FatalError message={info.dbError} />
   if (!info.hasUsers) return <SetupWizard onDone={() => load()} />
   if (!authed) return <Login onDone={() => load()} />
+  // Suspended / revoked / deactivated / expired / unverifiable: no modules, only the status screen (backend refuses the data routes too).
+  if (isFullyBlocked(license)) {
+    return <LicenseBlockedScreen license={license!} onLogout={() => { api('auth.logout').catch(() => undefined); clear(); setAuthed(false) }} />
+  }
 
   return (
     <Shell onLogout={() => { clear(); setAuthed(false) }}>

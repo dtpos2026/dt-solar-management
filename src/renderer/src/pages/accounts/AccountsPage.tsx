@@ -11,6 +11,7 @@ import { useLoad } from '../../lib/hooks'
 import { date, dateTime, label, money, today, PERIODS } from '../../lib/format'
 import { DOC_TYPES, PAYMENT_METHOD_LABELS } from '@shared/docTypes'
 import { EPS, round2 } from '@shared/money'
+import { DateInput } from '../../components/DateInput'
 
 type Tab = 'cash' | 'receipts' | 'payments' | 'transfers' | 'adjustments'
 const TAB_KEYS: Tab[] = ['cash', 'receipts', 'payments', 'transfers', 'adjustments']
@@ -941,7 +942,7 @@ function TransferModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
       ) : (
         <div className="grid grid-cols-2 gap-3">
           <Field label="Date" required>
-            <Input type="date" value={f.date} onChange={(e) => set('date', e.target.value)} />
+            <DateInput value={f.date} onChange={(e) => set('date', e.target.value)} />
           </Field>
           <Field label="Amount" required>
             <NumberInput value={f.amount} onChange={(v) => set('amount', v)} autoFocus />

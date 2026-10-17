@@ -18,6 +18,7 @@ import { date, label, money, pct, qty, statusTone, today } from '../../lib/forma
 import { PROJECT_STATUS_LABELS, SYSTEM_TYPE_LABELS } from '@shared/docTypes'
 import { ArchiveRestore } from 'lucide-react'
 import { ProjectDeleteDialog, restoreProjectFlow } from './projectActions'
+import { DateInput } from '../../components/DateInput'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Tab = 'overview' | 'ledger' | 'materials' | 'documents' | 'files'
@@ -293,7 +294,7 @@ function MaterialMoveForm({ open, direction, projectId, onClose, onSaved }: { op
   return (
     <Modal open={open} onClose={onClose} title={direction === 'issue' ? 'Issue materials to project' : 'Return materials from project'} subtitle={direction === 'issue' ? 'Stock leaves the warehouse and its average cost is charged to this project (once).' : 'Unused material comes back to stock and its cost is removed from the project.'} size="lg" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" loading={busy} onClick={save}>{direction === 'issue' ? 'Issue materials' : 'Return materials'}</Button></>}>
       <div className="mb-3 grid grid-cols-3 gap-3">
-        <Field label="Date"><Input type="date" value={f.date ?? ''} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
+        <Field label="Date"><DateInput value={f.date ?? ''} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
         <Field label="Warehouse"><Select value={f.warehouseId ?? ''} onChange={(e) => setF({ ...f, warehouseId: Number(e.target.value) })}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select></Field>
         <Field label="Notes"><Input value={f.notes ?? ''} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="Vehicle, receiver…" /></Field>
       </div>

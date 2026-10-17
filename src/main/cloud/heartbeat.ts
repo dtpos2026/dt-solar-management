@@ -19,6 +19,8 @@ export interface HeartbeatInput {
   location: HeartbeatLocation | null
   /** Why no location is sent (sharing off, Windows location off, no fix yet). Plain text, shown in the Super Admin map. */
   locationNote?: string | null
+  /** sharing | not_asked | declined | os_denied | service_off | unavailable | waiting */
+  locationStatus?: string | null
   /** Progress of an Administrator password reset sent by Digital Target: "<nonce>:received" or "<nonce>:used". */
   resetState?: string | null
 }
@@ -37,6 +39,7 @@ export interface HeartbeatPayload {
   users: number
   location?: HeartbeatLocation
   locationNote?: string
+  locationStatus?: string
   resetState?: string
 }
 
@@ -72,6 +75,7 @@ export function buildHeartbeat(i: HeartbeatInput): HeartbeatPayload {
     }
   }
   else if (i.locationNote) p.locationNote = cut(i.locationNote, 160)
+  if (i.locationStatus) p.locationStatus = cut(i.locationStatus, 24)
   if (i.resetState) p.resetState = cut(i.resetState, 80)
   return p
 }

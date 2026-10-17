@@ -165,7 +165,7 @@ function startBackgroundJobs(): void {
     } catch {
       /* ignore */
     }
-  }, 10 * 60 * 1000)
+  }, 60 * 1000) // keeps the displayed state (expiry, grace) current without any network access
 }
 
 async function boot(): Promise<void> {

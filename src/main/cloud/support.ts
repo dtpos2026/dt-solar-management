@@ -189,12 +189,41 @@ export function markAllRead(db: DB): number {
   return db.prepare(`UPDATE support_messages SET read_at = datetime('now','localtime') WHERE direction = 'in' AND read_at IS NULL`).run().changes
 }
 
-/** Server time of the newest admin reply already stored (pull cursor). */
+const CURSOR_KEY = 'support_pull_cursor'
+
+/**
+ * Server time of the newest admin reply already pulled (pull cursor): the newest stored reply, or the cursor kept when the
+ * conversation was cleared / deleted (so cleared replies are never pulled again).
+ */
 export function lastIncomingAt(db: DB): string | null {
   const r = db.prepare(`SELECT remote_at FROM support_messages WHERE direction = 'in' AND remote_at IS NOT NULL ORDER BY remote_at DESC LIMIT 1`).get() as
     | { remote_at: string }
     | undefined
-  return r?.remote_at ?? null
+  const kept = db.prepare('SELECT value FROM settings WHERE key = ?').get(CURSOR_KEY) as { value: string } | undefined
+  let keptAt: string | null = null
+  try {
+    keptAt = kept ? (JSON.parse(kept.value) as string | null) : null
+  } catch {
+    keptAt = null
+  }
+  const a = r?.remote_at ?? null
+  return a && keptAt ? (a > keptAt ? a : keptAt) : a ?? keptAt
+}
+
+/**
+ * Clear chat (mode 'messages'): removes the messages on this computer; a message still waiting to be sent is kept so nothing the
+ * customer wrote is silently lost. Delete chat (mode 'conversation'): removes everything, including unsent messages.
+ * The pull cursor is kept either way. The conversation at Digital Target is not touched (they keep their own copy).
+ */
+export function clearConversation(db: DB, mode: 'messages' | 'conversation'): { removed: number; kept: number } {
+  if (mode !== 'messages' && mode !== 'conversation') throw new SupportError('Unknown action.')
+  return db.transaction(() => {
+    const cursor = lastIncomingAt(db)
+    if (cursor) db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(CURSOR_KEY, JSON.stringify(cursor))
+    const removed = db.prepare(mode === 'conversation' ? 'DELETE FROM support_messages' : "DELETE FROM support_messages WHERE status NOT IN ('queued','sending')").run().changes
+    const kept = (db.prepare('SELECT COUNT(*) AS n FROM support_messages').get() as { n: number }).n
+    return { removed, kept }
+  })()
 }
 
 /* ------------------------------------------------ cloud sync ------------------------------------------------ */

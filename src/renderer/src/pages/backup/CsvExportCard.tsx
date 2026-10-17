@@ -2,8 +2,9 @@
 import { useState } from 'react'
 import { Download, FileSpreadsheet } from 'lucide-react'
 import { api } from '../../api'
-import { Button, Card, Field, Input, Select, toast } from '../../components/ui'
+import { Button, Card, Field, Select, toast } from '../../components/ui'
 import { CSV_KINDS, type CsvKind } from './csvKinds'
+import { DateInput } from '../../components/DateInput'
 
 const DATED: CsvKind[] = ['sales', 'purchases', 'payments', 'expenses']
 
@@ -41,10 +42,10 @@ export function CsvExportCard(): JSX.Element {
         {dated && (
           <>
             <Field label="From (optional)">
-              <Input type="date" value={from} disabled={busy} onChange={(e) => setFrom(e.target.value)} />
+              <DateInput value={from} disabled={busy} onChange={(e) => setFrom(e.target.value)} />
             </Field>
             <Field label="To (optional)">
-              <Input type="date" value={to} disabled={busy} onChange={(e) => setTo(e.target.value)} />
+              <DateInput value={to} disabled={busy} onChange={(e) => setTo(e.target.value)} />
             </Field>
           </>
         )}

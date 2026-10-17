@@ -11,7 +11,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { MapPinOff, RefreshCw, Trash2 } from 'lucide-react'
 import { PageTitle } from '../components/ui'
-import { DEVICE_STATUS_LABEL, LOCATION_SOURCE_LABEL, accuracyMetres, accuracyText, filterDeviceRows, type DeviceFilter, type DeviceRow } from '../lib/devices'
+import { DEVICE_STATUS_LABEL, LOCATION_SOURCE_LABEL, accuracyMetres, accuracyText, filterDeviceRows, locationStatusLabel, type DeviceFilter, type DeviceRow } from '../lib/devices'
 import { maskDeviceId } from '../lib/terms'
 import { ONLINE_THRESHOLD_LABEL } from '../lib/stats'
 import { fmtDateTime, timeAgo } from '../lib/format'
@@ -49,9 +49,8 @@ function popupHtml(r: DeviceRow, canRemove: boolean): string {
 
 /** Why a computer is not on the map: what it reported itself, otherwise the honest default. Never a guessed position. */
 function unavailableReason(r: DeviceRow): string {
-  if (r.locationNote) return r.locationNote
-  if (!r.lastSeenMs) return 'This computer has not connected yet.'
-  return 'This computer has not shared a position (sharing off, or an older app version).'
+  const label = locationStatusLabel(r)
+  return r.locationNote && r.locationStatus !== 'declined' && r.locationStatus !== 'not_asked' ? `${label}. ${r.locationNote}` : label
 }
 
 export function DeviceMap() {

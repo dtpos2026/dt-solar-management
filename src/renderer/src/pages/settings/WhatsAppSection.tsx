@@ -7,6 +7,7 @@ import { useApp, useCan } from '../../store'
 import { Badge, Button, Card, Field, Input, Select, Toggle, confirmDialog, promptDialog, toast } from '../../components/ui'
 import { DataTable, Column } from '../../components/DataTable'
 import { SendWhatsAppDialog, WhatsAppButtonProps } from '../../components/WhatsAppButton'
+import { DateInput } from '../../components/DateInput'
 
 interface LogRow {
   id: number
@@ -217,8 +218,8 @@ export function WhatsAppSection(): JSX.Element {
                     </option>
                   ))}
                 </Select>
-                <Input sm type="date" value={f.from} onChange={(e) => setF({ ...f, from: e.target.value })} aria-label="From" />
-                <Input sm type="date" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} aria-label="To" />
+                <DateInput sm value={f.from} onChange={(e) => setF({ ...f, from: e.target.value })} aria-label="From" />
+                <DateInput sm value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} aria-label="To" />
               </div>
             }
           />

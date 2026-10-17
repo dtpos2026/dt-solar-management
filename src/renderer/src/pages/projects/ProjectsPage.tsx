@@ -11,6 +11,7 @@ import { useLoad, useParties } from '../../lib/hooks'
 import { date, label, money, pct, qty, statusTone } from '../../lib/format'
 import { PROJECT_STATUSES, PROJECT_STATUS_LABELS, PROJECT_TYPES, SYSTEM_TYPES, SYSTEM_TYPE_LABELS } from '@shared/docTypes'
 import { ProjectDeleteDialog, archiveProjectFlow, restoreProjectFlow } from './projectActions'
+import { DateInput } from '../../components/DateInput'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export function ProjectsPage(): JSX.Element {
@@ -185,8 +186,8 @@ export function ProjectForm({ open, project, onClose, onSaved }: { open: boolean
         <Field label="System type">
           <Select value={f.systemType} onChange={(e) => set('systemType', e.target.value)}>{SYSTEM_TYPES.map((t) => <option key={t} value={t}>{SYSTEM_TYPE_LABELS[t]}</option>)}</Select>
         </Field>
-        <Field label="Start date"><Input type="date" value={f.startDate ?? ''} onChange={(e) => set('startDate', e.target.value)} /></Field>
-        <Field label="Expected completion"><Input type="date" value={f.expectedEndDate ?? ''} onChange={(e) => set('expectedEndDate', e.target.value)} /></Field>
+        <Field label="Start date"><DateInput clearable value={f.startDate ?? ''} onChange={(e) => set('startDate', e.target.value)} /></Field>
+        <Field label="Expected completion"><DateInput clearable value={f.expectedEndDate ?? ''} onChange={(e) => set('expectedEndDate', e.target.value)} /></Field>
         <Field label="Status">
           <Select value={f.status} onChange={(e) => set('status', e.target.value)}>{PROJECT_STATUSES.map((s) => <option key={s} value={s}>{PROJECT_STATUS_LABELS[s]}</option>)}</Select>
         </Field>

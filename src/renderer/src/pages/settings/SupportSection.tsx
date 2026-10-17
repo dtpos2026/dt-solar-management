@@ -1,8 +1,8 @@
 /** Settings section — Support messages to Digital Target with offline queue (owner: cloud area). */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { MessageCircle, RefreshCw, RotateCcw, Send, WifiOff } from 'lucide-react'
+import { Eraser, MessageCircle, RefreshCw, RotateCcw, Send, Trash2, WifiOff } from 'lucide-react'
 import { api } from '../../api'
-import { Badge, Button, Card, Empty, Loading, Textarea, cx, toast } from '../../components/ui'
+import { Badge, Button, Card, Empty, Loading, Textarea, confirmDialog, cx, toast } from '../../components/ui'
 
 interface Msg {
   id: number
@@ -108,14 +108,45 @@ export function SupportSection(): JSX.Element {
     }
   }
 
+  const clear = async (mode: 'messages' | 'conversation'): Promise<void> => {
+    const del = mode === 'conversation'
+    const ok = await confirmDialog({
+      title: del ? 'Delete this conversation?' : 'Clear the messages?',
+      danger: true,
+      confirmLabel: del ? 'Delete conversation' : 'Clear messages',
+      message: del
+        ? 'The whole conversation with Digital Target support is removed from this computer, including messages that are still waiting to be sent. Digital Target keeps its own copy. You can write to support again at any time.'
+        : 'All messages are removed from this computer. Messages that are still waiting to be sent stay in the list. Digital Target keeps its own copy of the conversation.'
+    })
+    if (!ok) return
+    setBusy(mode)
+    try {
+      const r = await api<{ removed: number; overview: Overview }>('support.clear', { mode })
+      setOv(r.overview)
+      toast.ok(del ? 'Conversation deleted.' : `${r.removed} message${r.removed === 1 ? '' : 's'} cleared.`)
+    } catch (e) {
+      toast.error(e)
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const s = ov.sync
   return (
     <Card
       title={<span className="inline-flex items-center gap-2"><MessageCircle className="h-4 w-4 text-brand" /> Messages with Digital Target support</span>}
       actions={
-        <Button size="sm" icon={<RefreshCw className="h-4 w-4" />} loading={busy === 'sync' || s.syncing} disabled={!!busy} onClick={() => sync(true)}>
-          Check for replies
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" icon={<Eraser className="h-4 w-4" />} loading={busy === 'messages'} disabled={!!busy || ov.messages.length === 0} onClick={() => clear('messages')}>
+            Clear chat
+          </Button>
+          <Button size="sm" variant="ghost" className="text-bad" icon={<Trash2 className="h-4 w-4" />} loading={busy === 'conversation'} disabled={!!busy || ov.messages.length === 0} onClick={() => clear('conversation')}>
+            Delete chat
+          </Button>
+          <Button size="sm" icon={<RefreshCw className="h-4 w-4" />} loading={busy === 'sync' || s.syncing} disabled={!!busy} onClick={() => sync(true)}>
+            Check for replies
+          </Button>
+        </div>
       }
     >
       <div className="mb-3 flex flex-wrap items-center gap-2 text-[12.5px] text-muted">

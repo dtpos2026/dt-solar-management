@@ -9,6 +9,7 @@ import { Combobox } from '../../components/Combobox'
 import { useLoad, useProducts, useWarehouses } from '../../lib/hooks'
 import { date, label, money, qty, today, PERIODS } from '../../lib/format'
 import { CategoryPickModal, DeleteCategoryModal, archiveProductsFlow, deleteProductFlow, restoreProductsFlow } from './productActions'
+import { DateInput } from '../../components/DateInput'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Tab = 'products' | 'stock' | 'movements' | 'adjustments' | 'warehouses' | 'categories' | 'serials'
@@ -499,7 +500,7 @@ function AdjustmentForm({ open, kind, onClose, onSaved }: { open: boolean; kind:
   return (
     <Modal open={open} onClose={onClose} title={kind === 'opening' ? 'Opening stock' : 'Stock adjustment'} subtitle={kind === 'opening' ? 'Record stock you already had before using the software (not counted as profit).' : 'Correct stock after a physical count, damage or loss. Value change appears in profit & loss.'} size="lg" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" loading={busy} onClick={save}>Save</Button></>}>
       <div className="mb-3 grid grid-cols-3 gap-3">
-        <Field label="Date"><Input type="date" value={f.date ?? ''} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
+        <Field label="Date"><DateInput value={f.date ?? ''} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
         <Field label="Warehouse">
           <Select value={f.warehouseId ?? ''} onChange={(e) => setF({ ...f, warehouseId: Number(e.target.value) })}>
             {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
@@ -572,7 +573,7 @@ function TransferForm({ open, onClose, onSaved }: { open: boolean; onClose: () =
       ) : (
         <>
           <div className="mb-3 grid grid-cols-3 gap-3">
-            <Field label="Date"><Input type="date" value={f.date ?? ''} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
+            <Field label="Date"><DateInput value={f.date ?? ''} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
             <Field label="From"><Select value={f.fromWarehouseId ?? ''} onChange={(e) => setF({ ...f, fromWarehouseId: Number(e.target.value) })}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select></Field>
             <Field label="To"><Select value={f.toWarehouseId ?? ''} onChange={(e) => setF({ ...f, toWarehouseId: Number(e.target.value) })}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select></Field>
           </div>

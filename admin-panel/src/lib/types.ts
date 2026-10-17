@@ -203,6 +203,8 @@ export interface Heartbeat {
   users: number
   /** Why this computer sent no location (set by the desktop app). */
   locationNote: string
+  /** sharing | not_asked | declined | os_denied | service_off | unavailable | waiting ('' = older app version). */
+  locationStatus: string
   /** Administrator password reset progress reported by the computer: "<nonce>:received" | "<nonce>:used". */
   resetState: string
   lastSeen: Timestamp | null

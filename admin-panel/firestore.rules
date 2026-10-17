@@ -205,12 +205,12 @@ service cloud.firestore {
     }
     function validHeartbeat(d) {
       return d.keys().hasOnly(['deviceId', 'licenseId', 'deviceName', 'os', 'appVersion', 'companyName', 'mode',
-             'lastCheckAt', 'firms', 'users', 'lastSeen', 'location', 'locationNote', 'resetState'])
+             'lastCheckAt', 'firms', 'users', 'lastSeen', 'location', 'locationNote', 'locationStatus', 'resetState'])
         && d.deviceId is string && d.deviceId.size() >= 10 && d.deviceId.size() <= 64
         && d.lastSeen == request.time
         && optStr(d, 'licenseId', 64) && optStr(d, 'deviceName', 200) && optStr(d, 'os', 200)
         && optStr(d, 'appVersion', 40) && optStr(d, 'companyName', 200) && optStr(d, 'mode', 30)
-        && optStr(d, 'lastCheckAt', 40) && optStr(d, 'locationNote', 200) && optStr(d, 'resetState', 80)
+        && optStr(d, 'lastCheckAt', 40) && optStr(d, 'locationNote', 200) && optStr(d, 'locationStatus', 24) && optStr(d, 'resetState', 80)
         && (!('firms' in d) || d.firms is int) && (!('users' in d) || d.users is int)
         && (!('location' in d) || d.location == null || validLocation(d.location));
     }

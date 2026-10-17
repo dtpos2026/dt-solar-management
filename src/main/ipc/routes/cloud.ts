@@ -1,5 +1,5 @@
 /** IPC routes — License, registration, heartbeat, location, support messages (owner: cloud area). Owns: license.*, auth.setup, cloud.*, support.*. */
-import { BrowserWindow, dialog } from 'electron'
+import { BrowserWindow, dialog, shell } from 'electron'
 import { readFileSync } from 'fs'
 import type { RouteMap } from '../common'
 import { runtime, getDb } from '../../runtime'
@@ -7,6 +7,7 @@ import { AppError, Ctx, audit } from '../../services/context'
 import * as auth from '../../services/auth'
 import { runSetup } from '../../services/setup'
 import { getCloud } from '../../cloud/worker'
+import * as support from '../../cloud/support'
 import { SupportError } from '../../cloud/support'
 import type { LicenseService } from '../../license/service'
 
@@ -167,17 +168,29 @@ export const cloudRoutes: RouteMap = {
   // Location sharing is a privacy choice, not business data: it stays changeable (and withdrawable) when the license
   // is read-only, so these routes are not marked write.
   'cloud.overview': { perm: 'settings.manage', handler: () => getCloud().overview() },
-  'cloud.previewLocation': { perm: 'settings.manage', handler: (_c, a) => getCloud().previewLocation({ mode: a.mode, manual: a.manual }) },
-  'cloud.setLocation': {
+  /** First-sign-in consent: needed only for the owner of a licensed installation that was never asked. */
+  'cloud.locationPrompt': {
+    handler: (c) => ({ needed: c.ctx.user.isOwner && getCloud().locationPromptNeeded() })
+  },
+  /**
+   * The owner's answer (consent question at first sign-in, or a later change in Settings). Allowing reads the position from
+   * Windows at once and reports whether Windows permits it; the operating system's permission is never bypassed.
+   */
+  'cloud.answerLocation': {
     perm: 'settings.manage',
     handler: async (c, a) => {
       const cloud = getCloud()
-      cloud.setLocation(c.ctx, { mode: a.mode, manual: a.manual })
-      // The change (including removal of a previously shared location) is sent right away when online.
-      if (cloud.online) await cloud.sendHeartbeat()
-      // Offline: still read the Windows location service once so the customer sees whether it is available.
-      else await cloud.location(true)
+      await cloud.answerLocation(c.ctx, a.allow === true)
       return cloud.overview()
+    }
+  },
+  /** Opens the Windows page where location access for desktop apps is turned on. */
+  'cloud.openLocationSettings': {
+    perm: 'settings.manage',
+    handler: async () => {
+      if (process.platform !== 'win32') throw new AppError('Windows location settings are only available on Windows.', 'VALIDATION')
+      await shell.openExternal('ms-settings:privacy-location')
+      return true
     }
   },
   'cloud.heartbeat': {
@@ -206,5 +219,15 @@ export const cloudRoutes: RouteMap = {
       return { result: r, overview: cloud.supportOverview() }
     }
   },
-  'support.markRead': { perm: 'support.use', handler: () => getCloud().markSupportRead() }
+  'support.markRead': { perm: 'support.use', handler: () => getCloud().markSupportRead() },
+  /** Clear chat (messages) / Delete chat (the whole conversation) on this computer. Confirmed in the UI; audited here. */
+  'support.clear': {
+    perm: 'support.use',
+    handler: (c, a) => {
+      const mode = a.mode === 'conversation' ? 'conversation' : 'messages'
+      const r = supportCall(() => support.clearConversation(c.ctx.db, mode))
+      audit(c.ctx, mode === 'conversation' ? 'delete' : 'clear', 'support', null, mode === 'conversation' ? 'Deleted the support conversation on this computer' : 'Cleared the support messages on this computer', r)
+      return { ...r, overview: getCloud().supportOverview() }
+    }
+  }
 }

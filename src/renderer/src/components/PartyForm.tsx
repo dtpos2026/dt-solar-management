@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { Button, Field, Input, Modal, NumberInput, Select, Textarea, Toggle, toast } from './ui'
+import { DateInput } from './DateInput'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export function PartyForm({ open, onClose, onSaved, type, party, initialName }: { open: boolean; onClose: () => void; onSaved: (id: number) => void; type: 'customer' | 'supplier'; party?: any; initialName?: string }): JSX.Element {
@@ -111,7 +112,7 @@ export function PartyForm({ open, onClose, onSaved, type, party, initialName }: 
           </div>
         </Field>
         <Field label="Opening balance date">
-          <Input type="date" value={f.openingDate} onChange={(e) => set('openingDate', e.target.value)} />
+          <DateInput value={f.openingDate} onChange={(e) => set('openingDate', e.target.value)} />
         </Field>
         <Field label="Credit limit / payment terms (days)">
           <div className="flex gap-2">

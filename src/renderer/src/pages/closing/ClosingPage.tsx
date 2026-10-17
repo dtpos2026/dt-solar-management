@@ -7,6 +7,7 @@ import { Badge, Button, Card, Empty, Field, Input, Loading, NumberInput, PageHea
 import { DataTable } from '../../components/DataTable'
 import { useLoad } from '../../lib/hooks'
 import { date, money, today } from '../../lib/format'
+import { DateInput } from '../../components/DateInput'
 
 interface CashGroup {
   opening: number
@@ -202,7 +203,7 @@ function DayClosing(): JSX.Element {
       <Card>
         <div className="flex flex-wrap items-end gap-3">
           <Field label="Date">
-            <Input type="date" value={day} max={today()} onChange={(e) => e.target.value && setDay(e.target.value)} />
+            <DateInput value={day} max={today()} onChange={(e) => e.target.value && setDay(e.target.value)} />
           </Field>
           <Button icon={<RefreshCw className="h-4 w-4" />} onClick={() => p.reload()} loading={p.loading && !!f}>
             Refresh

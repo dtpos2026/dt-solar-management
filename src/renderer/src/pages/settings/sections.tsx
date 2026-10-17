@@ -22,7 +22,7 @@ export const EXTRA_SECTIONS: SettingsSection[] = [
   { key: 'templates', label: 'Invoice templates', perms: ['templates.manage'], component: TemplatesSection },
   { key: 'printers', label: 'Printers', perms: ['printers.manage'], component: PrintersSection },
   { key: 'whatsapp', label: 'WhatsApp', perms: ['settings.manage', 'whatsapp.send'], component: WhatsAppSection },
-  { key: 'cloud', label: 'Online & location', perms: ['settings.manage'], component: CloudSection },
+  { key: 'cloud', label: 'Device location', perms: ['settings.manage'], component: CloudSection },
   { key: 'support', label: 'Support messages', perms: ['support.use'], component: SupportSection },
   { key: 'license', label: 'License & About', perms: [], component: LicenseSection }
 ]

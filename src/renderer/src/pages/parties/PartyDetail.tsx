@@ -10,6 +10,7 @@ import { PartyForm } from '../../components/PartyForm'
 import { PaymentModal } from '../../components/PaymentModal'
 import { useLoad } from '../../lib/hooks'
 import { date, label, money, today, statusTone, PERIODS } from '../../lib/format'
+import { DateInput } from '../../components/DateInput'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export function PartyDetail(): JSX.Element {
@@ -188,7 +189,7 @@ function AdjustmentModal({ open, partyId, onClose, onSaved }: { open: boolean; p
       }
     >
       <div className="space-y-3">
-        <Field label="Date"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
+        <Field label="Date"><DateInput value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
         <Field label="Type">
           <Select value={f.direction} onChange={(e) => setF({ ...f, direction: e.target.value })}>
             <option value="credit">Credit — reduce what they owe us / increase what we owe</option>

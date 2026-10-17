@@ -1,7 +1,7 @@
 /** Small JSON state file for the online features (kept in the license folder next to install.json). */
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import type { DeviceFix, GeoCache } from './location'
+import type { DeviceErrorKind, DeviceFix } from './location'
 import type { HeartbeatPayload } from './heartbeat'
 import type { SyncState } from './support'
 
@@ -25,13 +25,10 @@ export interface SupportRecord extends SyncState {
 
 export interface CloudState {
   heartbeat: HeartbeatRecord
-  geo: GeoCache | null
-  geoError: string | null
-  /** When the customer last changed the manual location (sent as location.updatedAt). */
-  manual: { value: string; at: string } | null
-  /** Last Windows location service fix, error and attempt time (refresh at most every 6 h). */
+  /** Last Windows location service fix, error (with its kind) and attempt time (refresh at most every 30 min). */
   device: DeviceFix | null
   deviceError: string | null
+  deviceErrorKind: DeviceErrorKind | null
   deviceAttemptAt: string | null
   support: SupportRecord
 }
@@ -39,11 +36,9 @@ export interface CloudState {
 export function emptyState(): CloudState {
   return {
     heartbeat: { lastAttemptAt: null, lastOkAt: null, ok: null, error: null, lastPayload: null },
-    geo: null,
-    geoError: null,
-    manual: null,
     device: null,
     deviceError: null,
+    deviceErrorKind: null,
     deviceAttemptAt: null,
     support: {}
   }
@@ -55,11 +50,9 @@ export function loadCloudState(dir: string): CloudState {
     const e = emptyState()
     return {
       heartbeat: { ...e.heartbeat, ...(j.heartbeat ?? {}) },
-      geo: j.geo ?? null,
-      geoError: j.geoError ?? null,
-      manual: j.manual ?? null,
       device: j.device ?? null,
       deviceError: j.deviceError ?? null,
+      deviceErrorKind: j.deviceErrorKind ?? null,
       deviceAttemptAt: j.deviceAttemptAt ?? null,
       support: { ...(j.support ?? {}) }
     }

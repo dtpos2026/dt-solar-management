@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  ShoppingCart, ShoppingBag, TrendingUp, Wallet, Users, Landmark, Boxes, FilePlus2, UserPlus, Truck, SunMedium, HandCoins, Receipt, AlertTriangle, PiggyBank, Zap, Leaf, Sun, ArrowRight
+  ShoppingCart, ShoppingBag, TrendingUp, Wallet, Users, Landmark, Boxes, FilePlus2, UserPlus, Truck, SunMedium, HandCoins, Receipt, AlertTriangle, BadgeDollarSign, Zap, Leaf, Sun, ArrowRight
 } from 'lucide-react'
 import { api } from '../api'
 import { useApp, useCan } from '../store'
@@ -103,7 +103,7 @@ export function Dashboard(): JSX.Element {
                 <StatCard label="Net Sales" value={money(k.sales)} icon={<ShoppingCart className="h-5 w-5" />} trend={k.salesTrend} sub="vs previous period" onClick={() => nav('/sales')} />
                 <StatCard label="Net Purchases" value={money(k.purchases)} icon={<ShoppingBag className="h-5 w-5" />} tone="ok" trend={k.purchasesTrend} sub="vs previous period" onClick={() => nav('/purchases')} />
                 {k.grossProfit !== null && <StatCard label="Gross Profit" value={money(k.grossProfit)} icon={<TrendingUp className="h-5 w-5" />} tone="sun" sub={k.grossMarginPct !== null ? `${pct(k.grossMarginPct)} margin` : undefined} />}
-                {k.netProfit !== null && <StatCard label="Net Profit" value={<span className={k.netProfit < 0 ? 'text-bad' : ''}>{money(k.netProfit)}</span>} icon={<PiggyBank className="h-5 w-5" />} tone={k.netProfit < 0 ? 'bad' : 'ok'} trend={k.netProfitTrend} sub="after expenses" />}
+                {k.netProfit !== null && <StatCard label="Net Profit" value={<span className={k.netProfit < 0 ? 'text-bad' : ''}>{money(k.netProfit)}</span>} icon={<BadgeDollarSign className="h-5 w-5" />} tone={k.netProfit < 0 ? 'bad' : 'ok'} trend={k.netProfitTrend} sub="after expenses" />}
                 <StatCard label="Customer Outstanding" value={money(k.receivables)} icon={<Users className="h-5 w-5" />} tone="info" sub={`${k.receivableCount} customer(s)${k.overdueInvoices ? ` · ${k.overdueInvoices} overdue` : ''}`} onClick={() => nav('/customers?due=1')} />
                 <StatCard label="Supplier Payables" value={money(k.payables)} icon={<Truck className="h-5 w-5" />} tone="warn" onClick={() => nav('/suppliers?due=1')} />
                 {k.cash !== null && <StatCard label="Cash & Bank" value={money((k.cash ?? 0) + (k.bank ?? 0))} icon={<Landmark className="h-5 w-5" />} tone="brand" sub={`Cash ${money(k.cash)} · Bank ${money(k.bank)}`} onClick={() => nav('/accounts')} />}

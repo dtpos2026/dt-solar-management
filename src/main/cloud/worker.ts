@@ -27,7 +27,6 @@ export function getCloud(): CloudService {
     license,
     getDb: () => runtime.db,
     getSession: () => (runtime.session ? { firmId: runtime.session.firmId, fullName: runtime.session.user.fullName } : null),
-    geoUrl: process.env.DTSP_GEOIP_URL || undefined,
     log,
     background: backgroundAllowed(),
     onIncoming: (msgs) => {

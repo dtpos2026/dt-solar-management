@@ -14,6 +14,7 @@ import appIcon from '../assets/app-icon.png'
 import { DtMark } from './Brand'
 import { SETTINGS_ENTRY_PERMS } from '../pages/settings/sections'
 import { PIN_RE, PinInput } from '../pages/users/PinInput'
+import { LocationConsent } from './LocationConsent'
 
 const NAV: Array<{ to: string; label: string; icon: ReactNode; perm?: string | string[]; section?: string }> = [
   { to: '/', label: 'Dashboard', icon: <LayoutDashboard />, perm: 'dashboard.view' },
@@ -705,6 +706,7 @@ export function Shell({ children, onLogout }: { children: ReactNode; onLogout: (
         </main>
       </div>
       {locked && <LockScreen onLogout={onLogout} />}
+      {!locked && !user?.mustChangePassword && <LocationConsent />}
     </div>
   )
 }

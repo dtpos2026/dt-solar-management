@@ -32,6 +32,7 @@ import { validateDatabaseFile } from '../db'
 import { openPrintWindow } from '../windows'
 import { reopenDatabase } from '../database'
 import { VENDOR } from '../../shared/branding'
+import { blockedAllows, isFullyBlocked } from '../../shared/licenseBlock'
 
 const coreRoutes: Record<string, Route> = {
   /* ---------------- app & session ---------------- */
@@ -472,6 +473,12 @@ export async function dispatch(method: string, args: unknown, sender: WebContent
   const lockMinutes = getSetting(db, 'lock_minutes', 15)
   if (!s.locked && lockMinutes > 0 && Date.now() - s.lastActivity > lockMinutes * 60000) s.locked = true
   if (s.locked && !PUBLIC_WHILE_LOCKED.has(method)) throw new AppError('Session locked. Enter your password to continue.', 'LOCKED')
+  // License enforcement (backend): while Digital Target's decision or the license state blocks this installation, only the
+  // status screen, support messages and a backup of one's own data work. Not a screen-only lock.
+  if (runtime.license && !blockedAllows(method)) {
+    const lic = runtime.license.status()
+    if (isFullyBlocked(lic)) throw new AppError(lic.message, 'LICENSE_BLOCKED')
+  }
   sessionGate(method, s.user) // forced password change: only the change-password route and session basics work
   s.lastActivity = Date.now()
   const ctx: Ctx = { db, user: s.user, firmId: s.firmId }

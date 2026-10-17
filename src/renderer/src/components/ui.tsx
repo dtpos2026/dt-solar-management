@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { create } from 'zustand'
 import { AlertTriangle, CheckCircle2, Info, Loader2, X, XCircle, ArrowDownRight, ArrowUpRight } from 'lucide-react'
 import { PERIODS } from '../lib/format'
+import { DateInput } from './DateInput'
 
 export function cx(...c: Array<string | false | null | undefined>): string {
   return c.filter(Boolean).join(' ')
@@ -439,9 +440,9 @@ export function PeriodPicker({ from, to, onChange }: { from: string; to: string;
         ))}
         <option value="custom">Custom range</option>
       </Select>
-      <Input sm type="date" className="num w-[9.5rem]" value={from} onChange={(e) => e.target.value && onChange(e.target.value, to)} />
+      <DateInput sm className="num w-[9.5rem]" value={from} onChange={(e) => e.target.value && onChange(e.target.value, to)} />
       <span className="text-muted">→</span>
-      <Input sm type="date" className="num w-[9.5rem]" value={to} onChange={(e) => e.target.value && onChange(from, e.target.value)} />
+      <DateInput sm className="num w-[9.5rem]" value={to} onChange={(e) => e.target.value && onChange(from, e.target.value)} />
     </div>
   )
 }

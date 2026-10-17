@@ -56,6 +56,7 @@ export interface HeartbeatLike {
   lastSeenMs: number | null
   location: HeartbeatLocation | null
   locationNote?: string
+  locationStatus?: string
   resetState?: string
 }
 
@@ -79,6 +80,8 @@ export interface DeviceRow {
   location: HeartbeatLocation | null
   /** Why no location is shown (reported by the computer itself); '' when unknown. */
   locationNote: string
+  /** Location permission state reported by the computer ('' = older app version). */
+  locationStatus: string
   /** Administrator password reset progress reported by the computer ('' = none). */
   resetState: string
   mode: string
@@ -146,6 +149,7 @@ export function mergeDeviceRows(
         online: onlineState(hb?.lastSeenMs ?? null, now),
         location: hb ? validLocation(hb.location) : null,
         locationNote: hb?.locationNote ?? '',
+        locationStatus: hb?.locationStatus ?? '',
         resetState: hb?.resetState ?? '',
         mode: hb?.mode ?? '',
         activationType: d.activationType,
@@ -176,6 +180,7 @@ export function mergeDeviceRows(
         online: onlineState(h.lastSeenMs, now),
         location: validLocation(h.location),
         locationNote: h.locationNote ?? '',
+        locationStatus: h.locationStatus ?? '',
         resetState: h.resetState ?? '',
         mode: h.mode,
         activationType: '',
@@ -198,7 +203,9 @@ export function validLocation(loc: unknown): HeartbeatLocation | null {
   if (l.consent !== true) return null
   if (typeof l.lat !== 'number' || typeof l.lng !== 'number' || !Number.isFinite(l.lat) || !Number.isFinite(l.lng)) return null
   if (l.lat < -90 || l.lat > 90 || l.lng < -180 || l.lng > 180) return null
-  if (l.source !== 'device' && l.source !== 'approximate' && l.source !== 'manual') return null
+  // Only a position read from the device itself (GPS / Wi-Fi) is a location. Older apps also sent an internet-address guess
+  // ('approximate') or a typed point ('manual'): those are not shown as a device position.
+  if (l.source !== 'device') return null
   return {
     lat: l.lat,
     lng: l.lng,
@@ -266,4 +273,23 @@ export function accuracyText(loc: HeartbeatLocation | null | undefined): string 
   if (loc!.source === 'device' && m < 10_000) return `±${m.toLocaleString('en-US')} m`
   const km = m / 1000
   return `±${km >= 10 ? Math.round(km) : Math.round(km * 10) / 10} km`
+}
+
+/* ------------------------------------------------ location permission ------------------------------------------------ */
+
+/** What the computer reports about its location permission. Shown as a status, never as if it were a place. */
+export const LOCATION_STATUS_LABEL: Record<string, string> = {
+  sharing: 'Sharing',
+  not_asked: 'Owner not asked yet',
+  declined: 'Declined by the owner',
+  os_denied: 'Blocked by Windows',
+  service_off: 'Windows location is off',
+  unavailable: 'No position available',
+  waiting: 'Waiting for the first position'
+}
+
+export function locationStatusLabel(r: Pick<DeviceRow, 'locationStatus' | 'lastSeenMs' | 'location'>): string {
+  if (r.location) return LOCATION_STATUS_LABEL.sharing
+  if (!r.lastSeenMs) return 'Computer has not connected yet'
+  return LOCATION_STATUS_LABEL[r.locationStatus] ?? 'Not reported by this app version'
 }

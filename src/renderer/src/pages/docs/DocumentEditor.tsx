@@ -11,6 +11,7 @@ import { addDays, money, qty as fmtQty, today } from '../../lib/format'
 import { computeTotals } from '@shared/totals'
 import { amountInWords } from '@shared/money'
 import { DOC_TYPES, DocType, PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from '@shared/docTypes'
+import { DateInput } from '../../components/DateInput'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 interface Line {
@@ -301,15 +302,15 @@ export function DocumentEditor(): JSX.Element {
             )}
           </Field>
           <Field label="Date" required>
-            <Input type="date" value={h.date} onChange={(e) => setH({ ...h, date: e.target.value })} />
+            <DateInput value={h.date} onChange={(e) => setH({ ...h, date: e.target.value })} />
           </Field>
           {docType === 'quotation' ? (
             <Field label="Valid until">
-              <Input type="date" value={h.validUntil} onChange={(e) => setH({ ...h, validUntil: e.target.value })} />
+              <DateInput clearable value={h.validUntil} onChange={(e) => setH({ ...h, validUntil: e.target.value })} />
             </Field>
           ) : meta.financial && !docType.includes('return') ? (
             <Field label="Due date">
-              <Input type="date" value={h.dueDate} onChange={(e) => setH({ ...h, dueDate: e.target.value })} />
+              <DateInput clearable value={h.dueDate} onChange={(e) => setH({ ...h, dueDate: e.target.value })} />
             </Field>
           ) : (
             <div />

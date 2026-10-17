@@ -54,6 +54,7 @@ import {
 } from '../../components/ui'
 import { DataTable, Column } from '../../components/DataTable'
 import { useLoad } from '../../lib/hooks'
+import { DateInput } from '../../components/DateInput'
 import { dateTime, label, PERIODS } from '../../lib/format'
 import { OWNER_ROLE_NAME } from '@shared/permissions'
 import { Avatar, PIN_RE, PinInput } from './PinInput'
@@ -219,6 +220,23 @@ function UsersTab({ tick, onEdit }: { tick: number; onEdit: (u: UserRow) => void
     }
   }
 
+  const deleteUser = async (u: UserRow): Promise<void> => {
+    const ok = await confirmDialog({
+      title: `Delete ${u.full_name}?`,
+      danger: true,
+      confirmLabel: 'Delete user',
+      message: 'The sign-in is removed for good. Invoices, payments and the audit log keep the name for the history. If the user manages a project or closed a period, disable the user instead.'
+    })
+    if (!ok) return
+    try {
+      await api('users.delete', { id: u.id })
+      toast.ok(`${u.full_name} deleted.`)
+      reload()
+    } catch (e) {
+      toast.error(e)
+    }
+  }
+
   const unlockUser = async (u: UserRow): Promise<void> => {
     const ok = await confirmDialog({
       title: `Unlock sign-in for ${u.full_name}?`,
@@ -322,6 +340,11 @@ function UsersTab({ tick, onEdit }: { tick: number; onEdit: (u: UserRow) => void
           {!u.is_owner && u.id !== me?.id && (
             <IconButton title={u.is_active ? 'Disable user' : 'Enable user'} tone={u.is_active ? 'bad' : undefined} onClick={() => toggleActive(u)}>
               {u.is_active ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
+            </IconButton>
+          )}
+          {!u.is_owner && u.id !== me?.id && (
+            <IconButton title="Delete user" tone="bad" onClick={() => deleteUser(u)}>
+              <Trash2 className="h-4 w-4" />
             </IconButton>
           )}
           <IconButton title={canEditRow(u) ? 'Edit user' : 'Only the owner can edit the owner account'} disabled={!canEditRow(u)} onClick={() => onEdit(u)}>
@@ -1050,6 +1073,7 @@ const AUDIT_EXPORT_CAP = 20000
 
 function AuditTab(): JSX.Element {
   const can = useCan()
+  const me = useApp((s) => s.user)
   const [range, setRange] = useState<[string, string]>(() => PERIODS.find((p) => p.key === 'month')!.range())
   const [userId, setUserId] = useState('')
   const [entity, setEntity] = useState('')
@@ -1059,6 +1083,7 @@ function AuditTab(): JSX.Element {
   const [offset, setOffset] = useState(0)
   const [detail, setDetail] = useState<AuditRow | null>(null)
   const [exporting, setExporting] = useState(false)
+  const [clearOpen, setClearOpen] = useState(false)
   const people = useLoad(() => api<Array<{ id: number; full_name: string; username: string }>>(can('users.manage') ? 'users.list' : 'users.basic'), [])
 
   // Debounce the free-text search. Any filter change starts again from the first page.
@@ -1073,7 +1098,7 @@ function AuditTab(): JSX.Element {
   }, [text, q])
 
   const filters = { from: range[0], to: range[1], userId: userId ? Number(userId) : undefined, entity: entity || undefined, q: q || undefined }
-  const { data, loading } = useLoad(() => api<{ rows: AuditRow[]; total: number }>('audit.list', { ...filters, limit: size, offset }), [range[0], range[1], userId, entity, q, size, offset])
+  const { data, loading, reload } = useLoad(() => api<{ rows: AuditRow[]; total: number }>('audit.list', { ...filters, limit: size, offset }), [range[0], range[1], userId, entity, q, size, offset])
   const rows = data?.rows ?? []
   const total = data?.total ?? 0
   const page = Math.floor(offset / size)
@@ -1196,6 +1221,11 @@ function AuditTab(): JSX.Element {
           <Button size="sm" variant="ghost" icon={<Download className="h-4 w-4" />} loading={exporting} disabled={!total} onClick={exportAll}>
             Export
           </Button>
+          {me?.isOwner && (
+            <Button size="sm" variant="ghost" className="text-bad" icon={<Trash2 className="h-4 w-4" />} onClick={() => setClearOpen(true)}>
+              Remove entries
+            </Button>
+          )}
         </div>
       </Card>
 
@@ -1236,6 +1266,17 @@ function AuditTab(): JSX.Element {
           <Button size="sm" variant="ghost" disabled={page >= pages - 1 || loading} onClick={() => setOffset(offset + size)} icon={<ChevronRight className="h-4 w-4" />} />
         </div>
       </div>
+
+      {clearOpen && (
+        <ClearAuditModal
+          onClose={() => setClearOpen(false)}
+          onDone={() => {
+            setClearOpen(false)
+            setOffset(0)
+            void reload()
+          }}
+        />
+      )}
 
       <Modal
         open={!!detail}
@@ -1292,5 +1333,77 @@ function AuditTab(): JSX.Element {
         )}
       </Modal>
     </div>
+  )
+}
+
+
+/** Owner-only: remove old (or all) audit entries. A CSV copy of what is removed is saved first and one permanent entry records the removal. */
+function ClearAuditModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }): JSX.Element {
+  const [mode, setMode] = useState<'before' | 'all'>('before')
+  const [before, setBefore] = useState(() => {
+    const d = new Date()
+    d.setMonth(d.getMonth() - 3)
+    return d.toISOString().slice(0, 10)
+  })
+  const [busy, setBusy] = useState(false)
+
+  const run = async (): Promise<void> => {
+    const ok = await confirmDialog({
+      title: mode === 'all' ? 'Remove the whole audit log?' : `Remove entries up to ${before}?`,
+      danger: true,
+      confirmLabel: 'Remove entries',
+      message:
+        'A CSV copy of the removed entries is saved in the backups folder first' +
+        (mode === 'all' ? ', together with a full database backup' : '') +
+        '. One entry will record who removed them and when. This cannot be undone from inside the app.'
+    })
+    if (!ok) return
+    setBusy(true)
+    try {
+      const r = await api<{ removed: number; savedAs: string | null }>('audit.clear', { mode, before })
+      toast.ok(r.removed ? `Removed ${r.removed} entries. Copy saved to ${r.savedAs}` : 'Nothing to remove.')
+      onDone()
+    } catch (e) {
+      toast.error(e)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Remove audit log entries"
+      size="md"
+      footer={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="danger" loading={busy} onClick={run}>
+            Remove
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3 text-[13px]">
+        <p className="text-muted">Only the owner can do this. The audit log is the record of who changed what, so a copy is always saved before anything is removed.</p>
+        <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-line p-3">
+          <input type="radio" className="mt-1" checked={mode === 'before'} onChange={() => setMode('before')} />
+          <span className="flex-1">
+            <span className="block font-semibold">Entries up to a date</span>
+            <span className="mt-1.5 block">
+              <DateInput sm className="num w-[10rem]" value={before} onChange={(e) => e.target.value && setBefore(e.target.value)} disabled={mode !== 'before'} />
+            </span>
+          </span>
+        </label>
+        <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-line p-3">
+          <input type="radio" className="mt-1" checked={mode === 'all'} onChange={() => setMode('all')} />
+          <span>
+            <span className="block font-semibold">The whole log</span>
+            <span className="text-muted">Also saves a full database backup first.</span>
+          </span>
+        </label>
+      </div>
+    </Modal>
   )
 }

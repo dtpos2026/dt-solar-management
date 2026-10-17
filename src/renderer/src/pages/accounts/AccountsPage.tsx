@@ -414,6 +414,27 @@ function AccountForm({ account, onClose, onSaved }: { account?: any; onClose: ()
     }
   }
 
+  const remove = async (): Promise<void> => {
+    const ok = await confirmDialog({
+      title: `Delete ${account.name}?`,
+      danger: true,
+      confirmLabel: 'Delete account',
+      message: 'The account is removed for good. This only works for an account that has no payments, expenses or transfers; otherwise use Active to deactivate it and keep the history.'
+    })
+    if (!ok) return
+    setBusy(true)
+    try {
+      await api('accounts.delete', { id: account.id })
+      toast.ok(`${account.name} deleted.`)
+      onSaved()
+      onClose()
+    } catch (e) {
+      toast.error(e)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <Modal
       open
@@ -422,6 +443,11 @@ function AccountForm({ account, onClose, onSaved }: { account?: any; onClose: ()
       size="md"
       footer={
         <>
+          {editing && !isDefault && (
+            <Button variant="ghost" className="mr-auto text-bad" disabled={busy} onClick={remove}>
+              Delete account
+            </Button>
+          )}
           <Button onClick={onClose}>Cancel</Button>
           <Button variant="primary" loading={busy} onClick={save}>
             Save account

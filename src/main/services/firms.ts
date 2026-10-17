@@ -318,6 +318,55 @@ export function setFirmActive(
   })()
 }
 
+/** Business records a firm owns; a firm that has any of them can only be deactivated. */
+const FIRM_RECORD_TABLES: Array<[table: string, label: string]> = [
+  ['documents', 'document'],
+  ['payments', 'payment'],
+  ['expenses', 'expense'],
+  ['projects', 'project'],
+  ['stock_movements', 'stock movement'],
+  ['stock_adjustments', 'stock adjustment'],
+  ['material_moves', 'material move'],
+  ['account_transfers', 'account transfer'],
+  ['party_adjustments', 'party adjustment'],
+  ['day_closings', 'day / month closing'],
+  ['products', 'product'],
+  ['parties', 'customer / supplier']
+]
+
+export function firmDeleteImpact(ctx: Ctx, id: number): { canDelete: boolean; blockedReason: string | null; records: Array<{ label: string; count: number }> } {
+  requirePerm(ctx, 'firms.manage')
+  const f = getFirm(ctx.db, id) as unknown as { name: string; is_default: number; is_active: number }
+  const records = FIRM_RECORD_TABLES.map(([t, label]) => ({ label, count: (ctx.db.prepare(`SELECT COUNT(*) AS c FROM ${t} WHERE firm_id = ?`).get(id) as { c: number }).c })).filter((r) => r.count > 0)
+  let blockedReason: string | null = null
+  if (f.is_default) blockedReason = 'The default firm cannot be deleted. Make another firm the default first.'
+  else if (id === ctx.firmId) blockedReason = 'You are working in this firm right now. Switch to another firm first.'
+  else if (f.is_active) blockedReason = 'Deactivate the firm first, then delete it.'
+  else if (records.length) {
+    blockedReason = `${f.name} has ${records.map((r) => `${r.count} ${r.label}${r.count > 1 ? 's' : ''}`).join(', ')}. A firm with records is kept (inactive) so the history stays complete.`
+  }
+  return { canDelete: !blockedReason, blockedReason, records }
+}
+
+/** Permanently removes an inactive, empty firm together with its own accounts, sequences and user links. */
+export function deleteFirm(ctx: Ctx, id: number): void {
+  requirePerm(ctx, 'firms.manage')
+  const db = ctx.db
+  const impact = firmDeleteImpact(ctx, id)
+  if (!impact.canDelete) throw new AppError(impact.blockedReason ?? 'This firm cannot be deleted.', 'VALIDATION')
+  const f = getFirm(db, id) as unknown as { name: string }
+  db.transaction(() => {
+    db.prepare('DELETE FROM doc_sequences WHERE firm_id = ?').run(id)
+    db.prepare('DELETE FROM user_firms WHERE firm_id = ?').run(id)
+    db.prepare('DELETE FROM accounts WHERE firm_id = ?').run(id)
+    db.prepare('DELETE FROM stock_levels WHERE warehouse_id IN (SELECT id FROM warehouses WHERE firm_id = ?)').run(id)
+    for (const t of ['warehouses', 'categories', 'doc_templates', 'whatsapp_log', 'import_runs']) db.prepare(`DELETE FROM ${t} WHERE firm_id = ?`).run(id)
+    db.prepare('UPDATE users SET last_firm_id = NULL WHERE last_firm_id = ?').run(id)
+    db.prepare('DELETE FROM firms WHERE id = ?').run(id)
+    audit(ctx, 'delete', 'firm', id, `Deleted firm ${f.name}`)
+  })()
+}
+
 /* ------------------------------ Shared records → firms ------------------------------ */
 
 export interface SharedAssignmentPlan {

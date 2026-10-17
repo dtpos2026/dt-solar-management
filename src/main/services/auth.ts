@@ -552,6 +552,46 @@ export function permissionCatalogue(): typeof PERMISSION_GROUPS {
   return PERMISSION_GROUPS
 }
 
+/** Enable / disable a user's sign-in. The owner and the signed-in user cannot be disabled. */
+export function setUserActive(ctx: Ctx, id: number, active: boolean): void {
+  requirePerm(ctx, 'users.manage')
+  const u = ctx.db.prepare('SELECT username, full_name, is_owner, is_active FROM users WHERE id = ?').get(id) as
+    | { username: string; full_name: string; is_owner: number; is_active: number }
+    | undefined
+  if (!u) throw new AppError('User not found.', 'NOT_FOUND')
+  if (!active && u.is_owner) throw new AppError('The owner account cannot be disabled.', 'VALIDATION')
+  if (!active && id === ctx.user.id) throw new AppError('You cannot disable your own account.', 'VALIDATION')
+  if (!!u.is_active === active) return
+  ctx.db.prepare("UPDATE users SET is_active = ?, updated_at = datetime('now','localtime') WHERE id = ?").run(active ? 1 : 0, id)
+  audit(ctx, active ? 'activate' : 'deactivate', 'user', id, `${active ? 'Enabled' : 'Disabled'} user ${u.username}`)
+}
+
+/**
+ * Deletes a user who has no responsibilities left. Business records only store the user's name in the audit trail,
+ * so they stay intact; a user who manages a project or closed / reopened a period must be disabled instead.
+ */
+export function deleteUser(ctx: Ctx, id: number): void {
+  requirePerm(ctx, 'users.manage')
+  const db = ctx.db
+  const u = db.prepare('SELECT username, full_name, is_owner FROM users WHERE id = ?').get(id) as
+    | { username: string; full_name: string; is_owner: number }
+    | undefined
+  if (!u) throw new AppError('User not found.', 'NOT_FOUND')
+  if (u.is_owner) throw new AppError('The owner account cannot be deleted.', 'VALIDATION')
+  if (id === ctx.user.id) throw new AppError('You cannot delete the account you are signed in with.', 'VALIDATION')
+  const projects = (db.prepare('SELECT COUNT(*) AS c FROM projects WHERE manager_user_id = ?').get(id) as { c: number }).c
+  const closings = (db.prepare('SELECT COUNT(*) AS c FROM day_closings WHERE closed_by = ? OR reopened_by = ?').get(id, id) as { c: number }).c
+  const parts: string[] = []
+  if (projects) parts.push(`${projects} project${projects > 1 ? 's' : ''} to manage`)
+  if (closings) parts.push(`${closings} day / month closing${closings > 1 ? 's' : ''}`)
+  if (parts.length) throw new AppError(`${u.full_name} cannot be deleted because they have ${parts.join(' and ')}. Disable the user instead.`, 'VALIDATION')
+  db.transaction(() => {
+    db.prepare('DELETE FROM user_firms WHERE user_id = ?').run(id)
+    db.prepare('DELETE FROM users WHERE id = ?').run(id)
+    audit(ctx, 'delete', 'user', id, `Deleted user ${u.username} (${u.full_name})`)
+  })()
+}
+
 /* ---------------------------- Audit ---------------------------- */
 
 export function listAudit(
@@ -590,4 +630,54 @@ export function listAudit(
     )
     .all({ ...p, limit: Math.min(f.limit ?? 100, 500), offset: f.offset ?? 0 })
   return { rows, total }
+}
+
+
+/** Audit rows as CSV (used for the automatic copy that is saved before anything is removed from the log). */
+export function auditCsv(rows: Array<Record<string, unknown>>): string {
+  const cell = (v: unknown): string => `"${String(v ?? '').replace(/"/g, '""')}"`
+  const head = ['id', 'time', 'user', 'firm_id', 'action', 'entity', 'entity_id', 'summary', 'details']
+  return [head.join(','), ...rows.map((r) => [r.id, r.ts, r.username, r.firm_id, r.action, r.entity, r.entity_id, r.summary, r.details].map(cell).join(','))].join('\r\n')
+}
+
+export interface AuditClearInput {
+  /** 'selected' removes the given ids, 'before' removes everything up to and including a date, 'all' empties the log. */
+  mode: 'selected' | 'before' | 'all'
+  ids?: number[]
+  before?: string
+}
+
+/**
+ * Removes entries from the audit log. Only the owner may do it. The caller saves the removed rows first
+ * (see auditCsv) and passes the file name; one permanent entry then records who removed how many entries and when.
+ */
+export function clearAudit(ctx: Ctx, input: AuditClearInput, savedAs: string): number {
+  requirePerm(ctx, 'audit.view')
+  if (!ctx.user.isOwner) throw new AppError('Only the owner can remove entries from the audit log.', 'FORBIDDEN')
+  const db = ctx.db
+  let removed = 0
+  db.transaction(() => {
+    if (input.mode === 'all') removed = db.prepare('DELETE FROM audit_log').run().changes
+    else if (input.mode === 'before') {
+      const d = typeof input.before === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.before) ? input.before : ''
+      if (!d) throw new AppError('Choose a valid date.', 'VALIDATION')
+      removed = db.prepare('DELETE FROM audit_log WHERE date(ts) <= ?').run(d).changes
+    } else {
+      const ids = (input.ids ?? []).map(Number).filter((n) => Number.isInteger(n) && n > 0)
+      if (!ids.length) throw new AppError('Select at least one entry.', 'VALIDATION')
+      const del = db.prepare('DELETE FROM audit_log WHERE id = ?')
+      for (const id of ids) removed += del.run(id).changes
+    }
+    audit(ctx, 'clear', 'audit_log', null, `Removed ${removed} audit log entr${removed === 1 ? 'y' : 'ies'} (${input.mode})`, { mode: input.mode, before: input.before ?? null, savedAs })
+  })()
+  return removed
+}
+
+/** The rows a clear request would remove (for the pre-clear copy). */
+export function auditRowsFor(ctx: Ctx, input: AuditClearInput): Array<Record<string, unknown>> {
+  if (input.mode === 'all') return ctx.db.prepare('SELECT * FROM audit_log ORDER BY id').all() as Array<Record<string, unknown>>
+  if (input.mode === 'before') return ctx.db.prepare('SELECT * FROM audit_log WHERE date(ts) <= ? ORDER BY id').all(String(input.before ?? '')) as Array<Record<string, unknown>>
+  const ids = (input.ids ?? []).map(Number).filter((n) => Number.isInteger(n) && n > 0)
+  if (!ids.length) return []
+  return ctx.db.prepare(`SELECT * FROM audit_log WHERE id IN (${ids.map(() => '?').join(',')}) ORDER BY id`).all(...ids) as Array<Record<string, unknown>>
 }

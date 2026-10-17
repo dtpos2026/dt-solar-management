@@ -6,7 +6,11 @@ import { describe, expect, it } from 'vitest'
 import { createAdjustment, saveProduct } from '../src/main/services/inventory'
 import { partyBalance, saveParty } from '../src/main/services/parties'
 import { cancelDocument, createDocument, deleteDocument, getDocument, prepareConversion, setQuotationStatus, updateDocument } from '../src/main/services/documents'
-import { createPayment } from '../src/main/services/payments'
+import { createPayment, createTransfer, deleteAccount, saveAccount, setAccountActive } from '../src/main/services/payments'
+import { createExpense } from '../src/main/services/expenses'
+import { closePeriod } from '../src/main/services/closing'
+import { createFirm, deleteFirm, firmDeleteImpact, setFirmActive } from '../src/main/services/firms'
+import { auditCsv, auditRowsFor, clearAudit, deleteUser, saveUser, setUserActive } from '../src/main/services/auth'
 import type { Ctx } from '../src/main/services/context'
 import { cashAccount, qtyOf, setupCtx, userCtx, warehouse } from './helpers'
 
@@ -174,5 +178,114 @@ describe('purchases: paid or unpaid, edit / cancel / delete with stock and accou
     const unpaid = bill(c, 2, 21000)
     updateDocument(buyer, { id: unpaid, docType: 'purchase_invoice', date: '2026-03-03', partyId: c.sup, warehouseId: c.wh, lines: [{ productId: c.prod, description: 'Panel', qty: 3, rate: 21000 }] })
     expect(getDocument(c.ctx, unpaid).grand_total).toBe(63000)
+  })
+})
+
+
+describe('accounts: deactivate and delete', () => {
+  it('an unused account can be deleted; one with payments, expenses or transfers can only be deactivated', () => {
+    const { ctx, cust, acc } = shop()
+    const bank = saveAccount(ctx, { name: 'Meezan Bank', type: 'bank', openingBalance: 5000 })
+    const spare = saveAccount(ctx, { name: 'Spare wallet', type: 'wallet' })
+    // default account: never deleted or deactivated
+    expect(() => deleteAccount(ctx, acc)).toThrow(/default account cannot be deleted/)
+    expect(() => setAccountActive(ctx, acc, false)).toThrow(/default account cannot be deactivated/)
+    // used by a transfer -> blocked, history stays
+    createTransfer(ctx, { date: '2026-03-05', fromAccountId: bank, toAccountId: spare, amount: 100 })
+    expect(() => deleteAccount(ctx, bank)).toThrow(/has 1 transfer/)
+    expect(() => deleteAccount(ctx, spare)).toThrow(/has 1 transfer/)
+    // used by a customer receipt and an expense -> blocked with both counts
+    const cat = (ctx.db.prepare('SELECT id FROM expense_categories ORDER BY id LIMIT 1').get() as { id: number }).id
+    createPayment(ctx, { direction: 'in', partyId: cust, amount: 1000, accountId: bank, date: '2026-03-05' } as never)
+    createExpense(ctx, { date: '2026-03-06', categoryId: cat, amount: 50, paid: true, accountId: bank })
+    expect(() => deleteAccount(ctx, bank)).toThrow(/1 payment, 1 expense, 1 transfer/)
+    // deactivate keeps everything; it cannot then be chosen for a new entry; reactivate works
+    setAccountActive(ctx, bank, false)
+    expect(() => createExpense(ctx, { date: '2026-03-07', categoryId: cat, amount: 10, paid: true, accountId: bank })).toThrow(/inactive/)
+    setAccountActive(ctx, bank, true)
+    // a never-used account is deleted for good, with an audit entry
+    const unused = saveAccount(ctx, { name: 'Unused', type: 'cash' })
+    deleteAccount(ctx, unused)
+    expect(ctx.db.prepare('SELECT id FROM accounts WHERE id = ?').get(unused)).toBeUndefined()
+    expect(auditOf(ctx, 'account', unused).map((a) => a.action)).toEqual(['create', 'delete'])
+    expect(() => deleteAccount(userCtx(ctx, 'Salesperson', 'seller1'), spare)).toThrow(/permission/i)
+  })
+})
+
+describe('users: disable and delete', () => {
+  it('guards the owner and yourself, refuses a user with responsibilities, and deletes a clean user', () => {
+    const { ctx } = shop()
+    const role = (ctx.db.prepare("SELECT id FROM roles WHERE name = 'Accountant'").get() as { id: number }).id
+    const u = saveUser(ctx, { username: 'clerk2', fullName: 'Clerk Two', roleId: role, password: 'secret123', allFirms: true })
+    const owner = ctx.user.id
+    expect(() => deleteUser(ctx, owner)).toThrow(/owner account cannot be deleted/)
+    expect(() => setUserActive(ctx, owner, false)).toThrow(/owner account cannot be disabled/)
+    setUserActive(ctx, u, false)
+    expect((ctx.db.prepare('SELECT is_active FROM users WHERE id = ?').get(u) as { is_active: number }).is_active).toBe(0)
+    setUserActive(ctx, u, true)
+    // a user who closed a day cannot be deleted
+    const closer = saveUser(ctx, { username: 'closer1', fullName: 'Closer One', roleId: (ctx.db.prepare("SELECT id FROM roles WHERE name = 'Administrator'").get() as { id: number }).id, password: 'secret123', allFirms: true })
+    const closerCtx = { ...ctx, user: { ...ctx.user, id: closer, isOwner: false, permissions: ['closing.manage'] } } as Ctx
+    closePeriod(closerCtx, { kind: 'day', period: '2026-03-03' })
+    expect(() => deleteUser(ctx, closer)).toThrow(/closing/)
+    // the signed-in user cannot delete themselves; the clean user can be deleted and the audit keeps the name
+    expect(() => deleteUser(userCtx(ctx, 'Administrator', 'boss2'), (ctx.db.prepare("SELECT id FROM users WHERE username = 'boss2'").get() as { id: number }).id)).toThrow(/signed in/)
+    deleteUser(ctx, u)
+    expect(ctx.db.prepare('SELECT id FROM users WHERE id = ?').get(u)).toBeUndefined()
+    expect(auditOf(ctx, 'user', u).map((a) => a.action)).toEqual(['create', 'deactivate', 'activate', 'delete'])
+  })
+})
+
+describe('firms: delete only when inactive and empty', () => {
+  it('blocks the default, active and used firms; removes an inactive empty one with its own rows', () => {
+    const { ctx } = shop()
+    const f2 = createFirm(ctx, { name: 'Branch Lahore' }, 5)
+    const f3 = createFirm(ctx, { name: 'Branch Karachi' }, 5)
+    expect(firmDeleteImpact(ctx, ctx.firmId).blockedReason).toMatch(/default firm cannot be deleted/)
+    expect(() => deleteFirm(ctx, f2)).toThrow(/Deactivate the firm first/)
+    // a firm that has a closing is kept even when inactive
+    closePeriod({ ...ctx, firmId: f3 }, { kind: 'day', period: '2026-03-03' })
+    setFirmActive(ctx, f3, false, 5)
+    expect(() => deleteFirm(ctx, f3)).toThrow(/1 day \/ month closing/)
+    // the empty inactive firm is deleted together with its seeded account, sequences and warehouse
+    setFirmActive(ctx, f2, false, 5)
+    expect(firmDeleteImpact(ctx, f2).canDelete).toBe(true)
+    deleteFirm(ctx, f2)
+    for (const t of ['firms', 'accounts', 'doc_sequences', 'warehouses']) {
+      const col = t === 'firms' ? 'id' : 'firm_id'
+      expect((ctx.db.prepare(`SELECT COUNT(*) AS c FROM ${t} WHERE ${col} = ?`).get(f2) as { c: number }).c).toBe(0)
+    }
+    expect(auditOf(ctx, 'firm', f2).map((a) => a.action)).toEqual(['create', 'deactivate', 'delete'])
+    // the firm that still has records is untouched
+    expect(ctx.db.prepare('SELECT id FROM firms WHERE id = ?').get(f3)).toBeTruthy()
+  })
+})
+
+describe('audit log: remove entries', () => {
+  it('owner only; by date, selected or all; the removed rows are exported and the removal itself is recorded', () => {
+    const { ctx } = shop()
+    ctx.db.prepare("UPDATE audit_log SET ts = '2025-01-10 10:00:00' WHERE id IN (SELECT id FROM audit_log ORDER BY id LIMIT 3)").run()
+    const admin = userCtx(ctx, 'Administrator', 'clerk3')
+    const total = (ctx.db.prepare('SELECT COUNT(*) AS c FROM audit_log').get() as { c: number }).c
+    expect(() => clearAudit(admin, { mode: 'all' }, 'x.csv')).toThrow(/Only the owner/)
+    const old = auditRowsFor(ctx, { mode: 'before', before: '2025-12-31' })
+    expect(old).toHaveLength(3)
+    const csv = auditCsv(old)
+    expect(csv.split('\r\n')).toHaveLength(4)
+    expect(csv.startsWith('id,time,user')).toBe(true)
+    expect(clearAudit(ctx, { mode: 'before', before: '2025-12-31' }, 'old.csv')).toBe(3)
+    const rest = (ctx.db.prepare('SELECT COUNT(*) AS c FROM audit_log').get() as { c: number }).c
+    expect(rest).toBe(total - 3 + 1) // + the entry that records the removal
+    const rec = ctx.db.prepare("SELECT summary, details FROM audit_log WHERE action = 'clear' ORDER BY id DESC LIMIT 1").get() as { summary: string; details: string }
+    expect(rec.summary).toMatch(/Removed 3 audit log entries/)
+    expect(JSON.parse(rec.details)).toMatchObject({ mode: 'before', savedAs: 'old.csv' })
+    // selected ids
+    const ids = (ctx.db.prepare('SELECT id FROM audit_log ORDER BY id LIMIT 2').all() as Array<{ id: number }>).map((r) => r.id)
+    expect(clearAudit(ctx, { mode: 'selected', ids }, 's.csv')).toBe(2)
+    expect(() => clearAudit(ctx, { mode: 'selected', ids: [] }, 's.csv')).toThrow(/Select at least one/)
+    expect(() => clearAudit(ctx, { mode: 'before', before: 'nonsense' }, 's.csv')).toThrow(/valid date/)
+    // everything: only the removal record remains
+    clearAudit(ctx, { mode: 'all' }, 'all.csv')
+    expect((ctx.db.prepare('SELECT COUNT(*) AS c FROM audit_log').get() as { c: number }).c).toBe(1)
   })
 })

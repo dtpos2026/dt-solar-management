@@ -106,6 +106,43 @@ export function saveAccount(
   })()
 }
 
+/** Activate / deactivate an account (history stays; inactive accounts cannot be chosen for new entries). */
+export function setAccountActive(ctx: Ctx, id: number, active: boolean): void {
+  requirePerm(ctx, 'accounts.manage')
+  const a = ctx.db.prepare('SELECT name, is_default, is_active FROM accounts WHERE id = ? AND firm_id = ?').get(id, ctx.firmId) as
+    | { name: string; is_default: number; is_active: number }
+    | undefined
+  if (!a) throw new AppError('Account not found.', 'NOT_FOUND')
+  if (!active && a.is_default) throw new AppError('The default account cannot be deactivated. Make another account the default first.', 'VALIDATION')
+  if (!!a.is_active === active) return
+  ctx.db.prepare('UPDATE accounts SET is_active = ? WHERE id = ?').run(active ? 1 : 0, id)
+  audit(ctx, active ? 'activate' : 'deactivate', 'account', id, `${active ? 'Reactivated' : 'Deactivated'} account ${a.name}`)
+}
+
+/** Deletes an account that has never been used. An account with payments, expenses or transfers can only be deactivated. */
+export function deleteAccount(ctx: Ctx, id: number): void {
+  requirePerm(ctx, 'accounts.manage')
+  const db = ctx.db
+  const a = db.prepare('SELECT name, is_default, opening_balance FROM accounts WHERE id = ? AND firm_id = ?').get(id, ctx.firmId) as
+    | { name: string; is_default: number; opening_balance: number }
+    | undefined
+  if (!a) throw new AppError('Account not found.', 'NOT_FOUND')
+  if (a.is_default) throw new AppError('The default account cannot be deleted. Make another account the default first.', 'VALIDATION')
+  const count = (sql: string): number => (db.prepare(sql).get(id) as { c: number }).c
+  const parts: string[] = []
+  const pay = count('SELECT COUNT(*) AS c FROM payments WHERE account_id = ?')
+  const exp = count('SELECT COUNT(*) AS c FROM expenses WHERE account_id = ?')
+  const tr = (db.prepare('SELECT COUNT(*) AS c FROM account_transfers WHERE from_account_id = @id OR to_account_id = @id').get({ id }) as { c: number }).c
+  if (pay) parts.push(`${pay} payment${pay > 1 ? 's' : ''}`)
+  if (exp) parts.push(`${exp} expense${exp > 1 ? 's' : ''}`)
+  if (tr) parts.push(`${tr} transfer${tr > 1 ? 's' : ''}`)
+  if (parts.length) {
+    throw new AppError(`${a.name} cannot be deleted because it has ${parts.join(', ')}. Deactivate it instead, so the history stays correct.`, 'VALIDATION')
+  }
+  db.prepare('DELETE FROM accounts WHERE id = ?').run(id)
+  audit(ctx, 'delete', 'account', id, `Deleted account ${a.name}`, { openingBalance: a.opening_balance })
+}
+
 export function defaultAccountId(ctx: Ctx): number | null {
   const a = ctx.db
     .prepare('SELECT id FROM accounts WHERE firm_id = ? AND is_active = 1 ORDER BY is_default DESC, id LIMIT 1')

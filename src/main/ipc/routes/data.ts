@@ -1,6 +1,6 @@
 /** IPC routes — Backup, day/month closing, imports (owner: data area). Owns: backup.*, closing.*, import.*. */
 import { BrowserWindow, dialog } from 'electron'
-import { existsSync, readFileSync, statSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { basename, join } from 'path'
 import { type RouteMap, ownerOnly, saveDialog, openFileDialog, csvEscape } from '../common'
 import { runtime } from '../../runtime'
@@ -8,6 +8,7 @@ import { AppError, audit, getSetting, today } from '../../services/context'
 import { validateDatabaseFile } from '../../db'
 import { createBackup, exportBackup, exportFirmData, listBackups, replaceDatabaseFile, verifyBackup, whoFromCtx } from '../../backup'
 import { reopenDatabase } from '../../database'
+import * as auth from '../../services/auth'
 import * as closing from '../../services/closing'
 import * as importer from '../../services/importer'
 import { exportCsv } from '../../services/csvExport'
@@ -16,6 +17,27 @@ const backupDir = (db: Parameters<typeof getSetting>[0]): string => getSetting(d
 const safetyDir = (): string => join(runtime.paths.backups, 'safety')
 
 export const dataRoutes: RouteMap = {
+  /* ---------------- audit log: remove entries (owner only, after a copy is saved) ---------------- */
+  'audit.clear': {
+    perm: 'audit.view',
+    write: true,
+    handler: async (c, a) => {
+      const input = { mode: a.mode as 'selected' | 'before' | 'all', ids: Array.isArray(a.ids) ? (a.ids as number[]) : [], before: typeof a.before === 'string' ? a.before : undefined }
+      if (!['selected', 'before', 'all'].includes(input.mode)) throw new AppError('Choose what to remove.', 'VALIDATION')
+      if (!c.ctx.user.isOwner) throw new AppError('Only the owner can remove entries from the audit log.', 'FORBIDDEN')
+      const rows = auth.auditRowsFor(c.ctx, input)
+      if (!rows.length) return { removed: 0, savedAs: null }
+      const dir = join(runtime.paths.backups, 'audit-log')
+      mkdirSync(dir, { recursive: true })
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+      const file = join(dir, `audit-log-removed-${stamp}.csv`)
+      writeFileSync(file, '\uFEFF' + auth.auditCsv(rows), 'utf8')
+      // A full database copy as well when the whole log is emptied.
+      if (input.mode === 'all') await createBackup(c.ctx.db, safetyDir(), 'pre-restore', whoFromCtx(c.ctx, 'Before clearing the audit log'))
+      return { removed: auth.clearAudit(c.ctx, input, file), savedAs: file }
+    }
+  },
+
   /* ---------------- backup (overrides the core keys) ---------------- */
   'backup.info': {
     perm: 'backup.manage',

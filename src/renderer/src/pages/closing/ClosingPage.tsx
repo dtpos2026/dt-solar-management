@@ -386,10 +386,13 @@ function MonthClosing(): JSX.Element {
 function ClosingHistory(): JSX.Element {
   const can = useCan()
   const [kind, setKind] = useState<'' | 'day' | 'month'>('')
-  const list = useLoad(() => api<ClosingRow[]>('closing.list', { kind: kind || undefined }), [kind])
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const filter = { kind: kind || undefined, from: from || undefined, to: to || undefined }
+  const list = useLoad(() => api<ClosingRow[]>('closing.list', filter), [kind, from, to])
   const exportCsv = async (): Promise<void> => {
     try {
-      const r = await api<{ file: string; rows: number } | null>('closing.exportCsv', { kind: kind || undefined })
+      const r = await api<{ file: string; rows: number } | null>('closing.exportCsv', filter)
       if (r) toast.ok(`Exported ${r.rows} closing(s) to ${r.file}`)
     } catch (e) {
       toast.error(e)
@@ -400,7 +403,16 @@ function ClosingHistory(): JSX.Element {
       pad={false}
       title={<span className="inline-flex items-center gap-2"><History className="h-4 w-4 text-brand" /> Closings</span>}
       actions={
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[12.5px] text-muted">From</span>
+          <DateInput sm className="num w-[9.5rem]" value={from} onChange={(e) => setFrom(e.target.value)} max={to || undefined} />
+          <span className="text-[12.5px] text-muted">to</span>
+          <DateInput sm className="num w-[9.5rem]" value={to} onChange={(e) => setTo(e.target.value)} min={from || undefined} />
+          {(from || to) && (
+            <Button size="sm" variant="ghost" onClick={() => { setFrom(''); setTo('') }}>
+              Clear dates
+            </Button>
+          )}
           <Select sm value={kind} onChange={(e) => setKind(e.target.value as '' | 'day' | 'month')} aria-label="Kind">
             <option value="">All</option>
             <option value="day">Days</option>

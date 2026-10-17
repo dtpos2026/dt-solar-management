@@ -60,6 +60,8 @@ export const catalogRoutes: RouteMap = {
     handler: (c, a) =>
       firms.setFirmActive(c.ctx, Number(a.id), a.active === true, licenseLimits().maxFirms, { grantDefaultAccess: a.grantDefaultAccess !== false })
   },
+  'firms.deleteImpact': { perm: 'firms.manage', handler: (c, a) => firms.firmDeleteImpact(c.ctx, Number(a.id)) },
+  'firms.delete': { perm: 'firms.manage', write: true, handler: (c, a) => firms.deleteFirm(c.ctx, Number(a.id)) },
   'firms.sharedPlan': {
     perm: 'firms.manage',
     handler: (c) => {

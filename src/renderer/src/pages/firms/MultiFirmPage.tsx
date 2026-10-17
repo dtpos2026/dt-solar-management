@@ -309,6 +309,30 @@ export function MultiFirmPage(): JSX.Element {
     }
   }
 
+  const deleteFirm = async (f: FirmRow): Promise<void> => {
+    let imp: { canDelete: boolean; blockedReason: string | null }
+    try {
+      imp = await api<{ canDelete: boolean; blockedReason: string | null }>('firms.deleteImpact', { id: f.id })
+    } catch (e) {
+      return toast.error(e)
+    }
+    if (!imp.canDelete) return toast.error(imp.blockedReason ?? 'This firm cannot be deleted.')
+    const ok = await confirmDialog({
+      title: `Delete ${f.name}?`,
+      danger: true,
+      confirmLabel: 'Delete firm',
+      message: 'This inactive firm has no documents, payments or other records. It is removed for good together with its empty cash account and numbering. This cannot be undone from inside the app, so take a backup first if you are unsure.'
+    })
+    if (!ok) return
+    try {
+      await api('firms.delete', { id: f.id })
+      await reloadAll()
+      toast.ok(`${f.name} deleted.`)
+    } catch (e) {
+      toast.error(e)
+    }
+  }
+
   const makeDefault = async (f: FirmRow): Promise<void> => {
     if (f.is_default) return
     if (!f.is_active) return toast.error('Activate this firm before making it the default.')
@@ -439,6 +463,11 @@ export function MultiFirmPage(): JSX.Element {
                   {!f.is_default && !isActiveNow && (
                     <IconButton title={f.is_active ? 'Deactivate firm' : 'Reactivate firm'} tone={f.is_active ? 'bad' : undefined} onClick={() => toggleActive(f)}>
                       {f.is_active ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}
+                    </IconButton>
+                  )}
+                  {!f.is_default && !isActiveNow && !f.is_active && (
+                    <IconButton title="Delete firm (only when it has no records)" tone="bad" onClick={() => deleteFirm(f)}>
+                      <Trash2 className="h-4 w-4" />
                     </IconButton>
                   )}
                   <IconButton title="Edit firm" onClick={() => setEditor({ open: true, id: f.id })}>

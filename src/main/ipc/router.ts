@@ -192,6 +192,8 @@ const coreRoutes: Record<string, Route> = {
       return auth.saveUser(c.ctx, a as never)
     }
   },
+  'users.setActive': { perm: 'users.manage', write: true, handler: (c, a) => auth.setUserActive(c.ctx, Number(a.id), a.active === true) },
+  'users.delete': { perm: 'users.manage', write: true, handler: (c, a) => auth.deleteUser(c.ctx, Number(a.id)) },
   'users.basic': {
     handler: (c) => c.ctx.db.prepare('SELECT id, full_name, username FROM users WHERE is_active = 1 ORDER BY full_name').all()
   },
@@ -259,6 +261,8 @@ const coreRoutes: Record<string, Route> = {
     perm: ['accounts.view', 'sales.create', 'purchases.create', 'expenses.manage'],
     handler: (c, a) => pay.listAccounts(c.ctx, a)
   },
+  'accounts.setActive': { perm: 'accounts.manage', write: true, handler: (c, a) => pay.setAccountActive(c.ctx, Number(a.id), a.active === true) },
+  'accounts.delete': { perm: 'accounts.manage', write: true, handler: (c, a) => pay.deleteAccount(c.ctx, Number(a.id)) },
   'accounts.save': { perm: 'accounts.manage', write: true, handler: (c, a) => pay.saveAccount(c.ctx, a as never) },
   'accounts.ledger': { perm: 'accounts.view', handler: (c, a) => pay.accountLedger(c.ctx, Number(a.id), a) },
   'transfers.list': { perm: 'accounts.view', handler: (c, a) => pay.listTransfers(c.ctx, a) },

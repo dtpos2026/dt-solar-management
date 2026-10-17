@@ -98,25 +98,33 @@ export function SettingsPage(): JSX.Element {
 
   if (!orig) return <Loading label="Loading settings…" />
 
+  const prefTabs = canEdit
+    ? [
+        { key: 'general', label: 'General', count: count('general') },
+        { key: 'inventory', label: 'Inventory & tax', count: count('inventory') },
+        { key: 'projects', label: 'Projects', count: count('projects') },
+        { key: 'documents', label: 'Documents', count: count('documents') },
+        { key: 'security', label: 'Security', count: count('security') },
+        { key: 'appearance', label: 'Appearance' },
+        { key: 'printing', label: 'Printing', count: count('printing') }
+      ]
+    : []
+  const toolTabs = extras.map((x) => ({ key: x.key, label: x.label }))
   const tabsBar = (
-    <Tabs
-      value={tab}
-      onChange={setTab}
-      tabs={[
-        ...(canEdit
-          ? [
-              { key: 'general', label: 'General', count: count('general') },
-              { key: 'inventory', label: 'Inventory & tax', count: count('inventory') },
-              { key: 'projects', label: 'Projects', count: count('projects') },
-              { key: 'documents', label: 'Documents', count: count('documents') },
-              { key: 'security', label: 'Security', count: count('security') },
-              { key: 'appearance', label: 'Appearance' },
-              { key: 'printing', label: 'Printing', count: count('printing') }
-            ]
-          : []),
-        ...extras.map((x) => ({ key: x.key, label: x.label }))
-      ]}
-    />
+    <div className="mb-4 space-y-2">
+      {prefTabs.length > 0 && (
+        <div>
+          <div className="mb-1 text-[12px] font-semibold tracking-wide text-muted uppercase">Preferences</div>
+          <Tabs className="mb-0" value={tab} onChange={setTab} tabs={prefTabs} />
+        </div>
+      )}
+      {toolTabs.length > 0 && (
+        <div>
+          <div className="mb-1 text-[12px] font-semibold tracking-wide text-muted uppercase">Tools and services</div>
+          <Tabs className="mb-0" value={tab} onChange={setTab} tabs={toolTabs} />
+        </div>
+      )}
+    </div>
   )
 
   if (extra) {

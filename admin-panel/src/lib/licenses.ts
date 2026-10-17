@@ -699,10 +699,17 @@ export type DeviceAction = 'suspend' | 'revoke' | 'release' | 'reactivate'
  *  - reactivate: suspended / revoked computers come back; a released one needs a free slot
  * Returns the license (for re-signing certificates after a reactivation).
  */
-export async function setDeviceState(licenseId: string, deviceId: string, action: DeviceAction, note: string, by: string): Promise<License> {
+export async function setDeviceState(
+  licenseId: string,
+  deviceId: string,
+  action: DeviceAction,
+  note: string,
+  by: string,
+  /** Reactivation: signs the computer's current certificate (inside the transaction) so it is published at once. */
+  signer?: (lic: License) => Promise<string>
+): Promise<License> {
   return runTransaction(db, async (tx) => {
-    const licSnap = await tx.get(licenseRef(licenseId))
-    const devSnap = await tx.get(deviceRef(licenseId, deviceId))
+    const [licSnap, devSnap] = await Promise.all([tx.get(licenseRef(licenseId)), tx.get(deviceRef(licenseId, deviceId))])
     if (!licSnap.exists()) throw new Error('License not found.')
     if (!devSnap.exists()) throw new Error('Device not found.')
     const lic = licenseFromSnap(licSnap)
@@ -735,9 +742,10 @@ export async function setDeviceState(licenseId: string, deviceId: string, action
       }
       activeDevices = lic.activeDevices + 1
     }
+    const code = signer ? await signer({ ...lic, activeDevices }) : null
     tx.update(licenseRef(licenseId), { activeDevices, ...summary('active'), updatedAt: serverTimestamp(), ...(lic.activatedAt ? {} : { activatedAt: serverTimestamp() }) })
     tx.update(deviceRef(licenseId, deviceId), { status: 'active', deactivatedAt: null, ...meta })
-    tx.set(licenseStatusRef(licenseId), licenseStatusPatch(lic, { remove: [deviceId] }), { merge: true })
+    tx.set(licenseStatusRef(licenseId), { ...licenseStatusPatch(lic, { remove: [deviceId] }), ...(code ? { certs: { [deviceId]: code } } : {}) }, { merge: true })
     writeLog(tx, licenseId, 'device_reactivated', by, withReason(`${label} reactivated by admin (was ${dev.status === 'deactivated' ? 'released' : dev.status})`, note), 'license')
     return { ...lic, activeDevices }
   })

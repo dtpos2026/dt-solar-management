@@ -12,7 +12,7 @@ import {
   changeTerms, detachLicense, deviceFromSnap, devicesCol, expiryLabel, licenseFromSnap,
   licenseRef, licenseStatusRef, linkLicenseClient, republishStatus, requestFromSnap, requestsCol, setDeviceState, setLicenseState, type DeviceAction, type TermsChange
 } from '../lib/licenses'
-import { certTermsOf, issueForDevice, publishCertificates, type PublishedCert } from '../lib/approve'
+import { certTermsOf, deviceCertSigner, issueForDevice, publishCertificates, type PublishedCert } from '../lib/approve'
 import { deleteLicense, licenseDeletePreview, type LicenseDeletePreview } from '../lib/deletions'
 import { clientFromLicense, PLAN_TYPE_LABEL, PLAN_TYPES } from '../lib/clients'
 import { certificateFreshness, deviceLimitGuard, detachEligibility, suggestRenewal } from '../lib/terms'
@@ -262,11 +262,8 @@ export function LicenseDetail() {
           reasonRequired: action === 'revoke', reasonLabel: 'Note',
           body: action === 'release' ? 'The computer switches to read-only and its slot is freed for another computer.' : action === 'reactivate' ? 'The computer becomes usable again (a released computer needs a free slot).' : 'The computer switches to read-only at its next check-in but keeps its slot.',
           run: async (note) => {
-            await setDeviceState(lic.id, d.deviceId, action, note, by)
-            if (action === 'reactivate' && key) {
-              const r = await publishCertificates(lic.id, key, by, `computer ${d.deviceName || 'Device'} (${maskDeviceId(d.deviceId)}) reactivated`)
-              setCerts(r.certs)
-            }
+            // Reactivation signs the computer's certificate inside the same transaction: one write, no second step.
+            await setDeviceState(lic.id, d.deviceId, action, note, by, action === 'reactivate' && key ? deviceCertSigner(key, d.deviceId) : undefined)
             setMsg({ tone: action === 'reactivate' && !key ? 'warn' : 'success', text: `Computer ${label.toLowerCase()}d.${action === 'reactivate' && !key ? ' Load the signing key and publish certificates so it receives a current certificate.' : ''}` })
           }
         }

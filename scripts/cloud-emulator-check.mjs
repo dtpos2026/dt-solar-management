@@ -340,5 +340,47 @@ console.log('\nInstant activation (valid key -> active at once within the device
   ok(rF.state === 'pending' && /not enabled for instant/i.test(rF.message), 'unknown key -> request for review (no pass)')
 }
 
+/* ------------------------------------------------ 6. deactivate -> reactivate (stale cached block) ------------------------------------------------ */
+console.log('\nReactivation after a block (admin releases, then reactivates; the customer retries)')
+{
+  const { createHash } = await import('node:crypto')
+  const key3 = 'DTSP-RE57-ACT0-0000-0003'
+  const lid3 = 'LIC-REACT-0003'
+  const exp = new Date(Date.now() + 300 * 86400000)
+  const pass = core.certificateToCode(core.signPayload(core.buildPayload({ deviceId: '*', businessName: 'React Solar', licenseId: lid3, issuedAt: new Date(Date.now() - 60000).toISOString(), expiresAt: exp.toISOString() }), keys.privatePem))
+  await admin.patch(`licenses/${lid3}`, { licenseKey: key3, businessName: 'React Solar', status: 'active', maxDevices: 3, activeDevices: 0, devicesSummary: {}, expiresAt: M.timestamp(exp) })
+  await admin.patch(`licenseStatus/${lid3}`, { status: 'active', expiresAt: M.timestamp(exp), deactivatedDevices: [] })
+  await admin.patch(`activationPasses/${createHash('sha256').update(key3).digest('hex')}`, { licenseId: lid3, cert: pass })
+  const G = new M.LicenseService({ dir: mkdtempSync(join(tmpdir(), 'react-G-')), machineId: 'machine-G', publicKeyPem: keys.publicPem, firestore: { projectId: PROJECT, apiKey: 'emulator' }, appVersion: '1.3.0', env })
+  const r0 = await G.activateOnline(key3, reg)
+  ok(r0.state === 'approved' && G.status(true).canWrite, 'computer G activated instantly')
+  const sumOf = async () => (await admin.get(`licenses/${lid3}`)).data.devicesSummary
+  const setG = async (status) => {
+    const sm = await sumOf()
+    await admin.patch(`licenses/${lid3}/devices/${G.deviceId}`, { status }, ['status'])
+    await admin.patch(`licenses/${lid3}`, { activeDevices: status === 'active' ? 1 : 0, devicesSummary: { ...sm, [G.deviceId]: { ...sm[G.deviceId], status } } }, ['activeDevices', 'devicesSummary'])
+    await admin.patch(`licenseStatus/${lid3}`, { deactivatedDevices: status === 'active' ? [] : [G.deviceId] }, ['deactivatedDevices'])
+  }
+  await setG('deactivated')
+  const blocked = await G.checkIn(true)
+  ok(blocked.mode === 'device_deactivated' && !blocked.canWrite, 'released computer is blocked at its next check')
+  // The customer releases it locally too (certificate removed, decision kept) and asks again with the key.
+  await G.deactivate()
+  const rBack = await G.activateOnline(key3, reg)
+  ok(rBack.state === 'pending' && /released or deactivated/i.test(rBack.message), 'a released computer waits for approval (with the reason)')
+  await setG('active')
+  const back = await G.pollActivation(true)
+  ok(back.state === 'approved' && G.status(true).mode === 'active' && G.status(true).canWrite, 'after reactivation the retry activates at once (stale block cleared by online proof)')
+  // Plain reactivation (certificate kept): the next check unblocks it.
+  await setG('deactivated')
+  ok((await G.checkIn(true)).mode === 'device_deactivated', 'blocked again')
+  await setG('active')
+  ok(G.needsCheck() === false, 'two retries within 8 s share one check (a blocked computer is not hammered)')
+  await new Promise((r) => setTimeout(r, 8300))
+  ok(G.needsCheck() === true, 'a blocked computer re-verifies at the next retry / unlock after 8 s (not after the 5 minute window)')
+  const st3 = await G.ensureFresh()
+  ok(st3.mode === 'active' && st3.canWrite, 'ensureFresh unblocks it right after reactivation')
+}
+
 console.log(`\n${passed} passed, ${failed} failed`)
 process.exit(failed ? 1 : 0)

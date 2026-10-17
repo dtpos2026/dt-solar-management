@@ -7,6 +7,7 @@ import { date } from '../../lib/format'
 import { VENDOR } from '@shared/branding'
 import appIcon from '../../assets/app-icon.png'
 import dtLogo from '../../assets/dt-logo.jpg'
+import { pollDelay } from './pollDelay'
 
 /* ------------------------------------------------ types ------------------------------------------------ */
 interface LicPayload {
@@ -55,7 +56,6 @@ const KEY_RE = /^DTSP(-[A-Z0-9]{4}){4}$/
 /** Inline styles: form controls inherit the font from an unlayered rule, so utility classes cannot change it. */
 const MONO: CSSProperties = { fontFamily: 'ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace' }
 const MONO_SM: CSSProperties = { ...MONO, fontSize: '11.5px' }
-const POLL_MS = 5000
 
 const MODES: Record<string, { label: string; tone: 'ok' | 'info' | 'warn' | 'bad' }> = {
   not_activated: { label: 'Not activated', tone: 'warn' },
@@ -219,11 +219,19 @@ export function LicensePage({ embedded = false }: { embedded?: boolean } = {}): 
 
   useEffect(() => {
     if (!pendingId) return
-    const first = setTimeout(() => void pollOnce(), 800) // resume quickly when the page opens with a pending request
-    const t = setInterval(() => void pollOnce(), POLL_MS)
+    const started = Date.now()
+    let timer: ReturnType<typeof setTimeout>
+    let stopped = false
+    const next = (delay: number): void => {
+      timer = setTimeout(async () => {
+        await pollOnce()
+        if (!stopped) next(pollDelay(Date.now() - started))
+      }, delay)
+    }
+    next(800) // resume quickly when the page opens with a pending request
     return () => {
-      clearTimeout(first)
-      clearInterval(t)
+      stopped = true
+      clearTimeout(timer)
     }
   }, [pendingId, pollOnce])
 
@@ -424,7 +432,7 @@ export function LicensePage({ embedded = false }: { embedded?: boolean } = {}): 
               <div className="text-[16px] font-semibold">Waiting for approval from Digital Target…</div>
               {lic?.pendingReason && <div className="mt-1 text-[13px] font-medium text-warn">Why approval is needed: {lic.pendingReason}</div>}
               <div className="mt-0.5 text-[13px] text-muted">
-                Your activation request has been sent. This page checks automatically every 5 seconds — the license installs itself as soon as it is approved. You can keep working or close this page;
+                Your activation request has been sent. This page checks automatically (every few seconds at first) — the license installs itself as soon as it is approved or a device slot is free. You can keep working or close this page;
                 checking resumes when you come back.
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-muted">

@@ -133,6 +133,15 @@ export function activationRequestWrite(id: string, fields: Record<string, unknow
 export const FRESH_MS = 5 * 60_000
 /** After a failed (network) check, writes do not wait for another check for this long. */
 export const RETRY_AFTER_FAILURE_MS = 60_000
+/** While the app is blocked (or its check-in is overdue) a retry must really ask Digital Target again, not reuse a stale answer. */
+export const BLOCKED_RECHECK_MS = 8_000
+/** Background command sync: how often a running app asks Digital Target for suspend / revoke / reactivate / certificate changes. */
+export const SYNC_EVERY_MS = 5 * 60_000
+export const SYNC_BLOCKED_EVERY_MS = 30_000
+export const SYNC_OFFLINE_FIRST_RETRY_MS = 2 * 60_000
+export const SYNC_OFFLINE_MAX_MS = 10 * 60_000
+/** Window focus / reconnect nudges are ignored when a check ran less than this ago. */
+export const NUDGE_MIN_GAP_MS = 20_000
 /** Longest a protected write waits for a check-in. */
 export const WRITE_CHECK_WAIT_MS = 4_000
 
@@ -595,6 +604,13 @@ export class LicenseService {
     if (block === 'deactivated' || (deviceDoc && deviceDoc.data.status !== 'active')) {
       return { approval: 'This computer was released or deactivated on this license earlier, so Digital Target must approve it again.' }
     }
+    // Online proof that nothing blocks this computer any more (reactivated by the Super Admin): drop the stored decision,
+    // otherwise installing the pass below would be refused as "issued before that decision".
+    {
+      const cleared = this.readState()
+      this.setRemote(cleared, p.licenseId, null)
+      this.writeState(cleared)
+    }
     if (!deviceDoc) {
       const fp = `devicesSummary.\`${did}\``
       const info = { deviceName: this.deviceName.slice(0, 200), os: this.os.slice(0, 200), appVersion: this.opts.appVersion.slice(0, 40) }
@@ -711,10 +727,21 @@ export class LicenseService {
     const st = this.status(true)
     if (!st.payload || isDetached(st.payload)) return false
     const now = this.now()
+    // A blocked app (remote decision, overdue check-in) is the state a fix can arrive in: reactivation by the Super Admin
+    // must be picked up by the next sign-in, unlock or retry, not after the normal 5 minute freshness window.
+    const hot = this.isHot(st)
     const last = st.lastCheckAt ? Date.parse(st.lastCheckAt) : 0
-    if (Number.isFinite(last) && now - last < FRESH_MS && now >= last) return false
-    if (this.lastFailureAt && now - this.lastFailureAt < RETRY_AFTER_FAILURE_MS && now >= this.lastFailureAt) return false
+    if (Number.isFinite(last) && now - last < (hot ? BLOCKED_RECHECK_MS : FRESH_MS) && now >= last) return false
+    if (this.lastFailureAt && now - this.lastFailureAt < (hot ? BLOCKED_RECHECK_MS : RETRY_AFTER_FAILURE_MS) && now >= this.lastFailureAt) return false
     return true
+  }
+
+  /** Blocked by Digital Target, or the signed check-in deadline passed: the cached answer must not be trusted for long. */
+  private isHot(st: LicenseStatus): boolean {
+    if (!st.payload) return false
+    if (!st.canWrite) return true
+    if (st.mode === 'grace') return true
+    return !!this.effectiveRemote(this.readState(), st.payload.licenseId)
   }
 
   /**
@@ -729,6 +756,64 @@ export class LicenseService {
       if (timer) clearTimeout(timer)
     }
     return this.status(true)
+  }
+
+  private syncTimer: ReturnType<typeof setTimeout> | null = null
+  private failStreak = 0
+  private lastAttemptAt = 0
+
+  /** Milliseconds until the next background sync: fast while blocked, backing off while offline. */
+  nextSyncDelay(): number {
+    if (this.failStreak > 0) return Math.min(SYNC_OFFLINE_MAX_MS, SYNC_OFFLINE_FIRST_RETRY_MS * 2 ** (this.failStreak - 1))
+    const st = this.status(true)
+    return st.payload && this.isHot(st) ? SYNC_BLOCKED_EVERY_MS : SYNC_EVERY_MS
+  }
+
+  /**
+   * Prompt command synchronisation without a server: while the app runs and a license is installed, it asks Digital
+   * Target every 5 minutes (every 30 s while blocked) for the license status, this computer's decision and a re-signed
+   * certificate. Offline it retries with back-off (2, 4, 8, 10 min) and catches up the moment the connection is back;
+   * nothing is ever assumed — a disconnected computer keeps following its signed offline policy until it reaches Digital Target.
+   */
+  startSync(firstDelayMs = 3_000): void {
+    this.stopSync()
+    if (!this.client) return
+    const tick = async (): Promise<void> => {
+      try {
+        const st = this.status(true)
+        if (st.payload && !isDetached(st.payload)) {
+          this.lastAttemptAt = this.now()
+          const r = await this.runCheck()
+          this.failStreak = r.error && r.error.code === 'OFFLINE' ? this.failStreak + 1 : 0
+        }
+      } catch {
+        this.failStreak += 1
+      }
+      this.syncTimer = setTimeout(() => void tick(), this.nextSyncDelay())
+      ;(this.syncTimer as { unref?: () => void }).unref?.()
+    }
+    this.syncTimer = setTimeout(() => void tick(), firstDelayMs)
+    ;(this.syncTimer as { unref?: () => void }).unref?.()
+  }
+
+  stopSync(): void {
+    if (this.syncTimer) clearTimeout(this.syncTimer)
+    this.syncTimer = null
+  }
+
+  /** Window focus / network came back: verify now unless a check just ran. Never waits, never throws. */
+  nudge(): void {
+    try {
+      if (!this.client || this.now() - this.lastAttemptAt < NUDGE_MIN_GAP_MS) return
+      const st = this.status(true)
+      if (!st.payload || isDetached(st.payload)) return
+      this.lastAttemptAt = this.now()
+      void this.runCheck().then((r) => {
+        this.failStreak = r.error && r.error.code === 'OFFLINE' ? this.failStreak + 1 : 0
+      }, () => undefined)
+    } catch {
+      /* never break the UI */
+    }
   }
 
   /** Start-up / sign-in: starts a check when one is due, never waits, never throws. */

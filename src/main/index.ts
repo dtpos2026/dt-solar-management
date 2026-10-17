@@ -147,9 +147,9 @@ function startBackgroundJobs(): void {
 
   // License check at start-up (in the background, never delays the window) and hourly; protected writes and sign-in
   // re-check when the last verification is older than 5 minutes.
-  const check = (): void => runtime.license?.refreshInBackground()
-  setTimeout(check, 2_000)
-  setInterval(check, 60 * 60 * 1000)
+  // Command sync: every 5 min while running (30 s while blocked, back-off while offline), and on window focus.
+  runtime.license?.startSync(2_000)
+  app.on('browser-window-focus', () => runtime.license?.nudge())
   setInterval(() => {
     try {
       runtime.license?.touch()

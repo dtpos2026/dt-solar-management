@@ -6,7 +6,7 @@
  */
 import { initializeApp } from 'firebase/app'
 import { connectAuthEmulator, getAuth } from 'firebase/auth'
-import { connectFirestoreEmulator, getFirestore } from 'firebase/firestore'
+import { connectFirestoreEmulator, initializeFirestore } from 'firebase/firestore'
 
 export const firebaseConfig = {
   apiKey: 'AIzaSyB44q43NniwQy0K-mh4AnDTZZAtQEy0vYI',
@@ -19,7 +19,10 @@ export const firebaseConfig = {
 
 export const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
-export const db = getFirestore(app)
+// Streaming (WebChannel) is blocked or throttled by some Windows proxies, VPNs and antivirus products; the SDK then waits
+// ~10 s per attempt before it falls back, which made every write and transaction look stuck for 30 s or more.
+// Auto-detect switches to long polling at once when streaming does not work and costs nothing when it does.
+export const db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true, ignoreUndefinedProperties: true })
 
 // Local testing only: `VITE_USE_EMULATORS=1 npm run dev` talks to the Firebase emulators instead of production.
 if (import.meta.env.VITE_USE_EMULATORS === '1') {

@@ -454,7 +454,7 @@ export const routes: Record<string, Route> = {
 
 /* ------------------------------------------------------------------------------------------ */
 
-const SIGN_IN_ROUTES = new Set(['auth.login', 'auth.pinLogin'])
+const SIGN_IN_ROUTES = new Set(['auth.login', 'auth.pinLogin', 'auth.unlock'])
 const PUBLIC_WHILE_LOCKED = new Set(['app.info', 'auth.unlock', 'auth.logout', 'license.status'])
 
 export async function dispatch(method: string, args: unknown, sender: WebContents): Promise<unknown> {

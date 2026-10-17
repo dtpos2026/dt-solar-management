@@ -5,7 +5,7 @@
  * After a change of terms, publishCertificates re-signs every ACTIVE device and publishes the codes to
  * licenseStatus/{id}.certs[deviceId]; the desktop installs its own one at the next check-in.
  */
-import { getDoc, getDocs, runTransaction, serverTimestamp, setDoc, updateDoc, writeBatch } from 'firebase/firestore'
+import { getDoc, getDocs, runTransaction, serverTimestamp, writeBatch } from 'firebase/firestore'
 import { db } from '../firebase'
 import { signPayload, verifyCode, type LicensePayload, type LoadedKey, type SignedCertificate } from './crypto'
 import {
@@ -67,6 +67,11 @@ async function signFor(l: License, deviceId: string, key: LoadedKey): Promise<Si
   return cert
 }
 
+/** Signs the certificate of one computer for a license read inside a transaction (used when a computer is reactivated). */
+export function deviceCertSigner(key: LoadedKey, deviceId: string): (lic: License) => Promise<string> {
+  return async (lic) => (await signFor(lic, deviceId, key)).code
+}
+
 export function dtlicName(l: Pick<License, 'businessName' | 'customerName'>, deviceId: string): string {
   return `${(l.businessName || l.customerName || 'license').replace(/[^\w-]+/g, '_')}-${deviceId.slice(0, 9)}.dtlic`
 }
@@ -79,6 +84,11 @@ export interface IssueOptions {
   replaceDeviceId?: string
   /** Note recorded with a reassignment. */
   note?: string
+  /** Pending activation request to approve in the SAME transaction (certificate + request + slot are one atomic write). */
+  requestId?: string
+  /** Client to link when the license has none yet (same transaction). */
+  clientId?: string
+  clientLabel?: string
 }
 
 /** Thrown when the limit is full and no computer to replace was chosen; the request stays pending. */
@@ -100,6 +110,14 @@ export class ActivationRefusedError extends Error {
   }
 }
 
+/** The request was answered by someone else (or the customer cancelled it) before this approval committed. */
+export class RequestProcessedError extends Error {
+  constructor() {
+    super('This request has already been processed.')
+    this.name = 'RequestProcessedError'
+  }
+}
+
 export interface IssueResult {
   license: License
   cert: SignedCertificate
@@ -109,8 +127,11 @@ export interface IssueResult {
 /**
  * Validates and registers the device, returns the signed certificate. Throws a human readable error to reject.
  * Only ever called on an explicit admin action (approve / reassign / offline activation / re-issue): a valid key
- * alone never grants a slot. The transaction re-reads the license, so two approvals racing for the last slot
- * cannot both succeed (the loser is retried by Firestore, sees the full limit and fails).
+ * alone never grants a slot through the admin path. Everything happens in ONE transaction (reads in parallel, one
+ * commit): slot, device record, summary, history, the certificate published to licenseStatus.certs and — for an online
+ * request — the approval written back to activationRequests/{id}. The customer's app therefore sees the approval at the
+ * moment the slot exists, with no further round trips. The transaction re-reads everything, so two approvals racing for
+ * the last slot cannot both succeed (the loser is retried by Firestore, sees the full limit and fails).
  */
 export async function issueForDevice(
   licenseKey: string,
@@ -123,11 +144,15 @@ export async function issueForDevice(
   const found = await findLicenseByKey(licenseKey)
   if (!found) throw new ActivationRefusedError('Invalid license key')
   const replaceId = opts.replaceDeviceId?.trim() || ''
-  const { license, kind } = await runTransaction(db, async (tx) => {
-    const licSnap = await tx.get(licenseRef(found.id))
-    const devSnap = await tx.get(deviceRef(found.id, dev.deviceId))
-    const oldSnap = replaceId ? await tx.get(deviceRef(found.id, replaceId)) : null
-    const statusSnap = replaceId ? await tx.get(licenseStatusRef(found.id)) : null
+  const { license, kind, cert } = await runTransaction(db, async (tx) => {
+    const [licSnap, devSnap, oldSnap, statusSnap, reqSnap] = await Promise.all([
+      tx.get(licenseRef(found.id)),
+      tx.get(deviceRef(found.id, dev.deviceId)),
+      replaceId ? tx.get(deviceRef(found.id, replaceId)) : Promise.resolve(null),
+      replaceId ? tx.get(licenseStatusRef(found.id)) : Promise.resolve(null),
+      opts.requestId ? tx.get(requestRef(opts.requestId)) : Promise.resolve(null)
+    ])
+    if (reqSnap && (!reqSnap.exists() || reqSnap.data()?.status !== 'pending')) throw new RequestProcessedError()
     if (!licSnap.exists()) throw new ActivationRefusedError('Invalid license key')
     const lic = licenseFromSnap(licSnap)
     const existing = devSnap.exists() ? deviceFromSnap(devSnap) : null
@@ -138,23 +163,37 @@ export async function issueForDevice(
     if (plan.kind === 'invalid') throw new ActivationRefusedError(plan.reason)
     const label = deviceLabel(dev.deviceName, dev.deviceId)
     const base = { deviceId: dev.deviceId, deviceName: dev.deviceName, os: dev.os, appVersion: dev.appVersion, lastIssuedAt: serverTimestamp(), activationType }
+    const link = opts.clientId && !lic.clientId ? { clientId: opts.clientId } : {}
+    const linkLog = () => {
+      if (link.clientId) writeLog(tx, lic.id, 'client_linked', by, `License linked to client ${opts.clientLabel ?? opts.clientId} on activation approval`, 'client')
+    }
+    const approveRequestDoc = (code: string) => {
+      if (opts.requestId) tx.update(requestRef(opts.requestId), { status: 'approved', certificate: code, licenseId: lic.id, processedAt: serverTimestamp(), processedBy: by })
+    }
     if (plan.kind === 'reissue') {
+      const signed = await signFor(lic, dev.deviceId, key)
       tx.update(deviceRef(lic.id, dev.deviceId), base)
       tx.update(licenseRef(lic.id), {
         ...summaryPatch(lic, { [dev.deviceId]: summaryEntry({ ...existing!, ...dev, activatedAt: devSnap.data()?.activatedAt ?? null, status: 'active', activationType }) }),
+        ...link,
         updatedAt: serverTimestamp()
       })
+      tx.set(licenseStatusRef(lic.id), { certs: { [dev.deviceId]: signed.code }, updatedAt: serverTimestamp() }, { merge: true })
       writeLog(tx, lic.id, 'certificate_reissued', by, `${label} — certificate re-issued (${activationType}); no new slot used`, 'license')
-      return { license: lic, kind: 'reissue' as const }
+      linkLog()
+      approveRequestDoc(signed.code)
+      return { license: lic, kind: 'reissue' as const, cert: signed }
     }
     let activeDevices = lic.activeDevices
     const changes: Record<string, Record<string, unknown>> = {}
     let outcome: 'new' | 'reassign' = 'new'
+    let replacedName = ''
     if (plan.kind === 'reassign') {
       if (!replaceId) throw new NeedsReassignmentError(plan.slotsUsed, plan.maxDevices)
       const old = oldSnap && oldSnap.exists() ? deviceFromSnap(oldSnap) : null
       const err = replaceableError(old ? { deviceId: old.deviceId, status: old.status } : null, dev.deviceId)
       if (err) throw new ActivationRefusedError(err)
+      replacedName = old!.deviceName
       // Release the replaced computer (slot freed) — same transaction as the activation below.
       tx.update(deviceRef(lic.id, replaceId), { status: 'deactivated', deactivatedAt: serverTimestamp(), statusChangedAt: serverTimestamp(), statusBy: by, statusNote: (opts.note ?? '').trim() || `Replaced by ${dev.deviceName || 'another computer'}` })
       changes[replaceId] = summaryEntry({ ...old!, activatedAt: oldSnap!.data()?.activatedAt ?? null, status: 'deactivated', statusNote: `Replaced by ${dev.deviceName || 'another computer'}` })
@@ -164,10 +203,12 @@ export async function issueForDevice(
     // (A slot freed up meanwhile: the chosen computer is NOT released — the request simply takes the free slot.)
     activeDevices += 1
     if (activeDevices > lic.maxDevices) throw new Error(`Device limit reached (${lic.activeDevices} of ${lic.maxDevices})`)
+    const signed = await signFor({ ...lic, activeDevices }, dev.deviceId, key)
     tx.set(deviceRef(lic.id, dev.deviceId), { ...base, status: 'active', activatedAt: serverTimestamp(), deactivatedAt: null, statusNote: '', statusChangedAt: serverTimestamp(), statusBy: by }, { merge: true })
     tx.update(licenseRef(lic.id), {
       activeDevices,
       ...summaryPatch(lic, { ...changes, [dev.deviceId]: summaryEntry({ ...dev, status: 'active', activatedAt: serverTimestamp(), activationType }) }),
+      ...link,
       updatedAt: serverTimestamp(),
       ...(lic.activatedAt ? {} : { activatedAt: serverTimestamp() })
     })
@@ -175,24 +216,23 @@ export async function issueForDevice(
       // One write: the replaced computer joins deactivatedDevices, the new one leaves it, the old cert is dropped.
       const prev = statusSnap?.data()?.deactivatedDevices
       const deactivated = Array.from(new Set([...(Array.isArray(prev) ? prev.filter((x): x is string => typeof x === 'string') : []), replaceId])).filter((x) => x !== dev.deviceId)
-      tx.set(licenseStatusRef(lic.id), { ...licenseStatusPatch(lic, undefined, [replaceId]), deactivatedDevices: deactivated }, { merge: true })
+      tx.set(licenseStatusRef(lic.id), { ...licenseStatusPatch(lic, undefined, [replaceId]), deactivatedDevices: deactivated, certs: { [dev.deviceId]: signed.code } }, { merge: true })
       writeLog(
         tx,
         lic.id,
         'device_reassigned',
         by,
-        `${deviceLabel(oldSnap!.data()?.deviceName ?? '', replaceId)} released and replaced by ${label} (${activationType}) — slots ${activeDevices} of ${lic.maxDevices}${opts.note?.trim() ? `. Note: ${opts.note.trim()}` : ''}`,
+        `${deviceLabel(replacedName, replaceId)} released and replaced by ${label} (${activationType}) — slots ${activeDevices} of ${lic.maxDevices}${opts.note?.trim() ? `. Note: ${opts.note.trim()}` : ''}`,
         'license'
       )
     } else {
-      tx.set(licenseStatusRef(lic.id), licenseStatusPatch(lic, { remove: [dev.deviceId] }), { merge: true })
+      tx.set(licenseStatusRef(lic.id), { ...licenseStatusPatch(lic, { remove: [dev.deviceId] }), certs: { [dev.deviceId]: signed.code } }, { merge: true })
       writeLog(tx, lic.id, 'device_activated', by, `${label} approved and activated (${activationType}) — slots ${activeDevices} of ${lic.maxDevices}`, 'license')
     }
-    return { license: { ...lic, activeDevices }, kind: outcome }
+    linkLog()
+    approveRequestDoc(signed.code)
+    return { license: { ...lic, activeDevices }, kind: outcome, cert: signed }
   })
-  const cert = await signFor(license, dev.deviceId, key)
-  // Keep the published certificate in step with the one just handed out (a stale one would be re-installed).
-  await setDoc(licenseStatusRef(license.id), { certs: { [dev.deviceId]: cert.code }, updatedAt: serverTimestamp() }, { merge: true })
   return { license, cert, kind }
 }
 
@@ -252,30 +292,29 @@ export async function approveRequest(
   by: string,
   opts: { clientId?: string; clientLabel?: string; replaceDeviceId?: string; note?: string } = {}
 ): Promise<ApproveOutcome> {
-  const fresh = await getDoc(requestRef(req.id))
-  if (!fresh.exists() || fresh.data()?.status !== 'pending') return 'processed'
   if (req.type === 'deactivate') {
-    if (req.licenseId) {
-      await runTransaction(db, async (tx) => {
-        const licSnap = await tx.get(licenseRef(req.licenseId!))
-        const devSnap = await tx.get(deviceRef(req.licenseId!, req.deviceId))
+    await runTransaction(db, async (tx) => {
+      const reqSnap = await tx.get(requestRef(req.id))
+      if (!reqSnap.exists() || reqSnap.data()?.status !== 'pending') return
+      if (req.licenseId) {
+        const [licSnap, devSnap] = await Promise.all([tx.get(licenseRef(req.licenseId)), tx.get(deviceRef(req.licenseId, req.deviceId))])
         if (licSnap.exists()) deactivateDeviceInTx(tx, licenseFromSnap(licSnap), devSnap, req.deviceId, by, 'by the customer')
-      })
-    }
-    await updateDoc(requestRef(req.id), { status: 'processed', processedAt: serverTimestamp(), processedBy: by })
+      }
+      tx.update(requestRef(req.id), { status: 'processed', processedAt: serverTimestamp(), processedBy: by })
+    })
     return 'processed'
   }
   try {
-    const { license, cert, kind } = await issueForDevice(req.licenseKey ?? '', req, key, by, 'online', { replaceDeviceId: opts.replaceDeviceId, note: opts.note })
-    await updateDoc(requestRef(req.id), { status: 'approved', certificate: cert.code, licenseId: license.id, processedAt: serverTimestamp(), processedBy: by })
-    if (opts.clientId && !license.clientId) {
-      const batch = writeBatch(db)
-      batch.update(licenseRef(license.id), { clientId: opts.clientId, updatedAt: serverTimestamp() })
-      writeLog(batch, license.id, 'client_linked', by, `License linked to client ${opts.clientLabel ?? opts.clientId} on activation approval`, 'client')
-      await batch.commit()
-    }
+    const { kind } = await issueForDevice(req.licenseKey ?? '', req, key, by, 'online', {
+      replaceDeviceId: opts.replaceDeviceId,
+      note: opts.note,
+      requestId: req.id,
+      clientId: opts.clientId,
+      clientLabel: opts.clientLabel
+    })
     return kind === 'reissue' ? 'reissued' : kind === 'reassign' ? 'reassigned' : 'approved'
   } catch (e) {
+    if (e instanceof RequestProcessedError) return 'processed'
     if (e instanceof NeedsReassignmentError) return 'needs_reassignment'
     if (!(e instanceof ActivationRefusedError)) throw e
     await rejectRequest(req, e.message, by)

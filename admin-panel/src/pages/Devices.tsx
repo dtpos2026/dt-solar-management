@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { Inbox, Map as MapIcon, MonitorSmartphone, RefreshCw, Trash2, WifiOff } from 'lucide-react'
 import { PageTitle } from '../components/ui'
 import { setDeviceState, type DeviceAction } from '../lib/licenses'
-import { publishCertificates } from '../lib/approve'
+import { deviceCertSigner } from '../lib/approve'
 import { DEVICE_STATUS_LABEL, filterDeviceRows, sortDeviceRows, type DeviceFilter, type DeviceRow } from '../lib/devices'
 import { countOnline, ONLINE_THRESHOLD_LABEL } from '../lib/stats'
 import { useAdminEmail, useCan } from '../lib/auth'
@@ -63,12 +63,9 @@ export function Devices() {
             : 'Activates the computer again (a released computer needs a free slot on the license).',
     run: async (note) => {
       const r = act.r
-      await setDeviceState(r.licenseId!, r.deviceId, act.a, note, by)
+      await setDeviceState(r.licenseId!, r.deviceId, act.a, note, by, act.a === 'reactivate' && key ? deviceCertSigner(key, r.deviceId) : undefined)
       let extra = ''
-      if (act.a === 'reactivate') {
-        if (key) extra = ` ${(await publishCertificates(r.licenseId!, key, by, `computer ${r.deviceName || 'Device'} (${maskDeviceId(r.deviceId)}) reactivated`)).certs.length} certificate(s) published.`
-        else extra = ' Load the signing key and publish certificates on the license page so it gets a current certificate.'
-      }
+      if (act.a === 'reactivate') extra = key ? ' Its certificate was published with the change.' : ' Load the signing key and publish certificates on the license page so it gets a current certificate.'
       setMsg({ tone: act.a === 'reactivate' && !key ? 'warn' : 'success', text: `${ACTION_LABEL[act.a]}: done.${extra}` })
       fleet.refresh()
     }

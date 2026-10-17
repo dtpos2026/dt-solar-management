@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 // @ts-expect-error — plain ESM helper without types
 import { buildPayload, certificateToCode, generateKeyPair, signPayload } from '../scripts/license-core.mjs'
 import { blockReasonOf, evaluate, parseCertificate, verifyCertificate } from '../src/main/license/verify'
-import { FRESH_MS, LicenseService, RETRY_AFTER_FAILURE_MS, computeDeviceId, remoteDecision } from '../src/main/license/service'
+import { BLOCKED_RECHECK_MS, FRESH_MS, LicenseService, RETRY_AFTER_FAILURE_MS, SYNC_BLOCKED_EVERY_MS, SYNC_EVERY_MS, computeDeviceId, remoteDecision } from '../src/main/license/service'
 import { encodeFields } from '../src/main/cloud/firestore'
 import type { RemoteRecord } from '../src/main/license/types'
 
@@ -208,6 +208,42 @@ describe('license service: write gating', () => {
     h.remote!.deactivatedDevices = []
     h.clock.t += FRESH_MS + 1000
     expect((await h.lic.ensureFresh()).mode).toBe('active') // re-approved online
+  })
+  it('a blocked computer re-verifies on the next retry or unlock (8 s), not after the 5 minute window: a reactivation is picked up at once', async () => {
+    const h = harness()
+    h.lic.install(h.certAt(h.clock.t - DAY))
+    await h.lic.ensureFresh()
+    h.remote!.status = 'suspended'
+    h.clock.t += FRESH_MS + 1000
+    expect((await h.lic.ensureFresh()).mode).toBe('suspended')
+    const reads = h.calls.get
+    // Super Admin reactivates; the customer retries 20 s later (well inside the old 5 minute window)
+    h.remote!.status = 'active'
+    h.clock.t += 20_000
+    expect(h.lic.needsCheck()).toBe(true)
+    expect((await h.lic.ensureFresh()).mode).toBe('active')
+    expect(h.calls.get).toBe(reads + 1)
+    // ... while a healthy computer is still not re-checked inside the window
+    h.clock.t += 20_000
+    expect(h.lic.needsCheck()).toBe(false)
+    // a blocked computer is not hammered either: two writes within BLOCKED_RECHECK_MS share one check
+    h.remote!.deactivatedDevices = [DEVICE]
+    h.clock.t += FRESH_MS + 1000
+    await h.lic.ensureFresh()
+    const n = h.calls.get
+    h.clock.t += BLOCKED_RECHECK_MS - 1000
+    await h.lic.ensureFresh()
+    expect(h.calls.get).toBe(n)
+  })
+  it('background sync cadence: 5 minutes normally, 30 s while blocked, back-off while offline', async () => {
+    const h = harness()
+    h.lic.install(h.certAt(h.clock.t - DAY))
+    expect(h.lic.nextSyncDelay()).toBe(SYNC_EVERY_MS)
+    await h.lic.ensureFresh()
+    h.remote!.status = 'suspended'
+    h.clock.t += FRESH_MS + 1000
+    await h.lic.ensureFresh()
+    expect(h.lic.nextSyncDelay()).toBe(SYNC_BLOCKED_EVERY_MS)
   })
   it('network failure never clears a stored suspension; offline policy applies; failures are not retried on every write', async () => {
     const h = harness()

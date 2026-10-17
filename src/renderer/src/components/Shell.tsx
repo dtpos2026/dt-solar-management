@@ -612,6 +612,21 @@ const BLOCK_TITLE: Record<string, string> = {
 function LicenseBanner(): JSX.Element | null {
   const license = useApp((s) => s.license)
   const nav = useNavigate()
+  const [checking, setChecking] = useState(false)
+  // Asks Digital Target again right now (e.g. after the Super Admin reactivated this computer); the result is shown as-is.
+  const recheck = async (): Promise<void> => {
+    setChecking(true)
+    try {
+      const st = await api<NonNullable<ReturnType<typeof useApp.getState>['license']>>('license.checkIn')
+      useApp.getState().setLicense(st)
+      if (st.canWrite) toast.ok('License verified — this computer is active.')
+      else toast.error(st.message)
+    } catch (e) {
+      toast.error(e)
+    } finally {
+      setChecking(false)
+    }
+  }
   if (!license || license.mode === 'active') return null
   const bad = !license.canWrite
   const title = bad ? (BLOCK_TITLE[license.blockReason ?? ''] ?? 'Read-only mode.') : ''
@@ -623,6 +638,11 @@ function LicenseBanner(): JSX.Element | null {
         {license.message}
         {bad && !/viewed, printed/.test(license.message) && ' Read-only mode: you can view, print, export and back up, but not add or change records.'}
       </span>
+      {license.mode !== 'not_activated' && (
+        <button type="button" className="font-semibold underline cursor-pointer disabled:opacity-60" disabled={checking} onClick={() => void recheck()}>
+          {checking ? 'Checking…' : 'Check again'}
+        </button>
+      )}
       <button type="button" className="font-semibold underline cursor-pointer" onClick={() => nav('/settings?tab=license')}>
         {license.mode === 'not_activated' ? 'Activate your license' : 'Activate / renew'}
       </button>

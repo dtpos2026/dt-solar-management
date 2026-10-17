@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { BadgeCheck, Building2, Check, ChevronLeft, ChevronRight, Clock, Database, ImagePlus, KeyRound, Loader2, Rocket, ShieldCheck, Sparkles, Users, XCircle } from 'lucide-react'
 import { api } from '../../api'
+import { pollDelay } from '../license/pollDelay'
 import { Badge, Button, Field, Input, Textarea, Toggle, cx, readImageFile, toast } from '../../components/ui'
 import type { ApiError } from '../../api'
 import { AppLogo, VendorLine } from '../../components/Brand'
@@ -320,7 +321,6 @@ interface ActResult {
 }
 
 const KEY_RE = /^DTSP(-[A-Z0-9]{4}){4}$/
-const POLL_MS = 8000
 
 function formatKey(v: string): string {
   const raw = v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20)
@@ -362,27 +362,36 @@ function LicenseStep({ defaults, onDone }: { defaults: { companyName: string; ph
 
   useEffect(() => {
     if (phase !== 'pending') return
-    const t = setInterval(async () => {
-      if (polling.current) return
-      polling.current = true
-      try {
-        const r = await api<ActResult>('license.pollActivation')
-        setLic(r.status)
-        if (r.state === 'approved') {
-          setPhase('approved')
-          setNote(r.status.message || r.message)
-        } else if (r.state === 'none') setPhase('form')
-        else setNote(r.message)
-      } catch (e) {
-        if ((e as ApiError).code === 'LICENSE_REJECTED') {
-          setPhase('rejected')
-          setNote((e as Error).message)
-        } else setNote(`Still waiting — ${(e as Error).message}`)
-      } finally {
-        polling.current = false
+    const started = Date.now()
+    let timer: ReturnType<typeof setTimeout>
+    let stopped = false
+    const tick = async (): Promise<void> => {
+      if (!polling.current) {
+        polling.current = true
+        try {
+          const r = await api<ActResult>('license.pollActivation')
+          setLic(r.status)
+          if (r.state === 'approved') {
+            setPhase('approved')
+            setNote(r.status.message || r.message)
+          } else if (r.state === 'none') setPhase('form')
+          else setNote(r.message)
+        } catch (e) {
+          if ((e as ApiError).code === 'LICENSE_REJECTED') {
+            setPhase('rejected')
+            setNote((e as Error).message)
+          } else setNote(`Still waiting — ${(e as Error).message}`)
+        } finally {
+          polling.current = false
+        }
       }
-    }, POLL_MS)
-    return () => clearInterval(t)
+      if (!stopped) timer = setTimeout(() => void tick(), pollDelay(Date.now() - started))
+    }
+    timer = setTimeout(() => void tick(), 2000)
+    return () => {
+      stopped = true
+      clearTimeout(timer)
+    }
   }, [phase])
 
   const checkNow = async (): Promise<void> => {

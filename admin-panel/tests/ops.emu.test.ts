@@ -187,7 +187,7 @@ describe.runIf(run)('operations on the emulator (real rules, portal code)', () =
     expect((await getDocs(collection(d, 'supportThreads', U, 'messages'))).size).toBe(0)
   }, 60_000)
 
-  it('Clear all removes every non-security activity entry and nothing else; the clean-up itself is recorded as security', async () => {
+  it('Clear all deletes every non-security activity entry and archives the security trail; nothing else is touched and the clean-up itself is recorded', async () => {
     const { planClearAllActivity, runClearAllActivity } = await import('../src/lib/clearing')
     const { auditCol } = await import('../src/lib/licenses')
     await env.withSecurityRulesDisabled(async (c) => {
@@ -196,15 +196,23 @@ describe.runIf(run)('operations on the emulator (real rules, portal code)', () =
       for (let i = 0; i < 3; i++) await setDoc(doc(d, 'auditLogs', `s${i}`), { action: 'admin_signed_in', category: 'security', by: 'o', byUid: 'owner', target: '', details: '', status: 'success', archived: false, at: Timestamp.fromMillis(Date.now() - i * 1000) })
       await setDoc(doc(d, 'clients', 'c1'), { company: 'Keep me', status: 'active' })
     })
-    const before = (await getDocs(auditCol())).size
     const plan = await planClearAllActivity()
-    expect(plan.refs.length + plan.kept).toBe(before)
     expect(plan.refs.length).toBeGreaterThanOrEqual(30)
-    expect(plan.kept).toBeGreaterThanOrEqual(3)
-    expect(await runClearAllActivity(plan)).toBe(plan.refs.length)
+    // protected security entries are archived (hidden from every list and count), never deleted
+    expect(plan.archiveRefs?.length ?? 0).toBeGreaterThanOrEqual(3)
+    expect(plan.kept).toBe(plan.archiveRefs?.length ?? 0)
+    expect(await runClearAllActivity(plan)).toBe(plan.refs.length + (plan.archiveRefs?.length ?? 0))
     const left = (await getDocs(auditCol())).docs.map((x) => x.data())
+    // nothing but security entries is left, every one of them archived except the new record of the clean-up itself
     expect(left.every((x) => x.category === 'security')).toBe(true)
-    expect(left.some((x) => x.action === 'audit_cleared')).toBe(true)
+    const record = left.filter((x) => x.action === 'audit_cleared' && x.archived === false)
+    expect(record.length).toBe(1)
+    expect(String(record[0].details)).toMatch(/security entr(y|ies) archived/)
+    expect(left.filter((x) => x.archived === false).length).toBe(1)
+    expect(left.filter((x) => x.archived === true).length).toBeGreaterThanOrEqual(3)
+    // a second run finds nothing left to delete or archive except the clean-up record's own archive
+    const again = await planClearAllActivity()
+    expect(again.refs.length).toBe(0)
     const d = admin({ firestore: () => st.db })
     expect((await getDoc(doc(d, 'clients', 'c1'))).exists()).toBe(true)
     expect((await getDoc(doc(d, 'licenses', 'ap1'))).exists()).toBe(true)

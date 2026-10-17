@@ -197,7 +197,7 @@ service cloud.firestore {
         && l.keys().hasOnly(['lat', 'lng', 'accuracyKm', 'source', 'label', 'consent', 'updatedAt'])
         && l.lat is number && l.lat >= -90 && l.lat <= 90
         && l.lng is number && l.lng >= -180 && l.lng <= 180
-        && l.source in ['device', 'approximate', 'manual']
+        && l.source == 'device'
         && l.consent == true
         && (!('accuracyKm' in l) || l.accuracyKm is number)
         && (!('label' in l) || str(l.label, 200))

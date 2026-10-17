@@ -258,7 +258,8 @@ describe('heartbeats (desktop REST, unauthenticated)', () => {
     const tok = 'H'.repeat(40)
     await assertSucceeds(setDoc(doc(anon, `heartbeats/${tok}`), heartbeat()))
     await assertSucceeds(setDoc(doc(anon, `heartbeats/${tok}`), heartbeat({
-      location: { lat: 31.5, lng: 74.3, accuracyKm: 25, source: 'approximate', label: 'Lahore', consent: true, updatedAt: new Date().toISOString() }
+      location: { lat: 31.5, lng: 74.3, accuracyKm: 0.035, source: 'device', label: 'Windows location service', consent: true, updatedAt: new Date().toISOString() },
+      locationStatus: 'sharing'
     })))
     await assertSucceeds(setDoc(doc(anon, `heartbeats/${tok}`), heartbeat({ location: null })))
   })
@@ -270,6 +271,9 @@ describe('heartbeats (desktop REST, unauthenticated)', () => {
     await assertFails(setDoc(doc(anon, 'heartbeats/shorttoken'), heartbeat()))
     await assertFails(setDoc(doc(anon, `heartbeats/${tok}`), heartbeat({ firms: 'many' })))
     await assertFails(setDoc(doc(anon, `heartbeats/${tok}`), heartbeat({ location: { lat: 31, lng: 74, source: 'gps', consent: true } })))
+    // precise device location only: an address-based (approximate) or typed (manual) position is refused even with consent
+    await assertFails(setDoc(doc(anon, `heartbeats/${tok}`), heartbeat({ location: { lat: 31, lng: 74, accuracyKm: 25, source: 'approximate', consent: true } })))
+    await assertFails(setDoc(doc(anon, `heartbeats/${tok}`), heartbeat({ location: { lat: 31, lng: 74, source: 'manual', consent: true } })))
     await assertFails(setDoc(doc(anon, `heartbeats/${tok}`), heartbeat({ location: { lat: 31, lng: 74, source: 'manual', consent: false } })))
     await assertFails(setDoc(doc(anon, `heartbeats/${tok}`), heartbeat({ location: { lat: 99, lng: 74, source: 'manual', consent: true } })))
   })

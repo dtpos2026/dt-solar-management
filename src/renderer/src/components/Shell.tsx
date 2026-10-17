@@ -645,7 +645,7 @@ function LicenseBanner(): JSX.Element | null {
         </button>
       )}
       <button type="button" className="font-semibold underline cursor-pointer" onClick={() => nav('/settings?tab=license')}>
-        {license.mode === 'not_activated' ? 'Activate your license' : 'Activate / renew'}
+        {license.mode === 'not_activated' ? 'Activate your license' : 'License details'}
       </button>
     </div>
   )

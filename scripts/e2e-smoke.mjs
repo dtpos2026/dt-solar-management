@@ -83,7 +83,7 @@ const cert = signPayload(
 await page.fill('[data-testid=lic-code]', certificateToCode(cert))
 await page.click('button:has-text("Install activation code")')
 await page.waitForSelector('text=License activated', { timeout: 15000 })
-await page.waitForSelector('text=/Trial — \\d+ day\\(s\\) left/', { timeout: 5000 })
+await page.waitForSelector('text=/Trial - \\d+ day\\(s\\) left/', { timeout: 5000 })
 await page.screenshot({ path: join(out, '01b-setup-license-activated.png') })
 await continueBtn.click()
 await page.waitForSelector('text=Business details', { timeout: 30000 })
@@ -102,6 +102,13 @@ await page.screenshot({ path: join(out, '03-setup-finish.png') })
 await page.click('button:has-text("Finish setup")')
 await page.waitForSelector('text=Quick Actions', { timeout: 30000 })
 await page.waitForTimeout(1500)
+// Location consent (owner, first licensed sign-in): asked once; "Not now" keeps sharing off and the question never returns.
+await page.waitForSelector("text=Share this computer's location?", { timeout: 5000 })
+await page.screenshot({ path: join(out, '10a-location-consent.png') })
+await page.getByRole('button', { name: 'Not now' }).click()
+await page.waitForSelector("text=Share this computer's location?", { state: 'detached', timeout: 5000 })
+const loc = await page.evaluate(() => window.dt.call('cloud.overview'))
+if (loc.location.mode !== 'off' || !loc.location.prompted) throw new Error('Declining location sharing was not remembered: ' + JSON.stringify(loc.location))
 await page.screenshot({ path: join(out, '10-dashboard.png'), fullPage: true })
 
 const screens = [

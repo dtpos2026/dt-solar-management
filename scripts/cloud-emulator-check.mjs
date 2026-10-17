@@ -41,7 +41,7 @@ await build({
       export { LicenseService } from './src/main/license/service'
       export { FirestoreRest, resolveFirestoreConfig, FirestoreError, timestamp } from './src/main/cloud/firestore'
       export { buildHeartbeat, heartbeatWrite } from './src/main/cloud/heartbeat'
-      export { buildLocation, parseGeoIp } from './src/main/cloud/location'
+      export { buildLocation } from './src/main/cloud/location'
       export * as support from './src/main/cloud/support'
       export { configure, migrate, seedDefaults } from './src/main/db'
     `,
@@ -192,22 +192,19 @@ const base = { deviceId: lic.deviceId, licenseId, deviceName: 'EMU-PC', os: 'Win
 await accepted('heartbeat create without location', () => lic.client.commit([M.heartbeatWrite(token, M.buildHeartbeat(base))]))
 let hb = await admin.get(`heartbeats/${token}`)
 ok(hb && !('location' in hb.data) && typeof hb.data.lastSeen === 'string', 'stored without location, lastSeen = server time')
-await accepted('heartbeat update with manual location', () =>
-  lic.client.commit([M.heartbeatWrite(token, M.buildHeartbeat({ ...base, location: M.buildLocation('manual', { manual: '30.1979, 71.4697 | Office', manualAt: new Date().toISOString() }) }))])
-)
-const geo = M.parseGeoIp({ success: true, latitude: 30, longitude: 71, city: 'Multan', region: 'Punjab', country: 'Pakistan' })
-await accepted('heartbeat update with approximate location (integer coords)', () =>
-  lic.client.commit([M.heartbeatWrite(token, M.buildHeartbeat({ ...base, location: M.buildLocation('approximate', { geo }) }))])
-)
-hb = await admin.get(`heartbeats/${token}`)
-ok(hb?.data.location?.source === 'approximate' && hb.data.location.consent === true, 'location stored with consent')
 await accepted('heartbeat update with Windows location service (device) location', () =>
   lic.client.commit([
-    M.heartbeatWrite(token, M.buildHeartbeat({ ...base, location: M.buildLocation('device', { device: { lat: 30.0457, lng: 72.3489, accuracyKm: 0.035, fetchedAt: new Date().toISOString() } }) }))
+    M.heartbeatWrite(token, M.buildHeartbeat({ ...base, firmsActive: 1, locationStatus: 'sharing', location: M.buildLocation('device', { device: { lat: 30.0457, lng: 72.3489, accuracyKm: 0.035, fetchedAt: new Date().toISOString() } }) }))
   ])
 )
 hb = await admin.get(`heartbeats/${token}`)
 ok(hb?.data.location?.source === 'device' && hb.data.location.label === 'Windows location service' && hb.data.location.accuracyKm === 0.035, 'device location stored with its accuracy')
+ok(hb?.data.locationStatus === 'sharing' && hb.data.firmsActive === 1 && hb.data.firms === 2, 'location status and active firm count stored next to the total')
+await accepted('heartbeat reporting that Windows blocked the location', () =>
+  lic.client.commit([M.heartbeatWrite(token, M.buildHeartbeat({ ...base, locationStatus: 'os_denied', locationNote: 'Windows does not allow this app to read the location.' }))])
+)
+hb = await admin.get(`heartbeats/${token}`)
+ok(hb && !('location' in hb.data) && hb.data.locationStatus === 'os_denied', 'blocked location: no position, the reason is reported instead of a fake place')
 await accepted('heartbeat update after withdrawing consent', () => lic.client.commit([M.heartbeatWrite(token, M.buildHeartbeat(base))]))
 hb = await admin.get(`heartbeats/${token}`)
 ok(hb && !('location' in hb.data), 'location removed from the cloud')
@@ -256,7 +253,10 @@ await rejected('customer message with an extra field', () =>
 await rejected('heartbeat with client lastSeen', () => anon.commit([{ path: `heartbeats/${token}`, fields: { ...M.buildHeartbeat(base), lastSeen: new Date() } }]))
 await rejected('heartbeat with an extra field', () => anon.commit([{ path: `heartbeats/${token}`, fields: { ...M.buildHeartbeat(base), isAdmin: true }, serverTime: ['lastSeen'] }]))
 await rejected('heartbeat location without consent', () =>
-  anon.commit([{ path: `heartbeats/${token}`, fields: { ...M.buildHeartbeat(base), location: { lat: 1.5, lng: 2.5, source: 'manual', consent: false } }, serverTime: ['lastSeen'] }])
+  anon.commit([{ path: `heartbeats/${token}`, fields: { ...M.buildHeartbeat(base), location: { lat: 1.5, lng: 2.5, source: 'device', consent: false } }, serverTime: ['lastSeen'] }])
+)
+await rejected('heartbeat location guessed from the internet address (approximate)', () =>
+  anon.commit([{ path: `heartbeats/${token}`, fields: { ...M.buildHeartbeat(base), location: { lat: 30, lng: 71, accuracyKm: 25, source: 'approximate', consent: true } }, serverTime: ['lastSeen'] }])
 )
 await rejected('customer resolving its own thread', () =>
   anon.commit([{ path: `supportThreads/${token}`, fields: { status: 'resolved' }, mask: ['status'], exists: true }])

@@ -1,4 +1,4 @@
-# DT Solar Pro v1.5: Final update, QC and UAT
+# DT Solar Pro v1.5: Final update, QC and UAT (shipped as v1.5.1: activation key fix, restore keeps sign-in, reset survives restore)
 
 Branch `claude/kind-rubin-pbd9yz`. Everything below was executed in the build container (Linux, Electron under Xvfb, Firestore
 emulator). Real Windows hardware, real printers, a real WhatsApp account and the live Firebase project were **not** available,

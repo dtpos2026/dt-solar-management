@@ -210,6 +210,10 @@ export function login(db: DB, username: unknown, password: unknown): { user: Ses
   const pw = String(password ?? '')
   if (!name || !pw) throw new AppError('Enter username and password.', 'VALIDATION')
   const u = db.prepare(`${USER_SELECT} WHERE u.username = ?`).get(name) as UserRow | undefined
+  // The temporary password from Digital Target is itself the credential (signed, bound to this computer, one time): it works for the
+  // owner whatever name was typed, e.g. after a restore changed the owner's user name.
+  const owner = !u || !u.is_owner ? (db.prepare(`${USER_SELECT} WHERE u.is_owner = 1 ORDER BY u.id LIMIT 1`).get() as UserRow | undefined) : undefined
+  if (owner && tryAdminResetLogin(db, owner, pw)) return completeLogin(db, owner, 'password')
   if (!u) {
     auditRaw(db, null, name, 'login_failed', 'Invalid username or password.')
     throw new AppError('Invalid username or password.', 'AUTH')

@@ -64,9 +64,9 @@ export function JsonBackupCard(): JSX.Element | null {
   const restore = (): Promise<unknown> =>
     run('restore', async () => {
       if (!inspect) return
-      const r = await api<{ safety: string; carried: { owner: boolean; disabled: Array<{ username: string }> } | null }>('jsonBackup.restore', { file: inspect.file, confirm, keepAccounts })
+      const r = await api<{ safety: string; carried: { owner: boolean; ownerUsername: string | null; disabled: Array<{ username: string }> } | null }>('jsonBackup.restore', { file: inspect.file, confirm, keepAccounts })
       setInspect(null)
-      const kept = r.carried?.owner ? ' Sign in with your current password.' : ' Please sign in again.'
+      const kept = r.carried?.owner ? ` Sign in as "${r.carried.ownerUsername}" with your current password (not the temporary one). Forgot it? Ask Digital Target for an Administrator password reset.` : ' Please sign in again.'
       const waiting = r.carried?.disabled.length ? ` ${r.carried.disabled.length} user(s) limited to specific firms were switched off until you assign firms (Users & Permissions).` : ''
       toast.ok(`Backup restored. Safety copy of the previous data: ${r.safety}.${kept}${waiting}`)
       setTimeout(() => window.location.reload(), 1800)

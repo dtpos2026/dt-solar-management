@@ -70,6 +70,7 @@ describe('restoring a converted backup keeps this installation sign-in', () => {
 
     const r = carryOverInstallation(live.db, staged)
     expect(r.owner).toBe(true)
+    expect(r.ownerUsername).toBe('waqas')
     expect(r.users).toBe(2)
     expect(r.disabled).toEqual([expect.objectContaining({ username: 'clerk1' })])
     expect(r.settings).toEqual(expect.arrayContaining(['backup_auto', 'backup_dir', 'lock_minutes']))
@@ -103,7 +104,7 @@ describe('restoring a converted backup keeps this installation sign-in', () => {
     const staged = join(dir, 'staged-2.db')
     buildDatabaseFromJs1(readJs1(convertedJs1()), staged)
     const r = carryOverInstallation(empty as never, staged)
-    expect(r).toEqual({ owner: false, users: 0, disabled: [], settings: [] })
+    expect(r).toEqual({ owner: false, ownerUsername: null, users: 0, disabled: [], settings: [] })
     const db = openDatabase(staged)
     expect(login(db, 'admin', TEMP).user.mustChangePassword).toBe(true)
     db.close()

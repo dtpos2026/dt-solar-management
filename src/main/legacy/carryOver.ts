@@ -36,6 +36,8 @@ export const DEVICE_SETTING_KEYS = [
 export interface CarryOverResult {
   /** The owner of this installation keeps their username and password in the restored data. */
   owner: boolean
+  /** The user name to sign in with after the restore (the temporary "admin" account of the converted file is replaced by it). */
+  ownerUsername: string | null
   /** Other accounts carried over (enabled ones keep their password too). */
   users: number
   /** Accounts that were carried over disabled, with the reason. */
@@ -52,7 +54,7 @@ const columnsOf = (db: Database.Database, table: string): string[] => (db.prepar
  * database has no active owner (a fresh installation restoring its first backup keeps the temporary password).
  */
 export function carryOverInstallation(live: DB, stagedFile: string): CarryOverResult {
-  const result: CarryOverResult = { owner: false, users: 0, disabled: [], settings: [] }
+  const result: CarryOverResult = { owner: false, ownerUsername: null, users: 0, disabled: [], settings: [] }
   const liveOwner = live.prepare('SELECT * FROM users WHERE is_owner = 1 AND is_active = 1 ORDER BY id LIMIT 1').get() as Row | undefined
   if (!liveOwner) return result
 
@@ -75,6 +77,7 @@ export function carryOverInstallation(live: DB, stagedFile: string): CarryOverRe
       out.prepare('DELETE FROM users WHERE username = ? COLLATE NOCASE AND id <> ?').run(liveOwner.username, outOwner.id)
       out.prepare(`UPDATE users SET ${copyCols.map((c) => `"${c}" = @${c}`).join(', ')} WHERE id = @__id`).run({ ...pick(liveOwner, copyCols), __id: outOwner.id })
       result.owner = true
+      result.ownerUsername = String(liveOwner.username)
 
       // The other accounts of this installation: same hashes, roles matched by name (created when missing).
       const liveRoles = new Map((live.prepare('SELECT * FROM roles').all() as Row[]).map((r) => [Number(r.id), r]))

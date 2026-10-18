@@ -66,6 +66,39 @@ export function consumeReset(db: DB, p: PendingReset): void {
   setSetting(db, STATE_KEY, `${p.nonce}:used`)
 }
 
+/**
+ * A restore replaces the whole database, and the reset state lives in it. Without this a reset that Digital Target had already
+ * delivered to this computer vanished at the restore (the temporary password then looked "incorrect"), and the list of used
+ * codes went back to an older state (an already used code could be accepted again). The snapshot is taken before the restore
+ * and put into the restored data afterwards; used codes are merged, never dropped.
+ */
+export function snapshotResetState(db: DB): Array<[string, string]> {
+  const out: Array<[string, string]> = []
+  for (const k of [PENDING_KEY, USED_KEY, STATE_KEY]) {
+    const r = db.prepare('SELECT value FROM settings WHERE key = ?').get(k) as { value: string } | undefined
+    if (r) out.push([k, r.value])
+  }
+  return out
+}
+
+export function restoreResetState(db: DB, snapshot: Array<[string, string]>): void {
+  for (const [k, v] of snapshot) {
+    if (k === USED_KEY) {
+      let mine: string[] = []
+      let theirs: string[] = []
+      try {
+        mine = JSON.parse(v) as string[]
+        theirs = getSetting<string[]>(db, USED_KEY, [])
+      } catch {
+        /* keep what could be read */
+      }
+      setSetting(db, USED_KEY, [...new Set([...theirs, ...mine])].slice(-50))
+    } else {
+      db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(k, v)
+    }
+  }
+}
+
 export type ApplyResult = { status: 'received' | 'duplicate' | 'rejected'; message: string }
 
 /**

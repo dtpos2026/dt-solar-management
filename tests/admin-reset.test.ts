@@ -6,7 +6,7 @@ import { createPrivateKey, pbkdf2Sync, randomBytes, sign } from 'crypto'
 import { describe, expect, it } from 'vitest'
 // @ts-expect-error — plain ESM helper without types
 import { buildPayload, certificateToCode, generateKeyPair, signPayload } from '../scripts/license-core.mjs'
-import { applyResetCommand, getPendingReset, resetState } from '../src/main/services/adminReset'
+import { applyResetCommand, getPendingReset, resetState, restoreResetState, snapshotResetState } from '../src/main/services/adminReset'
 import { COMMAND_DOMAIN } from '../src/main/license/verify'
 import { buildSessionUser, changeOwnPassword, login, loginById } from '../src/main/services/auth'
 import { setupCtx, userCtx } from './helpers'
@@ -111,12 +111,45 @@ describe('Administrator password reset: sign-in with the temporary password', ()
     const id = (db.prepare("SELECT id FROM users WHERE username = 'admin'").get() as { id: number }).id
     expect(loginById(db, id, TEMP).user.mustChangePassword).toBe(true)
   })
-  it('only the Administrator (owner) account accepts the temporary password', () => {
+  it('only the Administrator (owner) account is reset by the temporary password, whatever user name was typed', () => {
     const owner = setupCtx()
     userCtx(owner, 'Accountant', 'clerk')
     applyResetCommand(owner.db, command(), ctx)
-    expect(() => login(owner.db, 'clerk', TEMP)).toThrow()
+    // a wrong password never works, for any name
+    expect(() => login(owner.db, 'clerk', 'WXYZ-WXYZ-WXYZ-WXYZ')).toThrow()
+    expect(() => login(owner.db, 'nobody', 'WXYZ-WXYZ-WXYZ-WXYZ')).toThrow(/Invalid username or password/)
     expect(getPendingReset(owner.db)).not.toBeNull()
+    // the temporary password is the owner's credential: a clerk's name or an unknown / renamed user name still gets the OWNER, never the clerk
+    const r = login(owner.db, 'clerk', TEMP)
+    expect(r.user.isOwner).toBe(true)
+    expect(r.user.username).toBe('admin')
+    expect(r.user.mustChangePassword).toBe(true)
+    expect(getPendingReset(owner.db)).toBeNull()
+  })
+  it('an unknown or renamed user name (for example after a restore) still works with the temporary password, once', () => {
+    const owner = setupCtx()
+    owner.db.prepare("UPDATE users SET username = 'waqas' WHERE is_owner = 1").run()
+    applyResetCommand(owner.db, command(), ctx)
+    const r = login(owner.db, 'admin', TEMP)
+    expect(r.user.username).toBe('waqas')
+    expect(r.user.mustChangePassword).toBe(true)
+    expect(() => login(owner.db, 'admin', TEMP)).toThrow(/Invalid username or password/)
+  })
+  it('a restore keeps a reset that was already delivered and the list of used codes', () => {
+    const live = setupCtx()
+    const used = command()
+    applyResetCommand(live.db, used, ctx)
+    login(live.db, 'admin', TEMP) // uses it up
+    const pendingCode = command({}, { pw: 'AAAA-BBBB-CCCC-DDDD' })
+    applyResetCommand(live.db, pendingCode, ctx)
+    const snap = snapshotResetState(live.db)
+    // the restored data is an older database: no pending reset, no used codes
+    const restored = setupCtx()
+    expect(getPendingReset(restored.db)).toBeNull()
+    restoreResetState(restored.db, snap)
+    expect(getPendingReset(restored.db)).not.toBeNull()
+    expect(applyResetCommand(restored.db, used, ctx).status).toBe('duplicate') // the used code cannot be replayed
+    expect(login(restored.db, 'admin', 'AAAA-BBBB-CCCC-DDDD').user.mustChangePassword).toBe(true)
   })
   it('an expired pending reset no longer works', () => {
     const owner = setupCtx()

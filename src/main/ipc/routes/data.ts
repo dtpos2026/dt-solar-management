@@ -9,6 +9,7 @@ import { validateDatabaseFile } from '../../db'
 import { createBackup, exportBackup, exportFirmData, listBackups, replaceDatabaseFile, verifyBackup, whoFromCtx } from '../../backup'
 import { reopenDatabase } from '../../database'
 import * as auth from '../../services/auth'
+import { restoreResetState, snapshotResetState } from '../../services/adminReset'
 import * as closing from '../../services/closing'
 import * as importer from '../../services/importer'
 import { exportCsv } from '../../services/csvExport'
@@ -116,6 +117,7 @@ export const dataRoutes: RouteMap = {
       // Safety copy of the current data first - never lose the existing database.
       const safety = await createBackup(c.ctx.db, safetyDir(), 'pre-restore', whoFromCtx(c.ctx, `Before restoring ${basename(file)}`))
       audit(c.ctx, 'restore', 'system', null, `Restoring backup ${file}. Safety copy: ${safety.file}`)
+      const resetState = snapshotResetState(c.ctx.db)
       runtime.db!.close()
       runtime.db = null
       try {
@@ -126,6 +128,7 @@ export const dataRoutes: RouteMap = {
         throw new AppError(`Restore failed and your previous data was put back: ${(e as Error).message}`, 'RESTORE')
       }
       reopenDatabase()
+      restoreResetState(runtime.db!, resetState)
       runtime.session = null
       return { restored: true, safety: safety.file }
     }

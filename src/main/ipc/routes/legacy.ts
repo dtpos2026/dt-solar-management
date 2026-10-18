@@ -14,6 +14,7 @@ import { reopenDatabase } from '../../database'
 import { convertVyapar, createTargetDb, extractVyp } from '../../legacy/vyapar'
 import { carryOverInstallation, type CarryOverResult } from '../../legacy/carryOver'
 import { validateDatabaseFile } from '../../db'
+import { restoreResetState, snapshotResetState } from '../../services/adminReset'
 import { renderReport, validateConversion } from '../../legacy/vyaparValidate'
 
 const stamp = (): string => new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')
@@ -77,6 +78,7 @@ export const legacyRoutes: RouteMap = {
       }
       const safety = await createBackup(c.ctx.db, join(runtime.paths.backups, 'safety'), 'pre-restore')
       audit(c.ctx, 'restore', 'system', null, `Restoring JSON backup ${file}. Safety copy: ${safety.file}`)
+      const resetState = snapshotResetState(c.ctx.db)
       runtime.db!.close()
       runtime.db = null
       try {
@@ -89,6 +91,7 @@ export const legacyRoutes: RouteMap = {
         rmSync(staging, { force: true })
       }
       reopenDatabase()
+      restoreResetState(runtime.db!, resetState)
       runtime.session = null
       return { restored: true, safety: safety.file, carried }
     }

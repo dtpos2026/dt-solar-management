@@ -749,6 +749,12 @@ export function convertVyapar(src: DB, out: DB, meta: { sourceFile: string; sour
   )
   const insRec = out.prepare('INSERT INTO legacy_records (source_id, table_name, legacy_id, data) VALUES (?, ?, ?, ?)')
   const DERIVED = /^(kb_fts_|sqlite_)/
+  // Vyapar keeps its own app passcode, delete PIN and payment-link tokens as plain text. They are not needed here and a backup file
+  // must not carry plain-text secrets, so the archive keeps each row but replaces a secret that is set by this marker.
+  const SECRET_COLUMNS: Record<string, string[]> = { urp_users: ['user_passcode'], kb_payment_gateway: ['link_auth_token'] }
+  const SECRET_SETTING = /(^|[._])(pin|passcode|password)([._]|$)|passcodefor|deleteauthpin/i
+  const REDACTED = '[not archived: secret]'
+  let redacted = 0
   for (const name of Object.keys(sourceCounts)) {
     if (DERIVED.test(name) || sourceCounts[name] === 0) continue
     const cols = src.prepare(`PRAGMA table_info("${name}")`).all() as Array<{ name: string; pk: number }>
@@ -758,10 +764,16 @@ export function convertVyapar(src: DB, out: DB, meta: { sourceFile: string; sour
       for (const c of cols) {
         const v = r[c.name]
         data[c.name] = Buffer.isBuffer(v) ? { $b64: v.toString('base64') } : v
+        const secret = SECRET_COLUMNS[name]?.includes(c.name) || (name === 'kb_settings' && c.name === 'setting_value' && SECRET_SETTING.test(String(r.setting_key ?? '')))
+        if (secret && v !== null && v !== undefined && String(v) !== '' && String(v) !== '0') {
+          data[c.name] = REDACTED
+          redacted++
+        }
       }
       insRec.run(sourceId, name, r[pk] === null || r[pk] === undefined ? null : String(r[pk]), JSON.stringify(data))
     }
   }
+  if (redacted) note('info', 'archive', `${redacted} plain-text Vyapar passcode / PIN / token value(s) were not copied into the archive (the rows are kept, the secret is not).`)
   note('info', 'archive', 'Every row of every Vyapar table is kept verbatim in legacy_records (JSON); derived full-text-search tables (kb_fts_*) and sqlite_sequence are not copied because Vyapar rebuilds them from the other tables.')
   const insMap = out.prepare('INSERT OR REPLACE INTO legacy_id_map (source_id, entity, legacy_id, new_table, new_id, note) VALUES (?, ?, ?, ?, ?, ?)')
   for (const c of idChanges) insMap.run(sourceId, c.entity, c.legacyId, c.newTable, c.newId, c.note)

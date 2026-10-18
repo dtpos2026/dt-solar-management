@@ -207,7 +207,8 @@ export function renderReport(
   lines.push('', '## Files', '')
   lines.push(`- \`${files.js1}\` - DT Solar Pro JSON backup (.js1). Restore: Backup & Restore → **JSON backup (.js1) → Restore**.`)
   lines.push(`- \`${files.dtbak}\` - the same data as a native DT Solar Pro backup. Restore: Backup & Restore → **Restore from a backup file**.`)
-  lines.push(`- Sign in after restoring: user **admin**, temporary password **${files.password}** - the app forces a new password at first sign-in.`)
+  lines.push(`- Sign in after restoring: restore the .js1 in DT Solar Pro (Backup & Restore, JSON backup) and leave **Keep my current users, passwords and settings** ticked: you stay the owner with your existing password, nothing is asked again, and automatic backup keeps running. Only on a computer that has no owner yet (or when that option is unticked, or when the .dtbak is restored with the normal restore) sign in as **admin** with the one-off password **${files.password}** and set a new one.`)
+  lines.push(`- The converted file contains no plain-text password: the Vyapar file itself was not encrypted and had no password; any Vyapar passcode or PIN that is set is not copied into the archive.`)
   lines.push('', '## Checks (source vs converted)', '', '| Group | Check | Vyapar | DT Solar Pro | Result |', '|---|---|---:|---:|:---:|')
   for (const c of v.checks) lines.push(`| ${c.group} | ${c.name}${c.detail ? ` (${c.detail})` : ''} | ${fmt(c.expected)} | ${fmt(c.actual)} | ${c.pass ? 'PASS' : '**FAIL**'} |`)
   lines.push('', '## Cash / bank accounts', '', '| Vyapar payment type | Vyapar balance | DT Solar Pro (all firms) |', '|---|---:|---:|')
@@ -259,6 +260,6 @@ const FIELD_MAPPING = [
   '| kb_item_adjustments | stock_adjustments (non-zero quantities) | type 12 = reduce stock; zero-quantity opening entries archived only |',
   '| kb_prefix | doc_sequences | numbering continues after the last Vyapar number |',
   '| kb_settings, terms_and_conditions | settings | currency symbol, multi-firm, negative stock, default invoice / quotation terms |',
-  '| urp_users | users (owner "admin") | Vyapar has no exportable password; a temporary password is set |',
-  '| every table (incl. audit_trails, urp_activity, recycle_bin, udf, loans, chart of accounts, message config) | legacy_records (verbatim JSON) | nothing is lost; deleted (recycle-bin) records stay archived, not active |'
+  '| urp_users | users (owner "admin") | Vyapar has no exportable password; a one-off temporary password is set (replaced by your own sign-in when you restore with "Keep my current users, passwords and settings") |',
+  '| every table (incl. audit_trails, urp_activity, recycle_bin, udf, loans, chart of accounts, message config) | legacy_records (verbatim JSON) | nothing is lost; deleted (recycle-bin) records stay archived, not active. Only a set Vyapar passcode / PIN / token is not copied |'
 ]

@@ -12,6 +12,8 @@ import { JS1_EXT, buildDatabaseFromJs1, exportJs1, readJs1, summarizeJs1, writeJ
 import { createBackup, replaceDatabaseFile } from '../../backup'
 import { reopenDatabase } from '../../database'
 import { convertVyapar, createTargetDb, extractVyp } from '../../legacy/vyapar'
+import { carryOverInstallation, type CarryOverResult } from '../../legacy/carryOver'
+import { validateDatabaseFile } from '../../db'
 import { renderReport, validateConversion } from '../../legacy/vyaparValidate'
 
 const stamp = (): string => new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')
@@ -62,6 +64,17 @@ export const legacyRoutes: RouteMap = {
       // Rebuild into a separate file first; the live database is untouched until everything checked out.
       const staging = join(runtime.paths.dataDir, `restore-staging-${randomBytes(4).toString('hex')}.db`)
       buildDatabaseFromJs1(data, staging)
+      // A converted backup holds only a one-off temporary password. The owner who restores is already signed in and has confirmed,
+      // so this installation's accounts (hashes copied as they are) and device settings are kept: the existing password keeps working.
+      let carried: CarryOverResult | null = null
+      try {
+        if (data.source?.kind === 'vyapar-conversion' && a.keepAccounts !== false) carried = carryOverInstallation(c.ctx.db, staging)
+        const check = validateDatabaseFile(staging)
+        if (!check.ok) throw new Error(check.error ?? 'integrity check failed')
+      } catch (e) {
+        rmSync(staging, { force: true })
+        throw new AppError(`The restored data did not pass its checks, so nothing was changed: ${(e as Error).message}`, 'RESTORE')
+      }
       const safety = await createBackup(c.ctx.db, join(runtime.paths.backups, 'safety'), 'pre-restore')
       audit(c.ctx, 'restore', 'system', null, `Restoring JSON backup ${file}. Safety copy: ${safety.file}`)
       runtime.db!.close()
@@ -77,7 +90,7 @@ export const legacyRoutes: RouteMap = {
       }
       reopenDatabase()
       runtime.session = null
-      return { restored: true, safety: safety.file }
+      return { restored: true, safety: safety.file, carried }
     }
   },
 

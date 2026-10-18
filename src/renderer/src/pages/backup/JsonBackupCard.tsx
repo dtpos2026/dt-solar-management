@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { FileJson, FileUp, Repeat2, RotateCcw } from 'lucide-react'
 import { api } from '../../api'
 import { useCan } from '../../store'
-import { Badge, Button, Card, Field, Input, Modal, toast } from '../../components/ui'
+import { Badge, Button, Card, Checkbox, Field, Input, Modal, toast } from '../../components/ui'
 
 interface Inspect {
   file: string
@@ -30,6 +30,7 @@ export function JsonBackupCard(): JSX.Element | null {
   const [inspect, setInspect] = useState<Inspect | null>(null)
   const [confirm, setConfirm] = useState('')
   const [converted, setConverted] = useState<Converted | null>(null)
+  const [keepAccounts, setKeepAccounts] = useState(true)
   if (!can('backup.manage')) return null
 
   const run = async <T,>(key: string, fn: () => Promise<T>): Promise<T | undefined> => {
@@ -55,6 +56,7 @@ export function JsonBackupCard(): JSX.Element | null {
       const r = await api<Inspect | null>('jsonBackup.inspect', file ? { file } : {})
       if (r) {
         setConfirm('')
+        setKeepAccounts(true)
         setInspect(r)
       }
     })
@@ -62,9 +64,11 @@ export function JsonBackupCard(): JSX.Element | null {
   const restore = (): Promise<unknown> =>
     run('restore', async () => {
       if (!inspect) return
-      const r = await api<{ safety: string }>('jsonBackup.restore', { file: inspect.file, confirm })
+      const r = await api<{ safety: string; carried: { owner: boolean; disabled: Array<{ username: string }> } | null }>('jsonBackup.restore', { file: inspect.file, confirm, keepAccounts })
       setInspect(null)
-      toast.ok(`Backup restored. Safety copy of the previous data: ${r.safety}. Please sign in again.`)
+      const kept = r.carried?.owner ? ' Sign in with your current password.' : ' Please sign in again.'
+      const waiting = r.carried?.disabled.length ? ` ${r.carried.disabled.length} user(s) limited to specific firms were switched off until you assign firms (Users & Permissions).` : ''
+      toast.ok(`Backup restored. Safety copy of the previous data: ${r.safety}.${kept}${waiting}`)
       setTimeout(() => window.location.reload(), 1800)
     })
 
@@ -103,7 +107,8 @@ export function JsonBackupCard(): JSX.Element | null {
               {converted.failedChecks.length > 0 && <ul className="list-disc pl-5 text-bad">{converted.failedChecks.map((x) => <li key={x}>{x}</li>)}</ul>}
               {converted.warnings.length > 0 && <ul className="list-disc pl-5 text-warn">{converted.warnings.map((x) => <li key={x}>{x}</li>)}</ul>}
               <div>
-                After restoring, sign in as <b>admin</b> with the temporary password <b className="font-mono">{converted.password}</b> (you will be asked to change it).
+                When you restore it here, your own users, passwords and settings on this computer are kept, so you sign in with your current password. Only on a computer without an owner (or if you untick
+                that option) sign in as <b>admin</b> with the temporary password <b className="font-mono">{converted.password}</b> (you will be asked to change it).
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" onClick={() => api('legacy.openReport', { file: converted.report }).catch(toast.error)}>Open report</Button>
@@ -138,6 +143,19 @@ export function JsonBackupCard(): JSX.Element | null {
             <div className="rounded-lg bg-warn-soft p-3 text-warn">
               All current data on this computer will be replaced by this backup. A safety copy of the current data is saved first.
             </div>
+            {inspect.source?.kind === 'vyapar-conversion' && (
+              <div className="rounded-lg border border-line p-3">
+                <Checkbox
+                  checked={keepAccounts}
+                  onChange={setKeepAccounts}
+                  label={<span className="font-medium">Keep my current users, passwords and settings (recommended)</span>}
+                />
+                <p className="mt-1 text-muted">
+                  The converted file has no password of yours. With this on, you stay the owner with your existing password (copied as it is, never shown or reset), the other users keep theirs, and backup,
+                  printer and lock settings of this computer stay. Automatic backup keeps running without asking for a password.
+                </p>
+              </div>
+            )}
             <Field label='Type RESTORE to confirm'>
               <Input value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="RESTORE" />
             </Field>

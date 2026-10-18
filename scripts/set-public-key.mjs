@@ -10,7 +10,7 @@
  * It only accepts a PUBLIC Ed25519 key, refuses a private key, and prints the Key ID: the Settings -> License and About page of
  * the installed app and the Settings -> Signing key page of the panel must show the same ID.
  */
-import { createHash, createPrivateKey, createPublicKey } from 'crypto'
+import { createHash, createPublicKey } from 'crypto'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { execFileSync } from 'child_process'
 import { dirname, join } from 'path'
@@ -18,7 +18,6 @@ import { fileURLToPath } from 'url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const PUB = join(root, 'resources', 'license-public.pem')
-const PRIV = join(root, 'keys', 'license-private.pem')
 
 const keyId = (pem) => createHash('sha256').update(createPublicKey(pem).export({ type: 'spki', format: 'der' })).digest('hex').slice(0, 16).toUpperCase()
 const fail = (m) => {
@@ -28,8 +27,9 @@ const fail = (m) => {
 
 if (process.argv.includes('--show')) {
   const pem = existsSync(PUB) ? readFileSync(PUB, 'utf8') : ''
-  if (!pem.includes('BEGIN PUBLIC KEY')) fail('This build has no license public key yet (resources\\license-public.pem is NOT_CONFIGURED). Run: npm run license:setpub')
-  console.log(`License key ID of this build: ${keyId(pem)}`)
+  const all = pem.match(/-----BEGIN PUBLIC KEY-----[\s\S]*?-----END PUBLIC KEY-----/g) ?? []
+  if (!all.length) fail('This build has no license public key yet (resources\\license-public.pem is NOT_CONFIGURED). Run: npm run build (it finds your keys) or npm run license:setpub')
+  console.log(`License key ID(s) of this build: ${all.map(keyId).join(', ')}`)
   process.exit(0)
 }
 
@@ -56,9 +56,12 @@ try {
 } catch {
   fail('The public key text is damaged. Copy it again from the Super Admin panel.')
 }
-if (existsSync(PRIV)) {
-  const mine = createPublicKey(createPrivateKey(readFileSync(PRIV, 'utf8'))).export({ type: 'spki', format: 'pem' }).toString().replace(/\s/g, '')
-  if (mine !== pem.replace(/\s/g, '')) fail('keys\\license-private.pem in this folder belongs to a DIFFERENT key than the one you pasted. Delete or move that file if the pasted public key is the right one.')
+// Added to the keys this build already trusts (an installer may trust several of the owner's keys), never replacing them.
+const blocks = []
+const add = (p) => {
+  if (!blocks.some((b) => b.replace(/\s/g, '') === p.replace(/\s/g, ''))) blocks.push(p.trim())
 }
-writeFileSync(PUB, pem)
-console.log(`\nPublic key saved to resources\\license-public.pem\nLicense key ID of this build: ${keyId(pem)}\nIt must equal the Key ID shown in the Super Admin panel (Settings -> Signing key). Now run: npm run dist\n`)
+add(pem)
+if (existsSync(PUB)) for (const old of readFileSync(PUB, 'utf8').match(/-----BEGIN PUBLIC KEY-----[\s\S]*?-----END PUBLIC KEY-----/g) ?? []) add(old)
+writeFileSync(PUB, blocks.join('\n') + '\n')
+console.log(`\nPublic key added to resources\\license-public.pem (${blocks.length} key${blocks.length === 1 ? '' : 's'} trusted)\nKey ID added: ${keyId(pem)}  (the Super Admin panel shows it under Settings -> Signing key)\nNow run: npm run dist\n`)

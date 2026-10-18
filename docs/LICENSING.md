@@ -104,12 +104,19 @@ Every license, activation pass, certificate and command is signed in the Super A
 (`resources\license-public.pem`). If they differ, the desktop says **"License signature is invalid"**, shows
 "Waiting for approval" and never activates, whatever is approved in the panel.
 
-**Cause found in the field:** the repository holds `NOT_CONFIGURED` as the public key. Building from a freshly unzipped source folder
-used to create a NEW key pair silently, so the installer carried a public key that did not match the key loaded in the panel.
-`npm run build` now **stops** when the folder has neither `keys\license-private.pem` nor a configured public key, and says what to do:
-1. copy your existing `keys\license-private.pem` into `keys\` of the new folder, or
-2. Super Admin, Settings, Signing key, **Copy public key**, paste it into `resources\license-public.pem`, or
-3. only if no license was ever issued: `set DTSP_NEW_KEY=1` for that build, then load the new private key in the panel.
+**Cause found in the field:** the repository holds `NOT_CONFIGURED` as the public key and the private key is never committed, so
+building from a freshly unzipped source folder used to create a NEW key pair silently. The installer then carried a public key that did
+not match the key loaded in the panel.
+
+**Fixed (v1.5.1), no step for the owner:** `npm run build` (which `npm run dist` runs first) now decides which public key(s) the
+installer trusts: the key of this folder (`keys\license-private.pem`), the per-user key store (`%APPDATA%\DT Solar Pro Signing`), the
+signing keys left by **earlier source folders on this computer** (next to this folder, in its parent, Downloads, Desktop, Documents) and
+any public key already in `resources\license-public.pem`. All of them are written to `resources\license-public.pem` (public keys only;
+private keys are never copied into the installer) and the build prints their Key IDs. So whichever of your keys the Super Admin
+panel has loaded, the installer verifies it. A new key is created only when none exists anywhere on the computer (once, kept in the
+per-user store and in `keys\`, then load it in the panel and back it up on USB).
+If the panel's key was never on this computer: Super Admin, Settings, Signing key, **Copy public key**, then **`npm run license:setpub`**
+(adds it to the trusted keys; `npm run license:keyid` lists the Key IDs of the build) and build again.
 
 **How to check:** the panel shows the **Key ID** of the loaded key (Settings, Signing key). The installer shows the same ID under
 Settings, License and About, "License key ID". They must be equal. Every activation request carries the installer's key ID; the

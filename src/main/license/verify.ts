@@ -1,4 +1,4 @@
-import { createHash, createPublicKey, verify } from 'crypto'
+import { createHash, createPublicKey, verify, type KeyObject } from 'crypto'
 import type { BlockReason, LicenseCertificate, LicenseMode, LicensePayload } from './types'
 
 export function b64urlDecode(s: string): Buffer {
@@ -19,18 +19,46 @@ export function parseCertificate(text: string): LicenseCertificate {
   return obj
 }
 
+const PEM_BLOCK = /-----BEGIN PUBLIC KEY-----[\s\S]*?-----END PUBLIC KEY-----/g
+
 /**
- * Short identifier of a license public key ("A1B2C3D4E5F60718"): the first 8 bytes of SHA-256 over its SPKI DER, the same value
- * the Super Admin panel shows for its signing key (first 16 hex digits of the key fingerprint). Not a secret.
+ * The public keys this build trusts. resources/license-public.pem normally holds one key; a build made on a computer that used
+ * several signing keys earlier (each fresh source folder used to create its own) holds all of them, so a license signed by any of
+ * the owner's keys verifies. Every key in the file is a key the owner created.
+ */
+export function publicKeysOf(publicKeyPem: string): KeyObject[] {
+  const out: KeyObject[] = []
+  for (const block of (publicKeyPem || '').match(PEM_BLOCK) ?? []) {
+    try {
+      out.push(createPublicKey(block))
+    } catch {
+      /* a damaged block never verifies anything */
+    }
+  }
+  return out
+}
+
+const idOf = (k: KeyObject): string => createHash('sha256').update(k.export({ type: 'spki', format: 'der' }) as Buffer).digest('hex').slice(0, 16).toUpperCase()
+
+/**
+ * Short identifier of the license public key(s) ("A1B2C3D4E5F60718"): the first 8 bytes of SHA-256 over the SPKI DER, the same value
+ * the Super Admin panel shows for its signing key (first 16 hex digits of the key fingerprint). Several trusted keys are listed
+ * separated by commas. Not a secret.
  */
 export function publicKeyId(publicKeyPem: string): string {
-  try {
-    if (!publicKeyPem || !publicKeyPem.includes('BEGIN PUBLIC KEY')) return ''
-    const der = createPublicKey(publicKeyPem).export({ type: 'spki', format: 'der' }) as Buffer
-    return createHash('sha256').update(der).digest('hex').slice(0, 16).toUpperCase()
-  } catch {
-    return ''
+  return publicKeysOf(publicKeyPem).map(idOf).join(',')
+}
+
+/** True when `key` (any of the keys of the pem) verifies the signature. */
+function anyKeyVerifies(publicKeyPem: string, message: Buffer, signature: Buffer): boolean {
+  for (const k of publicKeysOf(publicKeyPem)) {
+    try {
+      if (verify(null, message, k, signature)) return true
+    } catch {
+      /* try the next key */
+    }
   }
+  return false
 }
 
 export const SIGNATURE_INVALID = 'License signature is invalid. The license file may have been modified.'
@@ -54,8 +82,7 @@ export function verifyCertificate(
   if (!publicKeyPem || !publicKeyPem.includes('BEGIN PUBLIC KEY')) return { ok: false, reason: 'License verification key is not configured in this build.' }
   let valid = false
   try {
-    const key = createPublicKey(publicKeyPem)
-    valid = verify(null, Buffer.from(cert.payload, 'utf8'), key, b64urlDecode(cert.signature))
+    valid = anyKeyVerifies(publicKeyPem, Buffer.from(cert.payload, 'utf8'), b64urlDecode(cert.signature))
   } catch {
     valid = false
   }
@@ -206,7 +233,7 @@ export function verifyCommand(cmd: SignedCommand, publicKeyPem: string): { ok: t
   if (!publicKeyPem || !publicKeyPem.includes('BEGIN PUBLIC KEY')) return { ok: false, reason: 'Verification key is not configured in this build.' }
   let valid = false
   try {
-    valid = verify(null, Buffer.from(COMMAND_DOMAIN + cmd.payload, 'utf8'), createPublicKey(publicKeyPem), b64urlDecode(cmd.signature))
+    valid = anyKeyVerifies(publicKeyPem, Buffer.from(COMMAND_DOMAIN + cmd.payload, 'utf8'), b64urlDecode(cmd.signature))
   } catch {
     valid = false
   }

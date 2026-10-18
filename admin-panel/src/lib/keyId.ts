@@ -8,7 +8,8 @@ export const keyIdOf = (fingerprint: string): string => fingerprint.replace(/[^0
 /** True only when both sides are known and differ. A request from an older build (no key ID) is never blocked by this check. */
 export function keyMismatch(requestKeyId: string | undefined, loadedFingerprint: string | undefined): boolean {
   if (!requestKeyId || !loadedFingerprint) return false
-  return requestKeyId.toUpperCase() !== keyIdOf(loadedFingerprint)
+  // A build made on a computer with several earlier signing keys trusts all of them: "ID1,ID2,...".
+  return !requestKeyId.toUpperCase().split(',').map((x) => x.trim()).includes(keyIdOf(loadedFingerprint))
 }
 
 export const keyMismatchText = (requestKeyId: string, loadedFingerprint: string): string =>

@@ -189,7 +189,7 @@ service cloud.firestore {
         && optStr(request.resource.data, 'phone', 60)
         && optStr(request.resource.data, 'address', 300)
         && optStr(request.resource.data, 'installToken', 64)
-        && optStr(request.resource.data, 'keyId', 32);
+        && optStr(request.resource.data, 'keyId', 200);
     }
 
     // Device heartbeat (online status, version, optional consented location). Id = the installation's secret token.

@@ -24,7 +24,9 @@
     "license:keygen": "node scripts/license-tool.mjs keygen",
     "license:issue": "node scripts/license-tool.mjs issue",
     "icons": "node scripts/build-icons.mjs",
-    "check": "npm run typecheck && npm test"
+    "check": "npm run typecheck && npm test",
+    "license:setpub": "node scripts/set-public-key.mjs",
+    "license:keyid": "node scripts/set-public-key.mjs --show"
   },
   "dependencies": {
     "better-sqlite3": "13.0.3"

@@ -103,3 +103,6 @@ admin-panel    Super Admin web panel (Firebase Auth + Firestore)
 scripts        License tool, icon builder, end-to-end smoke test
 tests          Automated tests (vitest)
 ```
+
+## Release notes and QC
+- v1.5: `docs/RELEASE_v1.5.md`, test report `docs/QC_UAT_REPORT_v1.5.md`, backup and recovery `docs/BACKUP_RECOVERY.md`

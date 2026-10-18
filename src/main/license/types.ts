@@ -83,6 +83,8 @@ export type BlockReason = 'license' | 'device' | 'connectivity' | 'activation' |
 
 export interface LicenseStatus {
   mode: LicenseMode
+  /** Identifier of the license public key built into this installation (compare with the Super Admin signing key). */
+  keyId: string
   /** null when writes are allowed. */
   blockReason: BlockReason | null
   /** An old installation that used the former local 15-day trial (data kept, read-only until activated). */

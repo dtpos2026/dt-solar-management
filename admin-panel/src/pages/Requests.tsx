@@ -6,17 +6,18 @@
  * computer with it in one transaction. Approving signs the certificate in this browser (no server) and can create
  * or link the client from the registration details the desktop wizard sent.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
+import { getDocs, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore'
 import { Building2, Check, Inbox, KeyRound, Loader2, Repeat, X } from 'lucide-react'
 import { Field, Modal, PageTitle } from '../components/ui'
-import { deviceFromSnap, devicesCol, findLicenseByKey, requestFromSnap, requestRef, requestsCol } from '../lib/licenses'
+import { deviceFromSnap, devicesCol, findLicenseByKey, requestFromSnap, requestsCol } from '../lib/licenses'
 import { approveRequest, rejectRequest, type ApproveOutcome } from '../lib/approve'
 import { loadLicenses } from '../lib/fleet'
 import { classifyActivation, holdsSlot, maskDeviceId, type ActivationPlan } from '../lib/terms'
 import { normaliseLicenseKey } from '../lib/crypto'
 import { useSigningKey } from '../lib/signingKey'
+import { keyMismatch, keyMismatchText } from '../lib/keyId'
 import { useAdminEmail, useCan } from '../lib/auth'
 import { fmtDateTime, errorMessage } from '../lib/format'
 import { clientFromRegistration, matchClient } from '../lib/clients'
@@ -102,21 +103,6 @@ export function Requests({ embedded = false }: { embedded?: boolean }) {
     }
   }, [allowed, pendingKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // A request whose computer meanwhile activated itself instantly (a slot was freed / the pass was published) needs
-  // nothing more: close it so it does not wait in the queue.
-  const closed = useRef(new Set<string>())
-  useEffect(() => {
-    if (!allowed || !licenses) return
-    const byKey = new Map(licenses.map((l) => [l.licenseKey, l]))
-    for (const r of pending) {
-      if (r.type !== 'activate' || closed.current.has(r.id)) continue
-      const l = byKey.get(normaliseLicenseKey(r.licenseKey ?? ''))
-      if (l?.devicesSummary?.[r.deviceId]?.status !== 'active') continue
-      closed.current.add(r.id)
-      void updateDoc(requestRef(r.id), { status: 'processed', message: 'Activated instantly (valid key, free device slot).', licenseId: l.id, processedAt: serverTimestamp(), processedBy: by }).catch(() => closed.current.delete(r.id))
-    }
-  }, [allowed, licenses, pending, by])
-
   const quickApprove = async (r: ActivationRequest) => {
     if (!key) return setMsg({ tone: 'warn', text: 'Load the signing key first (Settings → Signing key).' })
     setBusy(r.id)
@@ -192,6 +178,17 @@ export function Requests({ embedded = false }: { embedded?: boolean }) {
           }}
         />
       )}
+      {key && pending.some((r) => keyMismatch(r.keyId, key.fingerprint)) && (
+        <Notice
+          msg={{
+            tone: 'error',
+            text: (() => {
+              const r = pending.find((x) => keyMismatch(x.keyId, key.fingerprint))!
+              return keyMismatchText(r.keyId!, key.fingerprint)
+            })()
+          }}
+        />
+      )}
       <Notice msg={msg} onClose={() => setMsg(null)} />
       <Panel title={`Pending (${pending.length})`} className="mb-5">
         {loading ? (
@@ -227,6 +224,7 @@ export function Requests({ embedded = false }: { embedded?: boolean }) {
                     <td>
                       <div className="font-semibold">{r.deviceName || '-'}</div>
                       <ShortDevice id={r.deviceId} />
+                      {r.keyId && <div className={keyMismatch(r.keyId, key?.fingerprint) ? 'text-[12px] font-bold text-red-700' : 'text-[12px] text-[#7a6d92]'} title="Key ID of the license key built into this installer">{keyMismatch(r.keyId, key?.fingerprint) ? `Key mismatch (installer ${r.keyId})` : `Key ID ${r.keyId}`}</div>}
                       <div className="text-[12px] text-[#7a6d92]">
                         {r.appVersion}, {r.os}
                       </div>
@@ -249,8 +247,8 @@ export function Requests({ embedded = false }: { embedded?: boolean }) {
                         <div className="flex justify-end gap-2">
                           <button
                             className="btn btn-success btn-sm"
-                            disabled={!key || (r.type === 'activate' && !canApprove)}
-                            title={!key ? 'Load the signing key first' : r.type === 'activate' && !canApprove ? 'Needs devices.manage' : ''}
+                            disabled={!key || (r.type === 'activate' && !canApprove) || keyMismatch(r.keyId, key?.fingerprint)}
+                            title={!key ? 'Load the signing key first' : keyMismatch(r.keyId, key?.fingerprint) ? 'The installer was built with a different license key' : r.type === 'activate' && !canApprove ? 'Needs devices.manage' : ''}
                             onClick={() => (r.type === 'activate' ? setApproving(r) : quickApprove(r))}
                           >
                             {plan?.kind === 'reassign' ? <Repeat className="h-4 w-4" /> : <Check className="h-4 w-4" />}

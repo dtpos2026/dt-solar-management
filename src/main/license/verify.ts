@@ -1,4 +1,4 @@
-import { createPublicKey, verify } from 'crypto'
+import { createHash, createPublicKey, verify } from 'crypto'
 import type { BlockReason, LicenseCertificate, LicenseMode, LicensePayload } from './types'
 
 export function b64urlDecode(s: string): Buffer {
@@ -19,6 +19,28 @@ export function parseCertificate(text: string): LicenseCertificate {
   return obj
 }
 
+/**
+ * Short identifier of a license public key ("A1B2C3D4E5F60718"): the first 8 bytes of SHA-256 over its SPKI DER, the same value
+ * the Super Admin panel shows for its signing key (first 16 hex digits of the key fingerprint). Not a secret.
+ */
+export function publicKeyId(publicKeyPem: string): string {
+  try {
+    if (!publicKeyPem || !publicKeyPem.includes('BEGIN PUBLIC KEY')) return ''
+    const der = createPublicKey(publicKeyPem).export({ type: 'spki', format: 'der' }) as Buffer
+    return createHash('sha256').update(der).digest('hex').slice(0, 16).toUpperCase()
+  } catch {
+    return ''
+  }
+}
+
+export const SIGNATURE_INVALID = 'License signature is invalid. The license file may have been modified.'
+
+/** What a signature failure means for the person looking at the screen: almost always a build made with another signing key. */
+export function keyMismatchMessage(publicKeyPem: string): string {
+  const id = publicKeyId(publicKeyPem)
+  return `This installation was built with a different license key (key ID ${id || 'unknown'}) than the one Digital Target signs licenses with, so no license or activation pass can be verified here. Waiting will not fix it: install the official DT Solar Pro build from Digital Target, or ask Digital Target to rebuild it with the matching key.`
+}
+
 /** Device id of an activation pass: signed for any computer, valid only once this computer registered with it. */
 export const PASS_DEVICE = '*'
 
@@ -37,7 +59,7 @@ export function verifyCertificate(
   } catch {
     valid = false
   }
-  if (!valid) return { ok: false, reason: 'License signature is invalid. The license file may have been modified.' }
+  if (!valid) return { ok: false, reason: SIGNATURE_INVALID }
   let payload: LicensePayload
   try {
     payload = JSON.parse(b64urlDecode(cert.payload).toString('utf8')) as LicensePayload

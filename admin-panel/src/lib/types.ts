@@ -138,6 +138,8 @@ export interface ActivationRequest {
   phone?: string
   address?: string
   installToken?: string
+  /** Key ID of the license public key built into the installer (see lib/keyId.ts) */
+  keyId?: string
 }
 
 export interface AdminDoc {

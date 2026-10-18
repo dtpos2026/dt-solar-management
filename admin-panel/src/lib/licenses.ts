@@ -202,6 +202,7 @@ export function requestFromSnap(s: Snap): ActivationRequest {
     type: d.type === 'deactivate' ? 'deactivate' : 'activate',
     licenseKey: opt(d.licenseKey),
     licenseId: opt(d.licenseId),
+    keyId: opt(d.keyId),
     deviceId: str(d.deviceId),
     deviceName: str(d.deviceName),
     appVersion: str(d.appVersion),

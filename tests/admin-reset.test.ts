@@ -189,3 +189,39 @@ describe('Administrator password reset: command built by the Super Admin portal 
 function audits(db: import('../src/main/db').DB): string {
   return (db.prepare("SELECT action FROM audit_log WHERE entity = 'user'").all() as Array<{ action: string }>).map((r) => r.action).join(',')
 }
+
+describe('passwords with special characters work however they are typed', () => {
+  it('a new password with accents, symbols and spaces signs in in composed and decomposed form; old hashes still verify', async () => {
+    const { hashPassword, verifyPassword } = await import('../src/main/services/auth')
+    const nfc = 'Pässw0rd!@#€ 日本'.normalize('NFC')
+    const nfd = nfc.normalize('NFD')
+    expect(nfc).not.toBe(nfd)
+    const stored = hashPassword(nfd) // typed in decomposed form
+    expect(verifyPassword(nfc, stored)).toBe(true)
+    expect(verifyPassword(nfd, stored)).toBe(true)
+    expect(verifyPassword(nfc + 'x', stored)).toBe(false)
+    expect(stored.startsWith('scrypt$')).toBe(true)
+    expect(stored).not.toContain('sswOrd')
+    // a hash made before this fix (password used exactly as typed, composed) still verifies
+    const { scryptSync, randomBytes } = await import('crypto')
+    const salt = randomBytes(16)
+    const old = `scrypt$16384$8$1$${salt.toString('base64')}$${scryptSync(nfc, salt, 64, { N: 16384, r: 8, p: 1 }).toString('base64')}`
+    expect(verifyPassword(nfc, old)).toBe(true)
+    expect(verifyPassword(nfd, old)).toBe(true)
+    expect(verifyPassword('wrong', old)).toBe(false)
+  })
+  it('after a reset the new password works at sign-in, on the user tile and after a restart of the session', () => {
+    const owner = setupCtx()
+    applyResetCommand(owner.db, command(), ctx)
+    const first = login(owner.db, 'admin', TEMP)
+    const me = buildSessionUser(owner.db, first.user.id)
+    changeOwnPassword({ db: owner.db, user: me, firmId: owner.firmId }, TEMP, 'Néw#Pass 2026!')
+    expect(login(owner.db, 'admin', 'Néw#Pass 2026!').user.mustChangePassword).toBe(false)
+    expect(loginById(owner.db, first.user.id, 'Néw#Pass 2026!'.normalize('NFD')).user.isOwner).toBe(true)
+    expect(() => login(owner.db, 'admin', TEMP)).toThrow()
+    // the stored value is a single scrypt hash (not hashed twice, not plain)
+    const stored = (owner.db.prepare('SELECT password_hash FROM users WHERE is_owner = 1').get() as { password_hash: string }).password_hash
+    expect(stored.split('$')).toHaveLength(6)
+    expect(stored).not.toContain('Pass')
+  })
+})

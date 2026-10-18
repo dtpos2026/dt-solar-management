@@ -172,7 +172,7 @@ service cloud.firestore {
       allow create: if secretId(requestId, 20)
         && request.resource.data.status == 'pending'
         && request.resource.data.keys().hasOnly(['type', 'licenseKey', 'licenseId', 'deviceId', 'deviceName', 'appVersion',
-             'os', 'status', 'createdAt', 'companyName', 'ownerName', 'phone', 'address', 'installToken'])
+             'os', 'status', 'createdAt', 'companyName', 'ownerName', 'phone', 'address', 'installToken', 'keyId'])
         && request.resource.data.type in ['activate', 'deactivate']
         && request.resource.data.deviceId is string
         && request.resource.data.deviceId.size() >= 10
@@ -188,7 +188,8 @@ service cloud.firestore {
         && optStr(request.resource.data, 'ownerName', 200)
         && optStr(request.resource.data, 'phone', 60)
         && optStr(request.resource.data, 'address', 300)
-        && optStr(request.resource.data, 'installToken', 64);
+        && optStr(request.resource.data, 'installToken', 64)
+        && optStr(request.resource.data, 'keyId', 32);
     }
 
     // Device heartbeat (online status, version, optional consented location). Id = the installation's secret token.

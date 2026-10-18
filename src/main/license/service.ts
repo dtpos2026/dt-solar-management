@@ -31,7 +31,7 @@ import { hostname, networkInterfaces, platform, release } from 'os'
 import { join } from 'path'
 import type { ActivationNotice, ActivationResult, LicenseCertificate, LicensePayload, LicenseStatus, Registration, RemoteBlock, RemoteRecord } from './types'
 import { TRIAL_LIMITS } from './types'
-import { PASS_DEVICE, WRITE_MODES, blockReasonOf, evaluate, parseCertificate, verifyCertificate } from './verify'
+import { PASS_DEVICE, SIGNATURE_INVALID, WRITE_MODES, blockReasonOf, evaluate, keyMismatchMessage, parseCertificate, publicKeyId, verifyCertificate } from './verify'
 import { AppError } from '../services/context'
 import { FirestoreError, FirestoreRest, resolveFirestoreConfig, type FirestoreConfig, type RestOptions, type Write } from '../cloud/firestore'
 import { loadInstallToken, maskToken } from '../cloud/install'
@@ -426,6 +426,7 @@ export class LicenseService {
       pendingReason: s.pendingRequest?.reason ?? null,
       onlineConfigured: this.onlineConfigured,
       signingConfigured: this.signingConfigured,
+      keyId: publicKeyId(this.opts.publicKeyPem),
       maxFirms: payload ? payload.maxFirms : TRIAL_LIMITS.maxFirms,
       maxUsers: payload ? payload.maxUsers : TRIAL_LIMITS.maxUsers,
       // A detached license no longer receives remote settings - its certificate decides.
@@ -459,7 +460,7 @@ export class LicenseService {
     }
     const s0 = this.readState()
     const r = verifyCertificate(cert, this.opts.publicKeyPem, this.deviceId, (lid) => bindPass || this.passBound(s0, lid))
-    if (!r.ok) throw new AppError(r.reason, 'LICENSE')
+    if (!r.ok) throw new AppError(r.reason === SIGNATURE_INVALID ? keyMismatchMessage(this.opts.publicKeyPem) : r.reason, 'LICENSE')
     const before = this.status(true).payload
     const s = this.readState()
     if (bindPass && r.payload.deviceId === PASS_DEVICE) s.boundPass = { licenseId: r.payload.licenseId, deviceId: this.deviceId }
@@ -549,6 +550,8 @@ export class LicenseService {
       status: 'pending',
       installToken: this.installToken
     }
+    const kid = publicKeyId(this.opts.publicKeyPem)
+    if (kid) fields.keyId = kid
     if (reg) Object.assign(fields, { companyName: reg.companyName, ownerName: reg.ownerName, phone: reg.phone, address: reg.address })
     try {
       await client.commit([activationRequestWrite(id, fields)])
@@ -593,6 +596,10 @@ export class LicenseService {
       return { approval: 'The activation pass for this key could not be read, so it needs approval.' }
     }
     const v = verifyCertificate(cert, this.opts.publicKeyPem, did, () => true)
+    if (!v.ok && v.reason === SIGNATURE_INVALID) {
+      // Not a stale state: the pass is signed by a key this build does not trust (a build made with another signing key).
+      return { approval: keyMismatchMessage(this.opts.publicKeyPem) }
+    }
     if (!v.ok || v.payload.deviceId !== PASS_DEVICE) {
       return { approval: `The activation pass for this key could not be verified (${v.ok ? 'not a pass' : v.reason}), so it needs approval.` }
     }
@@ -699,7 +706,8 @@ export class LicenseService {
       throw new AppError(`${msg.replace(/[.\s]+$/, '')}. Contact Digital Target if you believe this is a mistake.`, 'LICENSE_REJECTED')
     }
     // Meanwhile a slot may have been freed or instant activation enabled: retry it (at most once a minute).
-    if (force || this.now() - this.lastInstantTry > 60_000) {
+    // A request Digital Target closed as processed (this computer already holds a slot) is answered at once, not within a minute.
+    if (force || state === 'processed' || this.now() - this.lastInstantTry > 60_000) {
       try {
         const r = await this.tryInstant(s.pendingRequest.licenseKey, s.registration ?? null)
         if ('state' in r) return r

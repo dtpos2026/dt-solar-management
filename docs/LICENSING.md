@@ -97,3 +97,22 @@ A license problem never deletes or changes business data.
 - `scripts/cloud-emulator-check.mjs`: the real REST calls against the real rules on the Firestore emulator, incl. suspend → next
   write blocked and device deactivated → device message.
 - `scripts/e2e-smoke.mjs`: wizard activation with a throwaway-key offline activation code.
+
+## One signing key for the Super Admin panel and every installer (v1.5.1)
+Every license, activation pass, certificate and command is signed in the Super Admin panel with the private key
+(`keys\license-private.pem`, never committed) and verified by the installer with the matching public key
+(`resources\license-public.pem`). If they differ, the desktop says **"License signature is invalid"**, shows
+"Waiting for approval" and never activates, whatever is approved in the panel.
+
+**Cause found in the field:** the repository holds `NOT_CONFIGURED` as the public key. Building from a freshly unzipped source folder
+used to create a NEW key pair silently, so the installer carried a public key that did not match the key loaded in the panel.
+`npm run build` now **stops** when the folder has neither `keys\license-private.pem` nor a configured public key, and says what to do:
+1. copy your existing `keys\license-private.pem` into `keys\` of the new folder, or
+2. Super Admin, Settings, Signing key, **Copy public key**, paste it into `resources\license-public.pem`, or
+3. only if no license was ever issued: `set DTSP_NEW_KEY=1` for that build, then load the new private key in the panel.
+
+**How to check:** the panel shows the **Key ID** of the loaded key (Settings, Signing key). The installer shows the same ID under
+Settings, License and About, "License key ID". They must be equal. Every activation request carries the installer's key ID; the
+panel marks a mismatch in red, refuses to approve it and never reports it as "Activated instantly". The desktop explains the same
+thing instead of waiting.
+

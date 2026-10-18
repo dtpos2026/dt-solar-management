@@ -25,6 +25,7 @@ import {
   writeAudit,
   writeLog
 } from './licenses'
+import { keyMismatch, keyMismatchText } from './keyId'
 import { buildCertPayload, classifyActivation, replaceableError, type CertTerms } from './terms'
 import type { ActivationRequest, Device, License } from './types'
 
@@ -296,6 +297,8 @@ export async function approveRequest(
   by: string,
   opts: { clientId?: string; clientLabel?: string; replaceDeviceId?: string; note?: string; licenseId?: string } = {}
 ): Promise<ApproveOutcome> {
+  // Never issue a certificate the requesting installer cannot verify (and never report it as activated).
+  if (req.type === 'activate' && req.keyId && keyMismatch(req.keyId, key.fingerprint)) throw new Error(keyMismatchText(req.keyId, key.fingerprint))
   if (req.type === 'deactivate') {
     await runTransaction(db, async (tx) => {
       const reqSnap = await tx.get(requestRef(req.id))

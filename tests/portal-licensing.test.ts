@@ -69,7 +69,8 @@ import {
   type LicenseInfo
 } from '../admin-panel/src/lib/devices'
 import { loadKey, signPayload, verifyCode } from '../admin-panel/src/lib/crypto'
-import { evaluate, parseCertificate, verifyCertificate } from '../src/main/license/verify'
+import { evaluate, keyMismatchMessage, parseCertificate, publicKeyId, verifyCertificate } from '../src/main/license/verify'
+import { keyIdOf, keyMismatch, keyMismatchText } from '../admin-panel/src/lib/keyId'
 
 const MIN = 60_000
 const HOUR = 60 * MIN
@@ -571,5 +572,50 @@ describe('location display', () => {
     expect(locationSource(null)).toBe('unavailable')
     expect(accuracyText(null)).toBe('')
     expect(validLocation({ ...base, source: 'gps' })).toBeNull()
+  })
+})
+
+
+describe('license key ID: installer and Super Admin panel agree on which key they use', () => {
+  it('the desktop key ID equals the panel key ID for the same key and differs for another key', async () => {
+    const { privateKey } = generateKeyPairSync('ed25519')
+    const pem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
+    const loaded = await loadKey(pem)
+    const desktopId = publicKeyId(loaded.publicPem)
+    expect(desktopId).toMatch(/^[0-9A-F]{16}$/)
+    expect(keyIdOf(loaded.fingerprint)).toBe(desktopId)
+    const other = await loadKey(generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }).toString())
+    expect(publicKeyId(other.publicPem)).not.toBe(desktopId)
+    // match / mismatch decision of the panel
+    expect(keyMismatch(desktopId, loaded.fingerprint)).toBe(false)
+    expect(keyMismatch(desktopId.toLowerCase(), loaded.fingerprint)).toBe(false)
+    expect(keyMismatch(publicKeyId(other.publicPem), loaded.fingerprint)).toBe(true)
+    expect(keyMismatch(undefined, loaded.fingerprint)).toBe(false) // an older build sends no key ID: never blocked by this check
+    expect(keyMismatch(desktopId, undefined)).toBe(false)
+    expect(keyMismatchText(publicKeyId(other.publicPem), loaded.fingerprint)).toContain(desktopId)
+    expect(keyMismatchMessage(other.publicPem)).toContain(publicKeyId(other.publicPem))
+    expect(publicKeyId('NOT_CONFIGURED')).toBe('')
+  })
+})
+
+describe('stale pending requests are closed wherever the administrator is', () => {
+  const lic = (over: Record<string, unknown> = {}) => ({ id: 'L1', licenseKey: 'DTSP-AAAA-BBBB-CCCC-DDDD', devicesSummary: { 'DEVICE-AAAAAAAA01': { status: 'active' } }, ...over }) as never
+  const req = (over: Record<string, unknown> = {}) => ({ id: 'r1', type: 'activate', status: 'pending', licenseKey: 'DTSP-AAAA-BBBB-CCCC-DDDD', deviceId: 'DEVICE-AAAAAAAA01', ...over }) as never
+  it('closes a request whose computer already holds an active slot, once per request', async () => {
+    const { satisfiedRequests } = await import('../admin-panel/src/lib/requestCleanupLogic')
+    expect(satisfiedRequests([req()], [lic()])).toHaveLength(1)
+    // not yet registered, another computer, released computer, release request: stay open
+    expect(satisfiedRequests([req()], [lic({ devicesSummary: {} })])).toHaveLength(0)
+    expect(satisfiedRequests([req({ deviceId: 'DEVICE-OTHER000002' })], [lic()])).toHaveLength(0)
+    expect(satisfiedRequests([req()], [lic({ devicesSummary: { 'DEVICE-AAAAAAAA01': { status: 'released' } } })])).toHaveLength(0)
+    expect(satisfiedRequests([req({ type: 'deactivate' })], [lic()])).toHaveLength(0)
+    expect(satisfiedRequests([req({ status: 'processed' })], [lic()])).toHaveLength(0)
+  })
+  it('never closes the request of an installer built with another signing key', async () => {
+    const { satisfiedRequests } = await import('../admin-panel/src/lib/requestCleanupLogic')
+    const loaded = await loadKey(generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }).toString())
+    expect(satisfiedRequests([req({ keyId: 'FFFFFFFFFFFFFFFF' })], [lic()], loaded.fingerprint)).toHaveLength(0)
+    expect(satisfiedRequests([req({ keyId: keyIdOf(loaded.fingerprint) })], [lic()], loaded.fingerprint)).toHaveLength(1)
+    expect(satisfiedRequests([req()], [lic()], loaded.fingerprint)).toHaveLength(1) // older build without a key ID
   })
 })

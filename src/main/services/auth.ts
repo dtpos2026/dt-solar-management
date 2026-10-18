@@ -13,8 +13,14 @@ const LOCK_MINUTES = 5
 
 export function hashPassword(password: string): string {
   const salt = randomBytes(16)
-  const hash = scryptSync(password, salt, KEYLEN, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P })
+  // NFC: the same visible password typed on another keyboard or pasted from a document is one password ("é" composed or not).
+  const hash = scryptSync(password.normalize('NFC'), salt, KEYLEN, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P })
   return `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${salt.toString('base64')}$${hash.toString('base64')}`
+}
+
+function scryptMatches(password: string, saltB64: string, expected: Buffer, n: string, r: string, p: string): boolean {
+  const actual = scryptSync(password, Buffer.from(saltB64, 'base64'), expected.length, { N: Number(n), r: Number(r), p: Number(p) })
+  return expected.length === actual.length && timingSafeEqual(expected, actual)
 }
 
 export function verifyPassword(password: string, stored: string): boolean {
@@ -22,12 +28,10 @@ export function verifyPassword(password: string, stored: string): boolean {
   if (parts.length !== 6 || parts[0] !== 'scrypt') return false
   const [, n, r, p, saltB64, hashB64] = parts
   const expected = Buffer.from(hashB64, 'base64')
-  const actual = scryptSync(password, Buffer.from(saltB64, 'base64'), expected.length, {
-    N: Number(n),
-    r: Number(r),
-    p: Number(p)
-  })
-  return expected.length === actual.length && timingSafeEqual(expected, actual)
+  // Exactly as typed first (every hash made before this fix), then the normalised form (hashes made now, or typed in another form).
+  if (scryptMatches(password, saltB64, expected, n, r, p)) return true
+  const nfc = password.normalize('NFC')
+  return nfc !== password && scryptMatches(nfc, saltB64, expected, n, r, p)
 }
 
 /** Passwords that are refused outright (most common choices; checked case-insensitively). */

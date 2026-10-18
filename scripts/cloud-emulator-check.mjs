@@ -42,6 +42,7 @@ await build({
       export { FirestoreRest, resolveFirestoreConfig, FirestoreError, timestamp } from './src/main/cloud/firestore'
       export { buildHeartbeat, heartbeatWrite } from './src/main/cloud/heartbeat'
       export { buildLocation } from './src/main/cloud/location'
+      export { publicKeyId } from './src/main/license/verify'
       export * as support from './src/main/cloud/support'
       export { configure, migrate, seedDefaults } from './src/main/db'
     `,
@@ -338,6 +339,45 @@ console.log('\nInstant activation (valid key -> active at once within the device
     rF = { error: e }
   }
   ok(rF.state === 'pending' && /not enabled for instant/i.test(rF.message), 'unknown key -> request for review (no pass)')
+}
+
+/* ------------------------------------------------ 5b. installer built with another signing key ------------------------------------------------ */
+console.log('\nInstaller built with a different signing key (the "License signature is invalid" / pending forever case)')
+{
+  const { createHash } = await import('node:crypto')
+  const keyK = 'DTSP-KEY0-MISM-0000-0001'
+  const lidK = 'LIC-KEYMIS-0001'
+  const expK = new Date(Date.now() + 300 * 86400000)
+  const passK = core.buildPayload({ deviceId: '*', businessName: 'Key Mismatch Solar', licenseId: lidK, issuedAt: new Date(Date.now() - 60000).toISOString(), expiresAt: expK.toISOString() })
+  await admin.patch(`licenses/${lidK}`, { licenseKey: keyK, businessName: 'Key Mismatch Solar', status: 'active', maxDevices: 1, activeDevices: 0, devicesSummary: {}, expiresAt: M.timestamp(expK) })
+  await admin.patch(`licenseStatus/${lidK}`, { status: 'active', expiresAt: M.timestamp(expK), deactivatedDevices: [] })
+  // the pass is signed with the Super Admin's key (keys); the installer below was built with ANOTHER key
+  await admin.patch(`activationPasses/${createHash('sha256').update(keyK).digest('hex')}`, { licenseId: lidK, cert: core.certificateToCode(core.signPayload(passK, keys.privatePem)) })
+  const other = core.generateKeyPair()
+  const mk = (name, pem) => new M.LicenseService({ dir: mkdtempSync(join(tmpdir(), `kmis-${name}-`)), machineId: `machine-km-${name}`, publicKeyPem: pem, firestore: { projectId: PROJECT, apiKey: 'emulator' }, appVersion: '1.5.0', env })
+  const wrong = mk('wrong', other.publicPem)
+  const rW = await wrong.activateOnline(keyK, reg)
+  ok(rW.state === 'pending' && /different license key \(key ID [0-9A-F]{16}\)/.test(rW.message) && /official DT Solar Pro build/i.test(rW.message), 'installer with another key: explained as a key mismatch, not "waiting for approval"')
+  ok(wrong.status(true).keyId === M.publicKeyId(other.publicPem) && M.publicKeyId(other.publicPem) !== M.publicKeyId(keys.publicPem), 'the installer reports its own key ID (different from the signing key ID)')
+  const reqW = await admin.get(`activationRequests/${wrong.status(true).pendingRequestId}`)
+  ok(reqW?.data.keyId === M.publicKeyId(other.publicPem) && reqW.data.status === 'pending', 'the request carries the installer key ID so the panel can show the mismatch')
+  ok(!(await admin.get(`licenses/${lidK}/devices/${wrong.deviceId}`)) && (await admin.get(`licenses/${lidK}`))?.data.activeDevices === 0, 'no device slot is taken by an installer that cannot verify the pass')
+  // the panel closes a request as "processed" when the computer shows as registered; the waiting computer must not sit on it
+  await admin.patch(`activationRequests/${wrong.status(true).pendingRequestId}`, { status: 'processed', message: 'closed' }, ['status', 'message'])
+  const pollW = await wrong.pollActivation(false)
+  ok(pollW.state === 'pending' && /different license key/.test(pollW.message), 'a request closed as processed is re-checked at once and still explains the mismatch')
+  // an installer built with the matching key activates at once; a second computer on this single-device license does not
+  const right = mk('right', keys.publicPem)
+  const rR = await right.activateOnline(keyK, reg)
+  ok(rR.state === 'approved' && right.status(true).mode === 'active' && right.status(true).canWrite, 'installer built with the matching key activates instantly')
+  ok(right.status(true).keyId === M.publicKeyId(keys.publicPem), 'its key ID equals the signing key ID')
+  const right2 = mk('right2', keys.publicPem)
+  const rR2 = await right2.activateOnline(keyK, reg)
+  ok(rR2.state === 'pending' && /device slot/i.test(rR2.message), 'single-device license: a second computer needs approval (no extra slot)')
+  const L2 = await admin.get(`licenses/${lidK}`)
+  ok(L2?.data.activeDevices === 1 && Object.keys(L2.data.devicesSummary ?? {}).length === 1, 'exactly one device registered after the repeated attempts')
+  const again = await right.activateOnline(keyK, reg)
+  ok(again.state === 'approved' && (await admin.get(`licenses/${lidK}`))?.data.activeDevices === 1, 'repeated activation of the same computer creates no duplicate record')
 }
 
 /* ------------------------------------------------ 6. deactivate -> reactivate (stale cached block) ------------------------------------------------ */

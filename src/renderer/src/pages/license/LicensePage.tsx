@@ -647,6 +647,11 @@ function StatusSection({ lic }: { lic: Lic }): JSX.Element {
           <div className="mt-2 flex items-center gap-1.5 text-[12px] text-muted">
             <Cpu className="h-3.5 w-3.5" /> Computer name: <span className="text-ink">{lic.deviceName || '-'}</span>
           </div>
+          {lic.keyId && (
+            <div className="mt-1 text-[12px] text-muted">
+              License key ID: <span className="font-mono font-semibold text-ink select-all">{lic.keyId}</span>
+            </div>
+          )}
           <div className="mt-1 text-[12px] text-muted">A license is tied to this Device ID. Share it with Digital Target when asked.</div>
         </Card>
         <Card title={<span className="inline-flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-brand" /> How licensing works</span>}>

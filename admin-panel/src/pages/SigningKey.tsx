@@ -4,6 +4,7 @@ import { Copy, KeyRound, ShieldAlert, Trash2, Upload, UserRound, Globe, FileKey2
 import type { ReactNode } from 'react'
 import { copy } from '../components/ui'
 import { useSigningKey } from '../lib/signingKey'
+import { keyIdOf } from '../lib/keyId'
 import { errorMessage } from '../lib/format'
 import { logActivitySafe } from '../lib/audit'
 
@@ -48,7 +49,8 @@ export function SigningKeyPanel() {
       ) : key ? (
         <div className="card p-5">
           <div className="flex items-center gap-2 font-bold text-green-700"><KeyRound className="h-5 w-5" />Signing key loaded</div>
-          <div className="mt-2 text-[13px]">Fingerprint: <span className="font-mono">{key.fingerprint}</span></div>
+          <div className="mt-2 text-[13px]">Key ID: <span className="font-mono font-bold">{keyIdOf(key.fingerprint)}</span> <span className="text-[#7a6d92]">(an installer built for this key shows the same ID under License and About)</span></div>
+          <div className="mt-1 text-[13px]">Fingerprint: <span className="font-mono">{key.fingerprint}</span></div>
           <div className="mt-3">
             <span className="label">Matching public key (must equal resources/license-public.pem in the app build)</span>
             <textarea className="input font-mono text-[12px]" rows={3} readOnly value={key.publicPem} />

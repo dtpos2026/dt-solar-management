@@ -21,6 +21,22 @@ if (existsSync(PRIV)) {
   } else console.log('[license] Signing key OK (keys/license-private.pem)')
 } else if (pubConfigured) {
   console.log('[license] Public key present (private key is kept elsewhere) — OK')
+} else if (process.env.DTSP_NEW_KEY !== '1') {
+  // A fresh checkout / unzip has neither the private key (never committed) nor a configured public key. Creating a new pair here
+  // silently produced installers whose public key differs from the key loaded in the Super Admin panel: every activation pass and
+  // certificate then fails with "License signature is invalid" and activations stay pending forever. Stop and say what to do.
+  console.error('\n==================================================================')
+  console.error(' NO LICENSE SIGNING KEY IN THIS FOLDER - BUILD STOPPED')
+  console.error('')
+  console.error(' Installers must carry the public key of the key loaded in the Super Admin panel.')
+  console.error(' Do ONE of these:')
+  console.error('  1. Copy your existing keys\\license-private.pem into this folder (keys\\), then build again.')
+  console.error('  2. Super Admin -> Settings -> Signing key -> "Copy public key", paste it into')
+  console.error('     resources\\license-public.pem (replace NOT_CONFIGURED), then build again.')
+  console.error('  3. Only if you have NEVER issued a license and want a brand new key:')
+  console.error('     set DTSP_NEW_KEY=1 for this build (then load keys\\license-private.pem in the panel).')
+  console.error('==================================================================\n')
+  process.exit(1)
 } else {
   const { privatePem, publicPem } = generateKeyPair()
   mkdirSync(dirname(PRIV), { recursive: true })

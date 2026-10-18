@@ -43,6 +43,8 @@ export interface LicenseStatus {
   lastCheckAt: string | null
   onlineConfigured: boolean
   signingConfigured: boolean
+  /** Key ID of the license public key built into this installation (matches the Super Admin signing key ID) */
+  keyId?: string
   maxFirms: number
   maxUsers: number
   poweredBy?: boolean

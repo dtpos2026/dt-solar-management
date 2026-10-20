@@ -29,6 +29,13 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     ]
   },
   {
+    group: 'CRM',
+    items: [
+      { key: 'crm.view', label: 'View leads, pipeline and follow-ups' },
+      { key: 'crm.manage', label: 'Add / edit leads, log calls and visits, move the pipeline, convert to customer' }
+    ]
+  },
+  {
     group: 'Quotations',
     items: [
       { key: 'quotations.view', label: 'View quotations' },
@@ -144,7 +151,7 @@ export const DEFAULT_ROLES: DefaultRole[] = [
     description: 'Quotations, sales invoices and customers.',
     permissions: [
       'dashboard.view', 'sales.view', 'sales.create', 'sales.edit', 'quotations.view', 'quotations.manage',
-      'inventory.view', 'customers.view', 'customers.manage', 'projects.view', 'accounts.view', 'whatsapp.send'
+      'inventory.view', 'customers.view', 'customers.manage', 'projects.view', 'accounts.view', 'whatsapp.send', 'crm.view', 'crm.manage'
     ]
   },
   {
@@ -160,7 +167,7 @@ export const DEFAULT_ROLES: DefaultRole[] = [
     description: 'Solar projects, material issues and project costs.',
     permissions: [
       'dashboard.view', 'projects.view', 'projects.manage', 'projects.financials', 'inventory.view', 'customers.view',
-      'quotations.view', 'quotations.manage', 'sales.view', 'expenses.view', 'expenses.manage', 'reports.view', 'whatsapp.send'
+      'quotations.view', 'quotations.manage', 'sales.view', 'expenses.view', 'expenses.manage', 'reports.view', 'whatsapp.send', 'crm.view'
     ]
   }
 ]
@@ -178,6 +185,7 @@ export const PERMISSION_UPGRADES: Array<{ version: number; perms: string[] }> = 
       'sales.delete', 'purchases.delete', 'inventory.delete', 'projects.delete', 'closing.manage', 'closing.reopen',
       'import.manage', 'printers.manage', 'templates.manage', 'whatsapp.send', 'support.use'
     ]
-  }
+  },
+  { version: 3, perms: ['crm.view', 'crm.manage'] }
 ]
-export const PERMISSION_CATALOGUE_VERSION = 2
+export const PERMISSION_CATALOGUE_VERSION = 3

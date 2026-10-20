@@ -24,6 +24,7 @@ import { UsersPage } from './pages/users/UsersPage'
 import { MultiFirmPage } from './pages/firms/MultiFirmPage'
 import { SettingsPage } from './pages/settings/SettingsPage'
 import { BackupPage } from './pages/backup/BackupPage'
+import { CrmPage } from './pages/crm/CrmPage'
 import { HelpPage } from './pages/help/HelpPage'
 import { WhatsAppPage } from './pages/whatsapp/WhatsAppPage'
 import { ClosingPage } from './pages/closing/ClosingPage'
@@ -116,6 +117,7 @@ function Boot(): JSX.Element {
         <Route path="/closing" element={<ClosingPage />} />
         <Route path="/help" element={<HelpPage />} />
         <Route path="/whatsapp" element={<WhatsAppPage />} />
+        <Route path="/crm" element={<CrmPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Shell>

@@ -9,6 +9,7 @@ import { createDocument } from './documents'
 import { createPayment, defaultAccountId } from './payments'
 import { saveProject, createMaterialMove } from './projects'
 import { createExpense } from './expenses'
+import { addActivity, saveLead, setStage } from './crm'
 
 export interface SetupInput {
   firm: FirmInput
@@ -220,4 +221,38 @@ export function seedDemoData(ctx: Ctx): void {
     quotationId: q,
     contractAmount: 1055400
   })
+
+  // CRM: a few enquiries at different stages so the pipeline, follow-ups and conversion can be seen straight away.
+  // Follow-up dates are calendar days on this computer (the same "today" the CRM uses), not UTC days.
+  const ahead = (n: number): string => {
+    const d = new Date()
+    d.setDate(d.getDate() + n)
+    const p = (x: number): string => String(x).padStart(2, '0')
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+  }
+  const lead = (name: string, v: { phone: string; city: string; interest: string; kw: number; value: number; source: string; follow: number | null; notes?: string }): number =>
+    saveLead(ctx, { name, phone: v.phone, city: v.city, interest: v.interest, systemKw: v.kw, expectedValue: v.value, source: v.source, nextFollowUp: v.follow === null ? null : ahead(v.follow), notes: v.notes })
+  const l1 = lead('Bilal Traders', { phone: '0301-5550101', city: 'Multan', interest: 'On-grid for a warehouse', kw: 15, value: 2400000, source: 'Facebook', follow: 2 })
+  addActivity(ctx, l1, { kind: 'call', summary: 'Owner wants to cut the electricity bill; asked for a site visit' })
+  addActivity(ctx, l1, { kind: 'visit', summary: 'Visited the roof, 15 kW fits on the south side', nextFollowUp: ahead(2) })
+  setStage(ctx, l1, 'site_visit')
+  const l2 = lead('Dr. Saima Clinic', { phone: '0302-5550102', city: 'Khanewal', interest: 'Hybrid system with battery backup', kw: 8, value: 1650000, source: 'Referral', follow: 0 })
+  addActivity(ctx, l2, { kind: 'whatsapp', summary: 'Sent photos of two similar clinics we installed' })
+  addActivity(ctx, l2, { kind: 'meeting', summary: 'Quotation explained, will decide this week', nextFollowUp: ahead(0) })
+  setStage(ctx, l2, 'quoted')
+  const l3 = lead('Noor Textile Mills', { phone: '0303-5550103', city: 'Multan', interest: 'Large on-grid plant', kw: 100, value: 14500000, source: 'Walk-in', follow: -2, notes: 'Decision maker is the managing director' })
+  addActivity(ctx, l3, { kind: 'meeting', summary: 'Presented payback calculation to the directors', nextFollowUp: ahead(-2) })
+  setStage(ctx, l3, 'negotiation')
+  const l4 = lead('Imran Khan', { phone: '0304-5550104', city: 'Bahawalpur', interest: 'Off-grid for a farmhouse', kw: 5, value: 780000, source: 'WhatsApp', follow: 1 })
+  void l4
+  const l5 = lead('Al-Hamd Poultry Farm', { phone: '0305-5550105', city: 'Vehari', interest: 'Solar for sheds and pumps', kw: 25, value: 3600000, source: 'Phone call', follow: 5 })
+  addActivity(ctx, l5, { kind: 'call', summary: 'Called back, will send electricity bills first', nextFollowUp: ahead(5) })
+  const l6 = lead('Hamza Electronics', { phone: '0306-5550106', city: 'Multan', interest: 'Shop rooftop system', kw: 6, value: 950000, source: 'Walk-in', follow: null })
+  addActivity(ctx, l6, { kind: 'call', summary: 'Compared our quotation with another installer' })
+  setStage(ctx, l6, 'lost', { reason: 'Chose a cheaper local installer' })
+  // a won lead that is the existing customer Green Valley School
+  const l7 = lead('Green Valley School', { phone: '061-6543210', city: 'Multan', interest: '25 kW on-grid for the school', kw: 25, value: 3150000, source: 'Referral', follow: null })
+  addActivity(ctx, l7, { kind: 'meeting', summary: 'Contract signed with the school management' })
+  ctx.db.prepare("UPDATE leads SET stage = 'won', party_id = ?, closed_at = datetime('now','localtime') WHERE id = ?").run(c2, l7)
+  ctx.db.prepare("INSERT INTO lead_activities (lead_id, kind, summary, user_id, username) VALUES (?, 'stage', 'Stage: Contacted to Won', ?, ?)").run(l7, ctx.user.id, ctx.user.username)
 }

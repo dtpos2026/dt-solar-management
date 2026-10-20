@@ -137,7 +137,8 @@ const screens = [
   ['29d-settings-support', '#/settings?tab=support'],
   ['29e-settings-whatsapp', '#/settings?tab=whatsapp'],
   ['29f-firms', '#/firms'],
-  ['29g-whatsapp', '#/whatsapp']
+  ['29g-whatsapp', '#/whatsapp'],
+  ['30-crm', '#/crm']
 ]
 for (const [name, hash] of screens) {
   await page.evaluate((h) => (window.location.hash = h), hash)
@@ -201,6 +202,35 @@ for (const [name, args] of prints) {
     return data.toString('base64')
   })
   if (b64) writeFileSync(join(out, `${name}.pdf`), Buffer.from(b64, 'base64'))
+}
+
+// ---- CRM: sample enquiries, follow-ups, stage changes, conversion to a customer, permissions ----
+{
+  const call = (m, a) => page.evaluate(([m, a]) => window.dt.call(m, a), [m, a])
+  const sum = await call('crm.summary')
+  if (sum.open !== 5 || sum.followUps.overdue !== 1 || sum.followUps.today !== 1 || sum.followUps.week !== 3 || sum.wonThisMonth.count !== 1 || sum.conversionPct !== 50) {
+    throw new Error('CRM sample data summary is wrong: ' + JSON.stringify(sum))
+  }
+  // the screen: pipeline columns, the lead detail with its timeline, logging a call
+  await page.evaluate(() => (window.location.hash = '#/crm'))
+  await page.waitForSelector('text=Noor Textile Mills', { timeout: 10000 })
+  await page.screenshot({ path: join(out, '30a-crm-pipeline.png') })
+  await page.click('text=Noor Textile Mills')
+  await page.waitForSelector('text=Log an activity', { timeout: 5000 })
+  await page.screenshot({ path: join(out, '30b-crm-lead.png') })
+  await page.locator('input[placeholder^="What happened"]').fill('Called the director, decision expected on Friday')
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await page.waitForSelector('text=Called the director', { timeout: 5000 })
+  await page.keyboard.press('Escape')
+  const id = await call('crm.save', { name: 'E2E Lead', phone: '0300-0000000', city: 'Multan', expectedValue: 500000, nextFollowUp: '2099-01-01' })
+  const lost = await page.evaluate(([i]) => window.dt.call('crm.setStage', { id: i, stage: 'lost' }).then(() => 'accepted', (e) => String(e?.message ?? e)), [id])
+  if (lost === 'accepted') throw new Error('a lead was marked lost without a reason')
+  const won = await call('crm.setStage', { id, stage: 'won' })
+  if (!won.partyId) throw new Error('winning a lead did not create the customer')
+  const party = (await call('parties.list', { type: 'customer' })).find((p) => p.id === won.partyId)
+  if (!party || party.name !== 'E2E Lead') throw new Error('customer created from the lead is missing')
+  await call('crm.delete', { id })
+  console.log('CRM OK: summary, timeline, lost needs a reason, won creates the customer')
 }
 
 // ---- Administrator password reset sent by Digital Target (signed, device-bound, one-time) ----

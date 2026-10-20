@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   BarChart3, CalendarCheck, LifeBuoy, MessageCircle, Bell, Boxes, Building2, CalendarDays, ChevronDown, DatabaseBackup, FileText, KeyRound, Landmark,
   LayoutDashboard, Lock, LogOut, Palette, Receipt, Search, Settings, ShieldCheck, ShoppingBag, ShoppingCart, SunMedium, Truck, Users, Check, AlertTriangle,
-  RectangleEllipsis
+  RectangleEllipsis, Target
 } from 'lucide-react'
 import { api } from '../api'
 import { useApp, useCan } from '../store'
@@ -24,6 +24,7 @@ const NAV: Array<{ to: string; label: string; icon: ReactNode; perm?: string | s
   { to: '/inventory', label: 'Inventory', icon: <Boxes />, perm: 'inventory.view' },
   { to: '/customers', label: 'Customers', icon: <Users />, perm: 'customers.view', section: 'Parties' },
   { to: '/suppliers', label: 'Suppliers', icon: <Truck />, perm: 'suppliers.view' },
+  { to: '/crm', label: 'CRM & Leads', icon: <Target />, perm: 'crm.view' },
   { to: '/projects', label: 'Solar Projects', icon: <SunMedium />, perm: 'projects.view', section: 'Projects & Money' },
   { to: '/accounts', label: 'Accounts', icon: <Landmark />, perm: 'accounts.view' },
   { to: '/expenses', label: 'Expenses', icon: <Receipt />, perm: 'expenses.view' },
@@ -242,6 +243,15 @@ function Notifications(): JSX.Element {
           const out0 = await api<{ total: number }>('products.list', { stock: 'out', limit: 1 })
           if (low.total) out.push({ text: `${low.total} product(s) are running low on stock`, to: '/inventory?stock=low', tone: 'warn' })
           if (out0.total) out.push({ text: `${out0.total} product(s) are out of stock`, to: '/inventory?stock=out', tone: 'bad' })
+        } catch {
+          /* ignore */
+        }
+      }
+      if (can('crm.view')) {
+        try {
+          const f = await api<{ overdue: number; today: number; week: number }>('crm.followUps')
+          if (f.overdue) out.push({ text: `${f.overdue} lead follow-up(s) are overdue`, to: '/crm', tone: 'bad' })
+          if (f.today) out.push({ text: `${f.today} lead follow-up(s) are due today`, to: '/crm', tone: 'warn' })
         } catch {
           /* ignore */
         }

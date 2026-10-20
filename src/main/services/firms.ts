@@ -331,7 +331,8 @@ const FIRM_RECORD_TABLES: Array<[table: string, label: string]> = [
   ['party_adjustments', 'party adjustment'],
   ['day_closings', 'day / month closing'],
   ['products', 'product'],
-  ['parties', 'customer / supplier']
+  ['parties', 'customer / supplier'],
+  ['leads', 'CRM lead']
 ]
 
 export function firmDeleteImpact(ctx: Ctx, id: number): { canDelete: boolean; blockedReason: string | null; records: Array<{ label: string; count: number }> } {

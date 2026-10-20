@@ -716,6 +716,50 @@ CREATE TABLE legacy_id_map (
 ALTER TABLE party_adjustments ADD COLUMN document_id INTEGER REFERENCES documents(id);
 CREATE INDEX idx_padj_doc ON party_adjustments(document_id);
 `
+  },
+  {
+    version: 10,
+    name: 'CRM: leads, follow-ups and activity timeline',
+    sql: /* sql */ `
+-- A sales enquiry before it becomes a customer. Belongs to the firm that is working on it.
+CREATE TABLE leads (
+  id INTEGER PRIMARY KEY,
+  firm_id INTEGER NOT NULL REFERENCES firms(id),
+  name TEXT NOT NULL,
+  phone TEXT,
+  email TEXT,
+  city TEXT,
+  address TEXT,
+  source TEXT,
+  interest TEXT,
+  system_kw REAL,
+  expected_value REAL NOT NULL DEFAULT 0,
+  stage TEXT NOT NULL DEFAULT 'new',
+  assigned_to INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  next_follow_up TEXT,
+  last_contact_at TEXT,
+  notes TEXT,
+  lost_reason TEXT,
+  party_id INTEGER REFERENCES parties(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  created_by INTEGER,
+  updated_at TEXT,
+  closed_at TEXT
+);
+CREATE INDEX idx_leads_stage ON leads(firm_id, stage);
+CREATE INDEX idx_leads_follow ON leads(firm_id, next_follow_up);
+-- Calls, WhatsApp chats, site visits, notes and stage changes of a lead, newest last.
+CREATE TABLE lead_activities (
+  id INTEGER PRIMARY KEY,
+  lead_id INTEGER NOT NULL REFERENCES leads(id),
+  kind TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  user_id INTEGER,
+  username TEXT
+);
+CREATE INDEX idx_lead_act ON lead_activities(lead_id, at);
+`
   }
 ]
 

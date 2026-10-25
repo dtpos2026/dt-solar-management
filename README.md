@@ -9,6 +9,7 @@ licenses through Firebase on the free Spark plan (Firestore + Auth only, no Clou
 
 ## Features
 - **CRM:** leads with a drag-and-drop pipeline (New, Contacted, Site visit, Quotation sent, Negotiation, Won, Lost), follow-up dates with reminders in the notification bell, a call / WhatsApp / visit timeline, win a lead to create the customer and start a quotation
+- **Standard or Customizable mode:** Settings, "Simple / Customize". Standard is the software exactly as before. Customizable gives Vyapar-style on/off switches for the menu modules, invoice and bill fields, product, customer and project forms (a simple project record or full costing), a one-click "Simple shop" setup, and optional easy delete of invoices that have payments
 - Multi-firm (firms can share inventory and parties; each firm keeps its own ledgers and reports), multi-user with roles and permissions, audit log
 - Products, stock at moving-average cost, warehouses, serial numbers, warranty, stock adjustments and transfers
 - Quotations → sales orders → delivery challans → invoices, returns/credit notes, purchases, purchase orders, returns

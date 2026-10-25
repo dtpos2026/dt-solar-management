@@ -17,6 +17,7 @@
 import { DOC_TYPES, DocType } from '../../shared/docTypes'
 import { EPS, num, round2, round3, round4 } from '../../shared/money'
 import { computeTotals, ComputedTotals } from '../../shared/totals'
+import { optionOn } from '../../shared/options'
 import {
   AppError,
   Ctx,
@@ -736,7 +737,9 @@ function blockReason(ctx: Ctx, d: DocRow): { message: string; code: string } | n
     )
     .all(d.id) as Array<{ number: string }>
   // A paid purchase may be deleted: its payments are not lost, they become unallocated advance with the supplier (same as a cancel).
-  if (alloc.length && d.doc_type !== 'purchase_invoice') {
+  // Customizable mode, "delete even after payments": the payment stays as the party's advance, exactly like a purchase.
+  const easy = optionOn({ ui_mode: getSetting(db, 'ui_mode', 'standard'), ui_options: getSetting(db, 'ui_options', {}) }, 'data.easy_delete')
+  if (alloc.length && d.doc_type !== 'purchase_invoice' && !easy) {
     return {
       message: `${d.number} has payments allocated to it (${alloc.map((a) => a.number).join(', ')}), so it cannot be deleted. ${VOID_HINT}`,
       code: 'VALIDATION'

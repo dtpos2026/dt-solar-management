@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { api } from '../api'
 import { useApp, useCan } from '../store'
+import { optionOn } from '@shared/options'
 import { Button, Field, Input, Modal, confirmDialog, cx, toast } from './ui'
 import { THEMES, applyTheme, getTheme } from '../lib/theme'
 import { date, label as nice } from '../lib/format'
@@ -16,21 +17,21 @@ import { SETTINGS_ENTRY_PERMS } from '../pages/settings/sections'
 import { PIN_RE, PinInput } from '../pages/users/PinInput'
 import { LocationConsent } from './LocationConsent'
 
-const NAV: Array<{ to: string; label: string; icon: ReactNode; perm?: string | string[]; section?: string }> = [
+const NAV: Array<{ to: string; label: string; icon: ReactNode; perm?: string | string[]; section?: string; opt?: string }> = [
   { to: '/', label: 'Dashboard', icon: <LayoutDashboard />, perm: 'dashboard.view' },
   { to: '/sales', label: 'Sales', icon: <ShoppingCart />, perm: 'sales.view', section: 'Trading' },
-  { to: '/quotations', label: 'Quotations', icon: <FileText />, perm: 'quotations.view' },
-  { to: '/purchases', label: 'Purchases', icon: <ShoppingBag />, perm: 'purchases.view' },
+  { to: '/quotations', label: 'Quotations', icon: <FileText />, perm: 'quotations.view', opt: 'mod.quotations' },
+  { to: '/purchases', label: 'Purchases', icon: <ShoppingBag />, perm: 'purchases.view', opt: 'mod.purchases' },
   { to: '/inventory', label: 'Inventory', icon: <Boxes />, perm: 'inventory.view' },
   { to: '/customers', label: 'Customers', icon: <Users />, perm: 'customers.view', section: 'Parties' },
   { to: '/suppliers', label: 'Suppliers', icon: <Truck />, perm: 'suppliers.view' },
-  { to: '/crm', label: 'CRM & Leads', icon: <Target />, perm: 'crm.view' },
-  { to: '/projects', label: 'Solar Projects', icon: <SunMedium />, perm: 'projects.view', section: 'Projects & Money' },
-  { to: '/accounts', label: 'Accounts', icon: <Landmark />, perm: 'accounts.view' },
-  { to: '/expenses', label: 'Expenses', icon: <Receipt />, perm: 'expenses.view' },
-  { to: '/closing', label: 'Day Closing', icon: <CalendarCheck />, perm: 'closing.manage' },
-  { to: '/reports', label: 'Reports', icon: <BarChart3 />, perm: ['reports.view', 'reports.profit'] },
-  { to: '/whatsapp', label: 'WhatsApp', icon: <MessageCircle />, perm: 'whatsapp.send' },
+  { to: '/crm', label: 'CRM & Leads', icon: <Target />, perm: 'crm.view', opt: 'mod.crm' },
+  { to: '/projects', label: 'Solar Projects', icon: <SunMedium />, perm: 'projects.view', section: 'Projects & Money', opt: 'mod.projects' },
+  { to: '/accounts', label: 'Accounts', icon: <Landmark />, perm: 'accounts.view', opt: 'mod.accounts' },
+  { to: '/expenses', label: 'Expenses', icon: <Receipt />, perm: 'expenses.view', opt: 'mod.expenses' },
+  { to: '/closing', label: 'Day Closing', icon: <CalendarCheck />, perm: 'closing.manage', opt: 'mod.closing' },
+  { to: '/reports', label: 'Reports', icon: <BarChart3 />, perm: ['reports.view', 'reports.profit'], opt: 'mod.reports' },
+  { to: '/whatsapp', label: 'WhatsApp', icon: <MessageCircle />, perm: 'whatsapp.send', opt: 'mod.whatsapp' },
   { to: '/users', label: 'Users & Permissions', icon: <ShieldCheck />, perm: ['users.manage', 'audit.view'], section: 'Administration' },
   { to: '/firms', label: 'Multi-Firm Settings', icon: <Building2 />, perm: 'firms.manage' },
   { to: '/backup', label: 'Backup & Restore', icon: <DatabaseBackup />, perm: ['backup.manage', 'import.manage'] },
@@ -41,7 +42,13 @@ const NAV: Array<{ to: string; label: string; icon: ReactNode; perm?: string | s
 function Sidebar(): JSX.Element {
   const can = useCan()
   const firm = useApp((s) => s.firm)
-  const items = NAV.filter((n) => !n.perm || (Array.isArray(n.perm) ? n.perm.some(can) : can(n.perm)))
+  const settings = useApp((s) => s.settings)
+  // Each item belongs to the section above it, so a section label stays when its first item is hidden.
+  let carry = ''
+  const items = NAV.map((n) => {
+    if (n.section) carry = n.section
+    return { ...n, sec: carry }
+  }).filter((n) => (!n.perm || (Array.isArray(n.perm) ? n.perm.some(can) : can(n.perm))) && (!n.opt || optionOn(settings, n.opt)))
   let lastSection = ''
   return (
     <aside className="no-print flex w-[232px] shrink-0 flex-col bg-side text-side-ink max-lg:w-[68px]">
@@ -65,8 +72,8 @@ function Sidebar(): JSX.Element {
       </div>
       <nav className="flex-1 overflow-x-hidden overflow-y-auto px-3 pb-3 max-lg:px-2">
         {items.map((n) => {
-          const header = n.section && n.section !== lastSection ? n.section : null
-          if (n.section) lastSection = n.section
+          const header = n.sec && n.sec !== lastSection ? n.sec : null
+          lastSection = n.sec
           return (
             <div key={n.to}>
               {header && (

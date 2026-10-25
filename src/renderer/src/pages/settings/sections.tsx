@@ -9,6 +9,7 @@ import { WhatsAppSection } from './WhatsAppSection'
 import { SupportSection } from './SupportSection'
 import { CloudSection } from './CloudSection'
 import { LicenseSection } from './LicenseSection'
+import { CustomizeSection } from './CustomizeSection'
 
 export interface SettingsSection {
   key: string
@@ -19,6 +20,7 @@ export interface SettingsSection {
 }
 
 export const EXTRA_SECTIONS: SettingsSection[] = [
+  { key: 'customize', label: 'Simple / Customize', perms: ['settings.manage'], component: CustomizeSection },
   { key: 'templates', label: 'Invoice templates', perms: ['templates.manage'], component: TemplatesSection },
   { key: 'printers', label: 'Printers', perms: ['printers.manage'], component: PrintersSection },
   { key: 'whatsapp', label: 'WhatsApp', perms: ['settings.manage', 'whatsapp.send'], component: WhatsAppSection },

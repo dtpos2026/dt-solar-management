@@ -1,6 +1,7 @@
 import type { DB } from '../db'
 import { DEFAULT_SETTINGS } from '../db'
 import { num, round2 } from '../../shared/money'
+import { normalizeOptions } from '../../shared/options'
 import { AppError, Ctx, audit, getSetting, optText, requirePerm, requireText, setSetting } from './context'
 
 /** Settings a user may change, with validators. */
@@ -38,7 +39,10 @@ const VALIDATORS: Record<string, (v: unknown) => unknown> = {
   whatsapp_mode: (v) => (['web', 'chat_link'].includes(String(v)) ? String(v) : 'web'),
   whatsapp_country_code: (v) => String(v ?? '92').replace(/\D/g, '').slice(0, 4) || '92',
   whatsapp_notifications: (v) => v === true,
-  backup_on_day_close: (v) => !!v
+  backup_on_day_close: (v) => !!v,
+  // v1.7
+  ui_mode: (v) => (String(v) === 'custom' ? 'custom' : 'standard'),
+  ui_options: (v) => normalizeOptions(v)
 }
 
 /** Which permission is needed to change a setting (default: settings.manage). */

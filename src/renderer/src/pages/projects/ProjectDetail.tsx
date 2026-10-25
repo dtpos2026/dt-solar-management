@@ -19,6 +19,7 @@ import { PROJECT_STATUS_LABELS, SYSTEM_TYPE_LABELS } from '@shared/docTypes'
 import { ArchiveRestore } from 'lucide-react'
 import { ProjectDeleteDialog, restoreProjectFlow } from './projectActions'
 import { DateInput } from '../../components/DateInput'
+import { useOptions } from '../../lib/options'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Tab = 'overview' | 'ledger' | 'materials' | 'documents' | 'files'
@@ -27,6 +28,9 @@ export function ProjectDetail(): JSX.Element {
   const { id } = useParams()
   const nav = useNavigate()
   const can = useCan()
+  const opt = useOptions()
+  const costing = opt('project.costing')
+  const details = opt('project.details')
   const [tab, setTab] = useState<Tab>('overview')
   const [edit, setEdit] = useState(false)
   const [move, setMove] = useState<'issue' | 'return' | null>(null)
@@ -41,7 +45,7 @@ export function ProjectDetail(): JSX.Element {
   }
   if (!p) return <Loading />
   const f = p.financials
-  const fin = f.netProfit !== undefined
+  const fin = f.netProfit !== undefined && costing
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -74,11 +78,11 @@ export function ProjectDetail(): JSX.Element {
           {can('quotations.manage') && <Button size="sm" variant="soft" icon={<FilePlus2 className="h-4 w-4" />} onClick={() => nav(`/doc/new/quotation?project=${p.id}&party=${p.customer_id ?? ''}`)}>Quotation</Button>}
           {can('sales.create') && <Button size="sm" variant="soft" icon={<FilePlus2 className="h-4 w-4" />} onClick={() => nav(`/doc/new/sale_invoice?project=${p.id}&party=${p.customer_id ?? ''}`)}>Sales invoice</Button>}
           {can('accounts.manage') && <Button size="sm" variant="soft" icon={<HandCoins className="h-4 w-4" />} onClick={() => setPay('in')}>Customer payment / advance</Button>}
-          {can('projects.manage') && <Button size="sm" variant="soft" icon={<PackageMinus className="h-4 w-4" />} onClick={() => setMove('issue')}>Issue materials</Button>}
-          {can('projects.manage') && <Button size="sm" variant="ghost" icon={<PackagePlus className="h-4 w-4" />} onClick={() => setMove('return')}>Return materials</Button>}
-          {can('purchases.create') && <Button size="sm" variant="soft" icon={<ShoppingBag className="h-4 w-4" />} onClick={() => nav(`/doc/new/purchase_invoice?project=${p.id}`)}>Purchase for site</Button>}
-          {can('expenses.manage') && <Button size="sm" variant="soft" icon={<Receipt className="h-4 w-4" />} onClick={() => setExpense(true)}>Labor / expense</Button>}
-          {can('accounts.manage') && <Button size="sm" variant="ghost" icon={<HandCoins className="h-4 w-4" />} onClick={() => setPay('out')}>Pay supplier / contractor</Button>}
+          {costing && can('projects.manage') && <Button size="sm" variant="soft" icon={<PackageMinus className="h-4 w-4" />} onClick={() => setMove('issue')}>Issue materials</Button>}
+          {costing && can('projects.manage') && <Button size="sm" variant="ghost" icon={<PackagePlus className="h-4 w-4" />} onClick={() => setMove('return')}>Return materials</Button>}
+          {costing && can('purchases.create') && <Button size="sm" variant="soft" icon={<ShoppingBag className="h-4 w-4" />} onClick={() => nav(`/doc/new/purchase_invoice?project=${p.id}`)}>Purchase for site</Button>}
+          {costing && can('expenses.manage') && <Button size="sm" variant="soft" icon={<Receipt className="h-4 w-4" />} onClick={() => setExpense(true)}>Labor / expense</Button>}
+          {costing && can('accounts.manage') && <Button size="sm" variant="ghost" icon={<HandCoins className="h-4 w-4" />} onClick={() => setPay('out')}>Pay supplier / contractor</Button>}
         </div>
       </Card>
 
@@ -90,14 +94,14 @@ export function ProjectDetail(): JSX.Element {
         {fin && <StatCard label="Total direct cost" value={money(f.totalDirectCost)} icon={<PackageMinus className="h-5 w-5" />} tone="warn" sub={`Material ${money(f.materialCost)}`} />}
         {fin && <StatCard label="Gross profit" value={<span className={f.grossProfit < 0 ? 'text-bad' : ''}>{money(f.grossProfit)}</span>} icon={<Zap className="h-5 w-5" />} tone="sun" />}
         {fin && <StatCard label="Net profit" value={<span className={f.netProfit < 0 ? 'text-bad' : 'text-ok'}>{money(f.netProfit)}</span>} icon={<Zap className="h-5 w-5" />} tone={f.netProfit < 0 ? 'bad' : 'ok'} sub={`Margin ${pct(f.marginPct)}`} />}
-        <StatCard label="Supplier / contractor dues" value={money(f.supplierOutstanding)} icon={<ShoppingBag className="h-5 w-5" />} tone="warn" sub={f.pendingPurchaseOrders ? `${f.pendingPurchaseOrders} open PO (${money(f.pendingPurchaseValue)})` : undefined} />
+        {costing && <StatCard label="Supplier / contractor dues" value={money(f.supplierOutstanding)} icon={<ShoppingBag className="h-5 w-5" />} tone="warn" sub={f.pendingPurchaseOrders ? `${f.pendingPurchaseOrders} open PO (${money(f.pendingPurchaseValue)})` : undefined} />}
       </div>
 
-      <Tabs value={tab} onChange={setTab} tabs={[{ key: 'overview', label: 'Overview' }, { key: 'ledger', label: 'Project ledger' }, { key: 'materials', label: 'Material usage' }, { key: 'documents', label: 'Issues & returns' }, { key: 'files', label: 'Documents & files', count: p.attachments.length }]} />
+      <Tabs value={tab} onChange={setTab} tabs={[{ key: 'overview', label: 'Overview' }, ...(costing ? [{ key: 'ledger', label: 'Project ledger' }, { key: 'materials', label: 'Material usage' }, { key: 'documents', label: 'Issues & returns' }] : []), { key: 'files', label: 'Documents & files', count: p.attachments.length }] as Array<{ key: Tab; label: string; count?: number }>} />
 
       {tab === 'overview' && (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          {fin ? (
+          {!costing ? null : fin ? (
             <Card title="Profit calculation" className="lg:col-span-2">
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                 <div className="text-[13.5px]">
@@ -138,12 +142,12 @@ export function ProjectDetail(): JSX.Element {
           ) : (
             <Card className="lg:col-span-2"><Empty title="Profit details are hidden">You do not have permission to view project costs and profit.</Empty></Card>
           )}
-          <Card title="Project info">
+          <Card title="Project info" className={costing ? '' : 'lg:col-span-3'}>
             <div className="mb-3"><div className="mb-1 flex justify-between text-[12.5px]"><span className="text-muted">Progress</span><span className="font-semibold">{p.progress}%</span></div><Progress value={p.progress} tone={p.progress >= 100 ? 'ok' : 'brand'} /></div>
-            <Kv label={<span className="inline-flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" />Start</span>}>{date(p.start_date)}</Kv>
-            <Kv label="Expected completion">{date(p.expected_end_date)}</Kv>
+            {details && <Kv label={<span className="inline-flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" />Start</span>}>{date(p.start_date)}</Kv>}
+            {details && <Kv label="Expected completion">{date(p.expected_end_date)}</Kv>}
             {p.completed_date && <Kv label="Completed">{date(p.completed_date)}</Kv>}
-            <Kv label="Project manager">{p.manager_name ?? '-'}</Kv>
+            {details && <Kv label="Project manager">{p.manager_name ?? '-'}</Kv>}
             {p.quotation_number && <Kv label="Quotation"><button type="button" className="text-brand hover:underline cursor-pointer" onClick={() => nav(`/doc/${p.quotation_id}`)}>{p.quotation_number}</button></Kv>}
             <Kv label="Created by">{p.created_by_name ?? '-'}</Kv>
             {p.warranty_info && <div className="mt-3 rounded-lg bg-surface-2 p-3 text-[12.5px]"><div className="mb-1 font-semibold">Warranty</div><div className="whitespace-pre-wrap text-muted">{p.warranty_info}</div></div>}

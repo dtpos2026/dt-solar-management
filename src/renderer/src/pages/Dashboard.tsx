@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { api } from '../api'
 import { useApp, useCan } from '../store'
+import { optionOn } from '@shared/options'
 import { Badge, Button, Card, Empty, Loading, PeriodPicker, Progress, Select, StatCard, toast } from '../components/ui'
 import { BarChart, Donut } from '../components/Charts'
 import { date, label, money, monthStart, pct, qty, statusTone, today } from '../lib/format'
@@ -15,6 +16,8 @@ export function Dashboard(): JSX.Element {
   const nav = useNavigate()
   const firm = useApp((s) => s.firm)
   const user = useApp((s) => s.user)
+  const settings = useApp((s) => s.settings)
+  const opt = (k: string): boolean => optionOn(settings, k)
   const [from, setFrom] = useState(monthStart())
   const [to, setTo] = useState(today())
   const [scope, setScope] = useState<'firm' | 'all'>('firm')
@@ -43,14 +46,14 @@ export function Dashboard(): JSX.Element {
   const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
   const quick = [
     { label: 'New Sale', icon: <ShoppingCart />, to: '/doc/new/sale_invoice', perm: 'sales.create', tone: 'bg-blue-500' },
-    { label: 'Create Quotation', icon: <FilePlus2 />, to: '/doc/new/quotation', perm: 'quotations.manage', tone: 'bg-emerald-500' },
-    { label: 'Add Purchase', icon: <ShoppingBag />, to: '/doc/new/purchase_invoice', perm: 'purchases.create', tone: 'bg-orange-500' },
-    { label: 'Receive Payment', icon: <HandCoins />, to: '/accounts?receive=1', perm: 'accounts.manage', tone: 'bg-teal-500' },
+    { label: 'Create Quotation', icon: <FilePlus2 />, to: '/doc/new/quotation', perm: 'quotations.manage', tone: 'bg-emerald-500', opt: 'mod.quotations' },
+    { label: 'Add Purchase', icon: <ShoppingBag />, to: '/doc/new/purchase_invoice', perm: 'purchases.create', tone: 'bg-orange-500', opt: 'mod.purchases' },
+    { label: 'Receive Payment', icon: <HandCoins />, to: '/accounts?receive=1', perm: 'accounts.manage', tone: 'bg-teal-500', opt: 'mod.accounts' },
     { label: 'Add Customer', icon: <UserPlus />, to: '/customers?new=1', perm: 'customers.manage', tone: 'bg-violet-500' },
     { label: 'Add Supplier', icon: <Truck />, to: '/suppliers?new=1', perm: 'suppliers.manage', tone: 'bg-sky-500' },
-    { label: 'New Project', icon: <SunMedium />, to: '/projects?new=1', perm: 'projects.manage', tone: 'bg-amber-500' },
-    { label: 'Add Expense', icon: <Receipt />, to: '/expenses?new=1', perm: 'expenses.manage', tone: 'bg-rose-500' }
-  ].filter((q) => can(q.perm))
+    { label: 'New Project', icon: <SunMedium />, to: '/projects?new=1', perm: 'projects.manage', tone: 'bg-amber-500', opt: 'mod.projects' },
+    { label: 'Add Expense', icon: <Receipt />, to: '/expenses?new=1', perm: 'expenses.manage', tone: 'bg-rose-500', opt: 'mod.expenses' }
+  ].filter((q) => can(q.perm) && (!('opt' in q) || opt((q as { opt: string }).opt)))
 
   return (
     <div className="space-y-5">
@@ -87,7 +90,7 @@ export function Dashboard(): JSX.Element {
                 <div className="text-[30px] leading-tight font-extrabold">Clean Energy<br />Better Tomorrow</div>
                 <div className="mt-2 text-[13.5px] text-white/80">Solar Solutions for Homes, Businesses &amp; Industries</div>
               </div>
-              <div className="flex gap-6 text-[13px]">
+              <div className={`flex gap-6 text-[13px]${opt('mod.projects') ? '' : ' hidden'}`}>
                 <div className="flex items-center gap-2"><Zap className="h-5 w-5 text-[#ffc24a]" /><div><div className="text-[18px] font-bold">{d ? qty(d.projectSummary.installedKw) : '-'} kW</div><div className="text-white/75">Installed capacity</div></div></div>
                 <div className="flex items-center gap-2"><Sun className="h-5 w-5 text-[#ffc24a]" /><div><div className="text-[18px] font-bold">{d ? d.projectSummary.active : '-'}</div><div className="text-white/75">Active projects</div></div></div>
                 <div className="flex items-center gap-2"><Leaf className="h-5 w-5 text-[#8bf00a]" /><div><div className="text-[18px] font-bold">{d ? qty(d.projectSummary.pipelineKw) : '-'} kW</div><div className="text-white/75">In pipeline</div></div></div>
@@ -174,7 +177,7 @@ export function Dashboard(): JSX.Element {
               </div>
 
               <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-                {can('projects.view') && (
+                {can('projects.view') && opt('mod.projects') && (
                   <Card title="Recent Solar Projects" actions={<Button size="sm" variant="ghost" onClick={() => nav('/projects')}>View all</Button>} pad={false}>
                     {d.recentProjects.length === 0 ? (
                       <Empty icon={<SunMedium />} title="No projects yet" />
@@ -229,7 +232,7 @@ export function Dashboard(): JSX.Element {
               ))}
             </div>
           </Card>
-          {d && (
+          {d && opt('mod.projects') && (
             <Card title="Project Summary">
               {d.projectSummary.total === 0 ? (
                 <Empty title="No projects yet" action={<Button size="sm" onClick={() => nav('/projects')}>Open projects</Button>}>

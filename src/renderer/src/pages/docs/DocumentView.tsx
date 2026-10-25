@@ -74,7 +74,7 @@ export function DocumentView(): JSX.Element {
   }
   const doDelete = async (): Promise<void> => {
     const message = meta.financial
-      ? `${meta.label} ${d.number} (${moneyFull(d.grand_total)}) will be removed permanently.${meta.stock !== 0 && !cancelled ? ' Its stock movements and serial numbers are reversed exactly like a cancellation.' : ''}${d.paid > 0 && d.doc_type === 'purchase_invoice' ? ` The ${moneyFull(d.paid)} already paid is kept as an advance with the supplier.` : ''} A full copy is kept in the audit log. This cannot be undone.`
+      ? `${meta.label} ${d.number} (${moneyFull(d.grand_total)}) will be removed permanently.${meta.stock !== 0 && !cancelled ? ' Its stock movements and serial numbers are reversed exactly like a cancellation.' : ''}${d.paid > 0 && meta.financial ? ` The ${moneyFull(d.paid)} already ${d.doc_type === 'purchase_invoice' ? 'paid is kept as an advance with the supplier' : 'received is kept as an advance with the customer'}.` : ''} A full copy is kept in the audit log. This cannot be undone.`
       : `${meta.label} ${d.number} will be removed permanently. This cannot be undone.`
     if (!(await confirmDialog({ title: `Delete ${d.number} permanently?`, message, danger: true, confirmLabel: 'Delete permanently' }))) return
     try {

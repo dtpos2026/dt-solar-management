@@ -233,6 +233,37 @@ for (const [name, args] of prints) {
   console.log('CRM OK: summary, timeline, lost needs a reason, won creates the customer')
 }
 
+// ---- Customizable mode: Simple shop setup hides modules and fields, Standard brings everything back ----
+{
+  const call = (m, a) => page.evaluate(([m, a]) => window.dt.call(m, a), [m, a])
+  const navHas = (text) => page.locator('aside a', { hasText: text }).count()
+  if ((await call('settings.get')).ui_mode !== 'standard') throw new Error('a new installation must start in Standard mode')
+  await page.evaluate(() => (window.location.hash = '#/settings?tab=customize'))
+  await page.waitForSelector('text=Software mode', { timeout: 10000 })
+  await page.screenshot({ path: join(out, '31a-customize.png') })
+  await page.getByRole('button', { name: /Simple shop/ }).click()
+  await page.waitForFunction(() => !document.querySelector('aside a[href="#/crm"]'), null, { timeout: 10000 })
+  if ((await call('settings.get')).ui_mode !== 'custom') throw new Error('Simple shop did not switch to Customizable mode')
+  for (const t of ['CRM & Leads', 'Solar Projects', 'Day Closing']) if (await navHas(t)) throw new Error(`${t} is still in the menu after Simple shop`)
+  for (const t of ['Sales', 'Quotations', 'Purchases', 'Inventory', 'Customers', 'Accounts', 'Expenses', 'Reports']) if (!(await navHas(t))) throw new Error(`${t} vanished from the menu after Simple shop`)
+  await page.evaluate(() => (window.location.hash = '#/doc/new/sale_invoice'))
+  await page.waitForSelector('text=Notes & terms', { timeout: 10000 })
+  for (const t of ['Solar project (optional)', 'Warehouse', 'Customer PO / reference']) if (await page.getByText(t, { exact: true }).count()) throw new Error(`"${t}" is still on the invoice after Simple shop`)
+  await page.screenshot({ path: join(out, '31b-simple-invoice.png') })
+  await page.evaluate(() => (window.location.hash = '#/crm'))
+  await page.waitForFunction(() => window.location.hash === '#/', null, { timeout: 5000 })
+  // Standard mode: everything is back, the switches are kept for later
+  await page.evaluate(() => (window.location.hash = '#/settings?tab=customize'))
+  await page.waitForSelector('text=Software mode', { timeout: 10000 })
+  await page.getByRole('button', { name: /^Standard/ }).click()
+  await page.waitForSelector('aside a[href="#/crm"]', { timeout: 10000 })
+  if ((await call('settings.get')).ui_mode !== 'standard') throw new Error('Standard mode was not saved')
+  await page.evaluate(() => (window.location.hash = '#/doc/new/sale_invoice'))
+  await page.waitForSelector('text=Solar project (optional)', { timeout: 10000 })
+  await page.evaluate(() => (window.location.hash = '#/'))
+  console.log('CUSTOMIZE OK: Standard by default, Simple shop hides CRM, projects, closing and invoice fields, Standard restores them')
+}
+
 // ---- Administrator password reset sent by Digital Target (signed, device-bound, one-time) ----
 {
   const b64u = (b) => Buffer.from(b).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')

@@ -12,6 +12,7 @@ import { computeTotals } from '@shared/totals'
 import { amountInWords } from '@shared/money'
 import { DOC_TYPES, DocType, PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from '@shared/docTypes'
 import { DateInput } from '../../components/DateInput'
+import { useOptions } from '../../lib/options'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 interface Line {
@@ -65,6 +66,7 @@ export function DocumentEditor(): JSX.Element {
   const nav = useNavigate()
   const can = useCan()
   const settings = useApp((s) => s.settings)
+  const opt = useOptions()
   const [docType, setDocType] = useState<DocType>((typeParam as DocType) || 'sale_invoice')
   const meta = DOC_TYPES[docType]
   const isSales = meta.side === 'sales'
@@ -259,8 +261,8 @@ export function DocumentEditor(): JSX.Element {
 
   if (!loaded || !meta) return <Loading />
 
-  const showTax = lines.some((l) => l.taxRate > 0) || h.isTaxInvoice || taxRates.some((r) => r.rate > 0)
-  const canDiscount = !isSales || can('sales.discount')
+  const showTax = lines.some((l) => l.taxRate > 0) || h.isTaxInvoice || (opt('doc.tax') && taxRates.some((r) => r.rate > 0))
+  const canDiscount = (!isSales || can('sales.discount')) && (opt('doc.discount') || lines.some((l) => l.discountPct > 0) || Number(h.docDiscount) > 0)
   const sym = settings.currency_symbol ?? 'Rs.'
 
   return (
@@ -308,7 +310,7 @@ export function DocumentEditor(): JSX.Element {
             <Field label="Valid until">
               <DateInput clearable value={h.validUntil} onChange={(e) => setH({ ...h, validUntil: e.target.value })} />
             </Field>
-          ) : meta.financial && !docType.includes('return') ? (
+          ) : meta.financial && !docType.includes('return') && (opt('doc.due_date') || h.dueDate) ? (
             <Field label="Due date">
               <DateInput clearable value={h.dueDate} onChange={(e) => setH({ ...h, dueDate: e.target.value })} />
             </Field>
@@ -328,6 +330,7 @@ export function DocumentEditor(): JSX.Element {
               </Field>
             </>
           )}
+          {(opt('doc.project_link') || h.projectId) && (
           <Field label="Solar project (optional)" className="col-span-2">
             <Combobox
               options={projectOptions}
@@ -340,7 +343,8 @@ export function DocumentEditor(): JSX.Element {
               allowClear
             />
           </Field>
-          {meta.stock !== 0 && (
+          )}
+          {meta.stock !== 0 && opt('doc.warehouse') && (
             <Field label="Warehouse">
               <Select value={h.warehouseId ?? ''} onChange={(e) => setH({ ...h, warehouseId: Number(e.target.value) })}>
                 {warehouses.map((w) => (
@@ -352,12 +356,14 @@ export function DocumentEditor(): JSX.Element {
               </Select>
             </Field>
           )}
+          {(opt('doc.party_ref') || h.partyRef) && (
           <Field label={isSales ? 'Customer PO / reference' : 'Supplier invoice no.'}>
             <Input value={h.partyRef ?? ''} onChange={(e) => setH({ ...h, partyRef: e.target.value })} />
           </Field>
+          )}
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-line pt-3 text-[13px]">
-          {(docType === 'sale_invoice' || docType === 'quotation' || docType === 'sale_order') && (
+          {(docType === 'sale_invoice' || docType === 'quotation' || docType === 'sale_order') && (opt('doc.tax') || h.isTaxInvoice) && (
             <Checkbox checked={!!h.isTaxInvoice} onChange={(v) => setH({ ...h, isTaxInvoice: v })} label="Sales Tax Invoice format" />
           )}
           {docType === 'sale_invoice' && (
@@ -435,7 +441,7 @@ export function DocumentEditor(): JSX.Element {
                             onChange={(e) => setLine(l.key, { details: e.target.value })}
                             placeholder="Item description (optional)"
                           />
-                        ) : (
+                        ) : !opt('doc.item_details') ? null : (
                           <button type="button" className="flex items-center gap-1 text-[12px] font-medium text-brand hover:underline cursor-pointer" onClick={() => setLine(l.key, { showDetails: true })}>
                             <Plus className="h-3.5 w-3.5" /> Add item description
                           </button>
@@ -443,14 +449,14 @@ export function DocumentEditor(): JSX.Element {
                         {(p?.track_serial || l.serials) && stockAffecting ? (
                           <Input sm value={l.serials} onChange={(e) => setLine(l.key, { serials: e.target.value })} placeholder={`Serial numbers (comma separated)${p?.track_serial ? ` - ${l.qty} required` : ''}`} />
                         ) : null}
-                        {isSales && (l.warranty || p?.warranty_months) ? (
+                        {isSales && (l.warranty || p?.warranty_months) && (opt('doc.serial_warranty') || l.warranty) ? (
                           <Input sm value={l.warranty} onChange={(e) => setLine(l.key, { warranty: e.target.value })} placeholder="Warranty (e.g. 12 Years)" />
                         ) : null}
-                        {p && (
+                        {p && (opt('doc.stock_hints') || short) && (
                           <div className="flex flex-wrap gap-3 text-[12px] text-muted">
                             {p.type === 'goods' && <span className={short ? 'font-semibold text-bad' : ''}>In stock: {fmtQty(p.stock)} {p.unit}{short && ' - not enough stock'}</span>}
-                            {p.avg_cost !== null && p.type === 'goods' && <span>Avg cost: {money(p.avg_cost)}</span>}
-                            {belowCost && <span className="font-semibold text-warn"><AlertTriangle className="inline h-3 w-3" /> Below cost</span>}
+                            {opt('doc.stock_hints') && p.avg_cost !== null && p.type === 'goods' && <span>Avg cost: {money(p.avg_cost)}</span>}
+                            {opt('doc.stock_hints') && belowCost && <span className="font-semibold text-warn"><AlertTriangle className="inline h-3 w-3" /> Below cost</span>}
                           </div>
                         )}
                       </div>
@@ -493,6 +499,7 @@ export function DocumentEditor(): JSX.Element {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="space-y-4">
+          {(opt('doc.notes_terms') || h.notes) && (
           <Card title="Notes & terms">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <Field label="Notes (printed)">
@@ -503,7 +510,8 @@ export function DocumentEditor(): JSX.Element {
               </Field>
             </div>
           </Card>
-          {meta.financial && can('accounts.manage') && (
+          )}
+          {meta.financial && can('accounts.manage') && opt('doc.payment_now') && (
             <Card title={docType === 'sale_invoice' || docType === 'purchase_return' ? 'Payment received now' : 'Payment made now'}>
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 <Field label="Amount">
@@ -548,21 +556,25 @@ export function DocumentEditor(): JSX.Element {
                 <NumberInput sm className="w-32" value={h.docDiscount} onChange={(v) => setH({ ...h, docDiscount: v })} />
               </div>
             )}
+            {(opt('doc.other_charges') || Number(h.otherCharges) > 0) && (
             <div className="flex items-center justify-between gap-2 py-1">
               <Input sm className="w-40" value={h.otherChargesLabel ?? ''} onChange={(e) => setH({ ...h, otherChargesLabel: e.target.value })} placeholder={isSales ? 'Freight / other charges' : 'Freight / loading'} />
               <NumberInput sm className="w-32" value={h.otherCharges} onChange={(v) => setH({ ...h, otherCharges: v })} />
             </div>
+            )}
             {t.taxTotal !== 0 && <Row label="Sales tax" value={money(t.taxTotal, { decimals: 2 })} />}
+            {(opt('doc.round_off') || Number(h.roundOff) !== 0) && (
             <div className="flex items-center justify-between gap-3 py-1">
               <span className="text-muted">Round off</span>
               <NumberInput sm className="w-32" value={h.roundOff} onChange={(v) => setH({ ...h, roundOff: v })} />
             </div>
+            )}
             <div className="my-2 border-t border-line" />
             <div className="flex items-baseline justify-between">
               <span className="font-semibold">Grand total</span>
               <span className="num text-[22px] font-bold text-brand">{money(t.grandTotal)}</span>
             </div>
-            <div className="text-[12px] text-muted">{amountInWords(t.grandTotal, settings.currency_word ?? 'Rupees')}</div>
+            {opt('doc.amount_words') && <div className="text-[12px] text-muted">{amountInWords(t.grandTotal, settings.currency_word ?? 'Rupees')}</div>}
             {meta.financial && payment.amount > 0 && (
               <>
                 <Row label="Paid now" value={money(payment.amount)} />

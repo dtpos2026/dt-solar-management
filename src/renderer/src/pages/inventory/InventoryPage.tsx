@@ -7,6 +7,7 @@ import { Badge, Button, Card, Checkbox, Empty, Field, IconButton, Input, Kv, Mod
 import { DataTable, Column } from '../../components/DataTable'
 import { Combobox } from '../../components/Combobox'
 import { useLoad, useProducts, useWarehouses } from '../../lib/hooks'
+import { useOptions } from '../../lib/options'
 import { date, label, money, qty, today, PERIODS } from '../../lib/format'
 import { CategoryPickModal, DeleteCategoryModal, archiveProductsFlow, deleteProductFlow, restoreProductsFlow } from './productActions'
 import { DateInput } from '../../components/DateInput'
@@ -283,6 +284,7 @@ export function ProductForm({ open, product, onClose, onSaved }: { open: boolean
   const cats = useLoad(() => api<any[]>('categories.list'), [open])
   const warehouses = useWarehouses()
   const can = useCan()
+  const opt = useOptions()
   useEffect(() => {
     if (!open) return
     setF(
@@ -327,20 +329,20 @@ export function ProductForm({ open, product, onClose, onSaved }: { open: boolean
             {(cats.data ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </Select>
         </Field>
-        <Field label="SKU / code"><Input value={f.sku ?? ''} onChange={(e) => set('sku', e.target.value)} /></Field>
-        <Field label="Barcode"><Input value={f.barcode ?? ''} onChange={(e) => set('barcode', e.target.value)} /></Field>
-        <Field label="Brand"><Input value={f.brand ?? ''} onChange={(e) => set('brand', e.target.value)} /></Field>
-        <Field label="Model / spec"><Input value={f.model ?? ''} onChange={(e) => set('model', e.target.value)} /></Field>
+        {opt('item.codes') && <Field label="SKU / code"><Input value={f.sku ?? ''} onChange={(e) => set('sku', e.target.value)} /></Field>}
+        {opt('item.codes') && <Field label="Barcode"><Input value={f.barcode ?? ''} onChange={(e) => set('barcode', e.target.value)} /></Field>}
+        {opt('item.brand_model') && <Field label="Brand"><Input value={f.brand ?? ''} onChange={(e) => set('brand', e.target.value)} /></Field>}
+        {opt('item.brand_model') && <Field label="Model / spec"><Input value={f.model ?? ''} onChange={(e) => set('model', e.target.value)} /></Field>}
         <Field label="Unit" hint="pcs, m, kW, set, job…"><Input value={f.unit ?? ''} onChange={(e) => set('unit', e.target.value)} /></Field>
-        <Field label="Tax rate %"><NumberInput value={f.taxRate} onChange={(v) => set('taxRate', v)} /></Field>
+        {opt('item.tax') && <Field label="Tax rate %"><NumberInput value={f.taxRate} onChange={(v) => set('taxRate', v)} /></Field>}
         {can('inventory.cost') && <Field label="Purchase price"><NumberInput value={f.purchasePrice} onChange={(v) => set('purchasePrice', v)} /></Field>}
         <Field label="Sale price"><NumberInput value={f.salePrice} onChange={(v) => set('salePrice', v)} /></Field>
-        <Field label="Minimum sale price" hint="Users without discount permission cannot sell below sale price."><NumberInput value={f.minSalePrice} onChange={(v) => set('minSalePrice', v)} /></Field>
-        {f.type === 'goods' && <Field label="Reorder level (low-stock alert)"><NumberInput value={f.reorderLevel} onChange={(v) => set('reorderLevel', v)} /></Field>}
-        <Field label="Warranty (months)"><NumberInput value={f.warrantyMonths} onChange={(v) => set('warrantyMonths', v)} /></Field>
-        <Field label="Warranty terms" className="col-span-3"><Input value={f.warrantyTerms ?? ''} onChange={(e) => set('warrantyTerms', e.target.value)} placeholder="e.g. 12 years product, 25 years linear performance" /></Field>
-        <Field label="Description" className="col-span-4"><Textarea rows={2} value={f.description ?? ''} onChange={(e) => set('description', e.target.value)} /></Field>
-        {f.type === 'goods' && (
+        {opt('item.min_price') && <Field label="Minimum sale price" hint="Users without discount permission cannot sell below sale price."><NumberInput value={f.minSalePrice} onChange={(v) => set('minSalePrice', v)} /></Field>}
+        {opt('item.reorder') && f.type === 'goods' && <Field label="Reorder level (low-stock alert)"><NumberInput value={f.reorderLevel} onChange={(v) => set('reorderLevel', v)} /></Field>}
+        {opt('item.warranty') && <Field label="Warranty (months)"><NumberInput value={f.warrantyMonths} onChange={(v) => set('warrantyMonths', v)} /></Field>}
+        {opt('item.warranty') && <Field label="Warranty terms" className="col-span-3"><Input value={f.warrantyTerms ?? ''} onChange={(e) => set('warrantyTerms', e.target.value)} placeholder="e.g. 12 years product, 25 years linear performance" /></Field>}
+        {opt('item.description') && <Field label="Description" className="col-span-4"><Textarea rows={2} value={f.description ?? ''} onChange={(e) => set('description', e.target.value)} /></Field>}
+        {opt('item.serials') && f.type === 'goods' && (
           <div className="col-span-4 flex flex-wrap gap-6">
             <Checkbox checked={!!f.trackSerial} onChange={(v) => set('trackSerial', v)} label="Track serial numbers (inverters, batteries…)" />
           </div>

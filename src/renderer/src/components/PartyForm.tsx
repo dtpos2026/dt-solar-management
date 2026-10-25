@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { Button, Field, Input, Modal, NumberInput, Select, Textarea, Toggle, toast } from './ui'
 import { DateInput } from './DateInput'
+import { useOptions } from '../lib/options'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export function PartyForm({ open, onClose, onSaved, type, party, initialName }: { open: boolean; onClose: () => void; onSaved: (id: number) => void; type: 'customer' | 'supplier'; party?: any; initialName?: string }): JSX.Element {
   const blank = { type, name: initialName ?? '', contactPerson: '', phone: '', phone2: '', email: '', address: '', city: '', cnic: '', ntn: '', strn: '', openingBalance: 0, openingType: type === 'supplier' ? 'payable' : 'receivable', openingDate: '', creditLimit: 0, paymentTermsDays: 0, notes: '', isActive: true }
   const [f, setF] = useState<any>(blank)
+  const opt = useOptions()
   const [busy, setBusy] = useState(false)
   useEffect(() => {
     if (!open) return
@@ -75,24 +77,31 @@ export function PartyForm({ open, onClose, onSaved, type, party, initialName }: 
             <option value="both">Both (customer & supplier)</option>
           </Select>
         </Field>
+        {opt('party.contact_extra') && (
         <Field label="Contact person">
           <Input value={f.contactPerson} onChange={(e) => set('contactPerson', e.target.value)} />
         </Field>
+        )}
         <Field label="Mobile / phone">
           <Input value={f.phone} onChange={(e) => set('phone', e.target.value)} />
         </Field>
+        {opt('party.contact_extra') && (
         <Field label="Alternate phone">
           <Input value={f.phone2} onChange={(e) => set('phone2', e.target.value)} />
         </Field>
+        )}
         <Field label="Address" className="col-span-2">
           <Input value={f.address} onChange={(e) => set('address', e.target.value)} />
         </Field>
         <Field label="City">
           <Input value={f.city} onChange={(e) => set('city', e.target.value)} />
         </Field>
+        {opt('party.contact_extra') && (
         <Field label="Email">
           <Input value={f.email} onChange={(e) => set('email', e.target.value)} />
         </Field>
+        )}
+        {opt('party.tax_ids') && (<>
         <Field label="CNIC">
           <Input value={f.cnic} onChange={(e) => set('cnic', e.target.value)} placeholder="00000-0000000-0" />
         </Field>
@@ -102,6 +111,8 @@ export function PartyForm({ open, onClose, onSaved, type, party, initialName }: 
             <Input value={f.strn} onChange={(e) => set('strn', e.target.value)} placeholder="STRN" />
           </div>
         </Field>
+        </>)}
+        {opt('party.opening_balance') && (<>
         <Field label="Opening balance" hint="Balance carried from before using this software (for the active firm).">
           <div className="flex gap-2">
             <NumberInput value={f.openingBalance} onChange={(v) => set('openingBalance', v)} />
@@ -114,12 +125,15 @@ export function PartyForm({ open, onClose, onSaved, type, party, initialName }: 
         <Field label="Opening balance date">
           <DateInput value={f.openingDate} onChange={(e) => set('openingDate', e.target.value)} />
         </Field>
+        </>)}
+        {opt('party.credit') && (
         <Field label="Credit limit / payment terms (days)">
           <div className="flex gap-2">
             <NumberInput value={f.creditLimit} onChange={(v) => set('creditLimit', v)} />
             <NumberInput value={f.paymentTermsDays} onChange={(v) => set('paymentTermsDays', v)} className="w-24" />
           </div>
         </Field>
+        )}
         <Field label="Notes" className="col-span-3">
           <Textarea rows={2} value={f.notes} onChange={(e) => set('notes', e.target.value)} />
         </Field>

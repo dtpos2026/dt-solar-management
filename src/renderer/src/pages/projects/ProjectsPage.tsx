@@ -12,6 +12,7 @@ import { date, label, money, pct, qty, statusTone } from '../../lib/format'
 import { PROJECT_STATUSES, PROJECT_STATUS_LABELS, PROJECT_TYPES, SYSTEM_TYPES, SYSTEM_TYPE_LABELS } from '@shared/docTypes'
 import { ProjectDeleteDialog, archiveProjectFlow, restoreProjectFlow } from './projectActions'
 import { DateInput } from '../../components/DateInput'
+import { useOptions } from '../../lib/options'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export function ProjectsPage(): JSX.Element {
@@ -29,7 +30,7 @@ export function ProjectsPage(): JSX.Element {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const { data, loading, reload } = useLoad(() => api<any[]>('projects.list', { status: status || undefined, archived }), [status, archived])
   const rows = (data ?? []).filter((r) => !q || `${r.code} ${r.name} ${r.customer_name ?? ''} ${r.city ?? ''}`.toLowerCase().includes(q.toLowerCase()))
-  const showFin = rows.some((r) => r.financials?.netProfit !== undefined)
+  const showFin = useOptions()('project.costing') && rows.some((r) => r.financials?.netProfit !== undefined)
   const canDelete = can('projects.delete')
   const actions = (r: any): JSX.Element | null =>
     canDelete ? (
@@ -121,7 +122,7 @@ export function ProjectsPage(): JSX.Element {
               <div className="mt-3 flex items-center gap-2"><Progress value={r.progress} tone={r.progress >= 100 ? 'ok' : 'brand'} /><span className="text-[12px] text-muted">{r.progress}%</span></div>
               <div className="mt-3 grid grid-cols-3 gap-2 border-t border-line pt-3 text-[12px]">
                 <div><div className="text-muted">Contract</div><div className="num font-semibold">{money(r.financials.contractValue)}</div></div>
-                {r.financials.netProfit !== undefined ? (
+                {showFin && r.financials.netProfit !== undefined ? (
                   <div><div className="text-muted">Net profit</div><div className={cx('num font-semibold', r.financials.netProfit < 0 ? 'text-bad' : 'text-ok')}>{money(r.financials.netProfit)}</div></div>
                 ) : (
                   <div><div className="text-muted">Received</div><div className="num font-semibold">{money(r.financials.received)}</div></div>
@@ -155,6 +156,7 @@ export function ProjectForm({ open, project, onClose, onSaved }: { open: boolean
     )
   }, [open, project])
   const set = (k: string, v: unknown): void => setF((x: any) => ({ ...x, [k]: v }))
+  const det = useOptions()('project.details')
   const save = async (): Promise<void> => {
     setBusy(true)
     try {
@@ -175,11 +177,12 @@ export function ProjectForm({ open, project, onClose, onSaved }: { open: boolean
         <Field label="Customer" className="col-span-2">
           <Combobox options={customerOptions} value={f.customerId} onChange={(v) => set('customerId', v)} allowClear placeholder="Select customer" onCreate={(name) => setNewCust({ open: true, name })} createLabel="New customer" />
         </Field>
-        <Field label="Contact person"><Input value={f.contactPerson ?? ''} onChange={(e) => set('contactPerson', e.target.value)} /></Field>
-        <Field label="Contact phone"><Input value={f.contactPhone ?? ''} onChange={(e) => set('contactPhone', e.target.value)} /></Field>
+        {det && <Field label="Contact person"><Input value={f.contactPerson ?? ''} onChange={(e) => set('contactPerson', e.target.value)} /></Field>}
+        {det && <Field label="Contact phone"><Input value={f.contactPhone ?? ''} onChange={(e) => set('contactPhone', e.target.value)} /></Field>}
         <Field label="Site address" className="col-span-2"><Input value={f.siteAddress ?? ''} onChange={(e) => set('siteAddress', e.target.value)} /></Field>
         <Field label="City"><Input value={f.city ?? ''} onChange={(e) => set('city', e.target.value)} /></Field>
         <Field label="System capacity (kW)"><NumberInput value={f.capacityKw} onChange={(v) => set('capacityKw', v)} /></Field>
+        {det && <>
         <Field label="Project type">
           <Select value={f.projectType} onChange={(e) => set('projectType', e.target.value)}>{PROJECT_TYPES.map((t) => <option key={t} value={t}>{label(t)}</option>)}</Select>
         </Field>
@@ -188,18 +191,21 @@ export function ProjectForm({ open, project, onClose, onSaved }: { open: boolean
         </Field>
         <Field label="Start date"><DateInput clearable value={f.startDate ?? ''} onChange={(e) => set('startDate', e.target.value)} /></Field>
         <Field label="Expected completion"><DateInput clearable value={f.expectedEndDate ?? ''} onChange={(e) => set('expectedEndDate', e.target.value)} /></Field>
+        </>}
         <Field label="Status">
           <Select value={f.status} onChange={(e) => set('status', e.target.value)}>{PROJECT_STATUSES.map((s) => <option key={s} value={s}>{PROJECT_STATUS_LABELS[s]}</option>)}</Select>
         </Field>
         <Field label={`Progress (${f.progress ?? 0}%)`}>
           <input type="range" min={0} max={100} step={5} value={f.progress ?? 0} onChange={(e) => set('progress', Number(e.target.value))} className="mt-2 w-full accent-[var(--brand)]" />
         </Field>
+        {det && (
         <Field label="Project manager">
           <Select value={f.managerUserId ?? ''} onChange={(e) => set('managerUserId', e.target.value ? Number(e.target.value) : null)}>
             <option value="">Not assigned</option>
             {(users.data ?? []).map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
           </Select>
         </Field>
+        )}
         <Field label="Linked quotation">
           <Select value={f.quotationId ?? ''} onChange={(e) => set('quotationId', e.target.value ? Number(e.target.value) : null)}>
             <option value="">None</option>
@@ -207,8 +213,8 @@ export function ProjectForm({ open, project, onClose, onSaved }: { open: boolean
           </Select>
         </Field>
         <Field label="Contract / quoted amount" hint="For reference; revenue comes from invoices."><NumberInput value={f.contractAmount} onChange={(v) => set('contractAmount', v)} /></Field>
-        <Field label="Allocated overhead" hint="Used when overhead method is 'manual' (Settings)."><NumberInput value={f.overheadAmount} onChange={(v) => set('overheadAmount', v)} /></Field>
-        <Field label="Warranty information" className="col-span-2"><Textarea rows={2} value={f.warrantyInfo ?? ''} onChange={(e) => set('warrantyInfo', e.target.value)} /></Field>
+        {det && <Field label="Allocated overhead" hint="Used when overhead method is 'manual' (Settings)."><NumberInput value={f.overheadAmount} onChange={(v) => set('overheadAmount', v)} /></Field>}
+        {det && <Field label="Warranty information" className="col-span-2"><Textarea rows={2} value={f.warrantyInfo ?? ''} onChange={(e) => set('warrantyInfo', e.target.value)} /></Field>}
         <Field label="Notes" className="col-span-2"><Textarea rows={2} value={f.notes ?? ''} onChange={(e) => set('notes', e.target.value)} /></Field>
       </div>
       {project && f.status === 'completed' && <div className="mt-2 text-[12px] text-muted">Completed on {date(f.completedDate || new Date().toISOString().slice(0, 10))}</div>}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { api, onApiError } from './api'
 import { useApp, LicenseStatus } from './store'
@@ -28,6 +28,7 @@ import { CrmPage } from './pages/crm/CrmPage'
 import { HelpPage } from './pages/help/HelpPage'
 import { WhatsAppPage } from './pages/whatsapp/WhatsAppPage'
 import { ClosingPage } from './pages/closing/ClosingPage'
+import { useOption } from './lib/options'
 import { LicenseBlockedScreen } from './pages/license/LicenseBlockedScreen'
 import { isFullyBlocked } from '@shared/licenseBlock'
 
@@ -37,6 +38,11 @@ interface AppInfo {
   hasUsers: boolean
   license: LicenseStatus | null
   session: { locked: boolean } | null
+}
+
+/** A module switched off in Customizable mode: its screen is not reachable (its data is kept). */
+function Gate({ opt, children }: { opt: string; children: ReactNode }): JSX.Element {
+  return useOption(opt) ? <>{children}</> : <Navigate to="/" replace />
 }
 
 function Boot(): JSX.Element {
@@ -95,8 +101,8 @@ function Boot(): JSX.Element {
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/sales" element={<SalesPage />} />
-        <Route path="/quotations" element={<QuotationsPage />} />
-        <Route path="/purchases" element={<PurchasesPage />} />
+        <Route path="/quotations" element={<Gate opt="mod.quotations"><QuotationsPage /></Gate>} />
+        <Route path="/purchases" element={<Gate opt="mod.purchases"><PurchasesPage /></Gate>} />
         <Route path="/doc/new/:type" element={<DocumentEditor />} />
         <Route path="/doc/:id" element={<DocumentView />} />
         <Route path="/doc/:id/edit" element={<DocumentEditor />} />
@@ -104,20 +110,20 @@ function Boot(): JSX.Element {
         <Route path="/customers" element={<PartiesPage type="customer" />} />
         <Route path="/suppliers" element={<PartiesPage type="supplier" />} />
         <Route path="/party/:id" element={<PartyDetail />} />
-        <Route path="/projects" element={<ProjectsPage />} />
+        <Route path="/projects" element={<Gate opt="mod.projects"><ProjectsPage /></Gate>} />
         <Route path="/projects/:id" element={<ProjectDetail />} />
-        <Route path="/accounts" element={<AccountsPage />} />
-        <Route path="/expenses" element={<ExpensesPage />} />
-        <Route path="/reports" element={<ReportsPage />} />
+        <Route path="/accounts" element={<Gate opt="mod.accounts"><AccountsPage /></Gate>} />
+        <Route path="/expenses" element={<Gate opt="mod.expenses"><ExpensesPage /></Gate>} />
+        <Route path="/reports" element={<Gate opt="mod.reports"><ReportsPage /></Gate>} />
         <Route path="/users" element={<UsersPage />} />
         <Route path="/firms" element={<MultiFirmPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/backup" element={<BackupPage />} />
         <Route path="/license" element={<Navigate to="/settings?tab=license" replace />} />
-        <Route path="/closing" element={<ClosingPage />} />
+        <Route path="/closing" element={<Gate opt="mod.closing"><ClosingPage /></Gate>} />
         <Route path="/help" element={<HelpPage />} />
-        <Route path="/whatsapp" element={<WhatsAppPage />} />
-        <Route path="/crm" element={<CrmPage />} />
+        <Route path="/whatsapp" element={<Gate opt="mod.whatsapp"><WhatsAppPage /></Gate>} />
+        <Route path="/crm" element={<Gate opt="mod.crm"><CrmPage /></Gate>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Shell>

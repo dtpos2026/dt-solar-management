@@ -1,9 +1,27 @@
 import { ReactNode, useEffect, useState } from 'react'
 import { api } from '../api'
-import { CompactHeader, InfoBox, Letterhead, ModernHeader, PrintContext, PrintFooter, PrintTable, Sheet, Signatures, TemplateProps, TotalsBox, pd, pm, pq } from './PrintKit'
+import { CompanyInfo, CompactHeader, InfoBox, Letterhead, ModernHeader, PrintContext, PrintFooter, PrintTable, Sheet, Signatures, TemplateProps, TotalsBox, pd, pm, pq } from './PrintKit'
 import { TemplateOptions, firmOptions } from './design'
 import { ThermalDocument } from './ThermalPrint'
 import { amountInWords, round2 } from '@shared/money'
+import { optionOn } from '@shared/options'
+
+/** Header details switched on or off in the Invoice Print settings. */
+const infoOf = (o: TemplateOptions): CompanyInfo => ({ name: o.showCompanyName, nameSize: o.companyNameSize, address: o.showAddress, email: o.showEmail, phone: o.showPhone, taxId: o.showTaxId })
+
+/** A money amount as the Invoice Print settings want it (paisa and thousands separators can be switched off). */
+function fm(v: { o: TemplateOptions }, ctx: PrintContext, n: number | null | undefined, decimals?: number): string {
+  const s = pm(ctx, n, v.o.showDecimals === false ? 0 : decimals)
+  return v.o.groupDigits === false ? s.replace(/,/g, '') : s
+}
+
+/** Time of day of a stored local timestamp (2026-03-05 14:07:09) as 02:07 PM. */
+function ptime(s: string | null | undefined): string | null {
+  const m = /(\d{2}):(\d{2})/.exec(s ?? '')
+  if (!m) return null
+  const h = Number(m[1])
+  return `${String(h % 12 || 12).padStart(2, '0')}:${m[2]} ${h < 12 ? 'AM' : 'PM'}`
+}
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export const DOC_TITLES: Record<string, string> = {
@@ -62,6 +80,8 @@ export function buildDocView(d: any, ctx: PrintContext, o: TemplateOptions): Doc
     [isQuote ? 'Quotation #' : isChallan ? 'Challan #' : 'Number', d.number],
     ['Date', pd(d.date)]
   ]
+  const time = optionOn(ctx.settings, 'txn.time') ? ptime(d.created_at) : null
+  if (time) meta.push(['Time', time])
   if (d.due_date && financial) meta.push(['Due date', pd(d.due_date)])
   if (d.valid_until) meta.push(['Valid until', pd(d.valid_until)])
   if (d.ref_doc_number) meta.push([isReturn ? 'Against' : 'Ref. doc', d.ref_doc_number])
@@ -77,12 +97,12 @@ export function buildDocView(d: any, ctx: PrintContext, o: TemplateOptions): Doc
     isReturn,
     financial,
     cancelled,
-    title: o.titleOverride?.trim() || baseTitle,
+    title: o.titleOverride?.trim() || o.titles?.[t]?.trim() || baseTitle,
     hasTax,
     hasDisc,
     watermark,
     partyLabel: isSales ? (isChallan ? 'Deliver To' : isQuote ? 'Prepared For' : 'Bill To') : 'Supplier',
-    partyName: d.party_master_name ?? d.party_name ?? (isSales ? 'Walk-in Customer' : '-'),
+    partyName: (optionOn(ctx.settings, 'txn.billing_name') && d.party_billing_name) || d.party_master_name || d.party_name || (isSales ? 'Walk-in Customer' : '-'),
     partyAddr: [d.party_master_address ?? d.party_address, d.party_city].filter(Boolean).join(', '),
     partyPhone: d.party_master_phone ?? d.party_phone ?? null,
     meta,
@@ -115,18 +135,19 @@ export function ItemCell({ l, v, size = 'md' }: { l: any; v: DocView; size?: 'md
 function totalsRows(v: DocView, ctx: PrintContext): Parameters<typeof TotalsBox>[0]['rows'] {
   const d = v.d
   return [
-    { label: 'Subtotal', value: pm(ctx, d.subtotal, 2) },
-    d.line_discount_total > 0 && { label: 'Item discounts', value: `- ${pm(ctx, d.line_discount_total, 2)}` },
-    d.doc_discount > 0 && { label: 'Discount', value: `- ${pm(ctx, d.doc_discount, 2)}` },
-    d.other_charges !== 0 && { label: d.other_charges_label || 'Other charges', value: pm(ctx, d.other_charges, 2) },
-    d.tax_total !== 0 && { label: 'Sales tax', value: pm(ctx, d.tax_total, 2) },
-    d.round_off !== 0 && { label: 'Round off', value: pm(ctx, d.round_off, 2) },
-    { label: `Total (${ctx.settings.currency_symbol ?? 'Rs.'})`, value: pm(ctx, d.grand_total, 2), accent: true },
-    v.financial && !v.cancelled && d.paid > 0 && { label: v.isReturn ? 'Settled' : 'Paid / advance', value: pm(ctx, d.paid, 2) },
-    v.financial && !v.cancelled && d.returned > 0 && { label: 'Returned', value: pm(ctx, d.returned, 2) },
-    v.financial && !v.cancelled && { label: 'Balance due', value: pm(ctx, d.due, 2), strong: true, danger: d.due > 0.5 },
-    v.showPrev && { label: 'Previous balance', value: pm(ctx, d.previous_balance, 2) },
-    v.showPrev && { label: 'Total account balance', value: pm(ctx, round2(d.previous_balance + d.due), 2), strong: true }
+    { label: 'Subtotal', value: fm(v, ctx, d.subtotal, 2) },
+    d.line_discount_total > 0 && { label: 'Item discounts', value: `- ${fm(v, ctx, d.line_discount_total, 2)}` },
+    d.doc_discount > 0 && { label: 'Discount', value: `- ${fm(v, ctx, d.doc_discount, 2)}` },
+    d.other_charges !== 0 && { label: d.other_charges_label || 'Other charges', value: fm(v, ctx, d.other_charges, 2) },
+    d.tax_total !== 0 && v.o.showTax !== false && { label: 'Sales tax', value: fm(v, ctx, d.tax_total, 2) },
+    d.round_off !== 0 && { label: 'Round off', value: fm(v, ctx, d.round_off, 2) },
+    { label: `Total (${ctx.settings.currency_symbol ?? 'Rs.'})`, value: fm(v, ctx, d.grand_total, 2), accent: true },
+    v.financial && !v.cancelled && d.paid > 0 && v.o.showReceived !== false && { label: v.isReturn ? 'Settled' : 'Paid / advance', value: fm(v, ctx, d.paid, 2) },
+    v.financial && !v.cancelled && d.returned > 0 && { label: 'Returned', value: fm(v, ctx, d.returned, 2) },
+    v.financial && !v.cancelled && v.o.showBalance !== false && { label: 'Balance due', value: fm(v, ctx, d.due, 2), strong: true, danger: d.due > 0.5 },
+    v.o.showYouSaved && d.line_discount_total + d.doc_discount > 0 && { label: 'You saved', value: fm(v, ctx, d.line_discount_total + d.doc_discount, 2) },
+    v.showPrev && { label: 'Previous balance', value: fm(v, ctx, d.previous_balance, 2) },
+    v.showPrev && { label: 'Total account balance', value: fm(v, ctx, round2(d.previous_balance + d.due), 2), strong: true }
   ]
 }
 
@@ -143,7 +164,7 @@ function SideNotes({ v, ctx, size = 'md' }: { v: DocView; ctx: PrintContext; siz
       {o.showAmountInWords && (
         <div className="rounded-md bg-[#f7f9fc] px-2.5 py-2">
           <Caption>Amount in words</Caption>
-          <div className="font-semibold">{amountInWords(d.grand_total, v.word)}</div>
+          <div className="font-semibold">{amountInWords(d.grand_total, v.word, o.wordsFormat)}</div>
         </div>
       )}
       {o.showBankDetails && ctx.firm.bank_details && v.isSales && !v.isReturn && (
@@ -158,13 +179,13 @@ function SideNotes({ v, ctx, size = 'md' }: { v: DocView; ctx: PrintContext; siz
           <div className="whitespace-pre-line">{d.notes}</div>
         </div>
       )}
-      {v.financial && d.payments?.length > 0 && (
+      {v.financial && o.showPayments !== false && d.payments?.length > 0 && (
         <div>
           <Caption>Payments received</Caption>
           {d.payments.map((p: any) => (
             <div key={p.payment_id}>
               {pd(p.date)} · {p.number} · {p.method?.replace('_', ' ')}
-              {p.reference ? ` (${p.reference})` : ''} - <b>{pm(ctx, p.amount)}</b>
+              {p.reference ? ` (${p.reference})` : ''} - <b>{fm(v, ctx, p.amount)}</b>
             </div>
           ))}
         </div>
@@ -198,7 +219,7 @@ function DocSignatures({ v, ctx, compact }: { v: DocView; ctx: PrintContext; com
       ctx={ctx}
       compact={compact}
       left={v.isChallan ? 'Received by (name & signature)' : v.isSales ? ps.receiverLabel : 'Received by'}
-      right={v.isChallan ? 'Delivered by / Authorized Signature' : ps.signatureLabel}
+      right={v.isChallan ? 'Delivered by / Authorized Signature' : v.o.signatureText?.trim() || ps.signatureLabel}
       showReceiver={(v.isSales || v.t === 'purchase_order') && v.o.showCustomerSignature}
       showSignature={v.o.showAuthorisedSignature}
       showStamp={v.o.showStamp}
@@ -234,13 +255,13 @@ function ItemsTable({ v, ctx, variant }: { v: DocView; ctx: PrintContext; varian
           </td>
           <td className="num text-right">{pq(l.qty)}</td>
           {o.showUnit && <td>{l.unit ?? ''}</td>}
-          {money && <td className="num text-right">{pm(ctx, l.rate, 2)}</td>}
-          {v.hasDisc && <td className="num text-right">{l.discount_amt > 0 ? pm(ctx, l.discount_amt, 2) : '-'}</td>}
+          {money && <td className="num text-right">{fm(v, ctx, l.rate, 2)}</td>}
+          {v.hasDisc && <td className="num text-right">{l.discount_amt > 0 ? fm(v, ctx, l.discount_amt, 2) : '-'}</td>}
           {v.hasTax && (
             <td className="num text-right">
               {l.tax_amt > 0 ? (
                 <>
-                  {pm(ctx, l.tax_amt, 2)}
+                  {fm(v, ctx, l.tax_amt, 2)}
                   <div className="text-[9px] text-[#718096]">@{l.tax_rate}%</div>
                 </>
               ) : (
@@ -248,12 +269,12 @@ function ItemsTable({ v, ctx, variant }: { v: DocView; ctx: PrintContext; varian
               )}
             </td>
           )}
-          {money && <td className="num text-right font-semibold">{pm(ctx, l.line_total, 2)}</td>}
+          {money && <td className="num text-right font-semibold">{fm(v, ctx, l.line_total, 2)}</td>}
         </tr>
       ))}
       {variant !== 'compact' &&
-        d.lines.length < 4 &&
-        Array.from({ length: 4 - d.lines.length }).map((_, i) => (
+        d.lines.length < (o.minRows ?? 4) &&
+        Array.from({ length: (o.minRows ?? 4) - d.lines.length }).map((_, i) => (
           <tr key={`pad${i}`}>
             <td colSpan={colCount} className="h-6" />
           </tr>
@@ -281,6 +302,16 @@ function ItemsTable({ v, ctx, variant }: { v: DocView; ctx: PrintContext; varian
   )
 }
 
+/** "Total Item Quantity" under the item table (Invoice Print setting). */
+function TotalQty({ v }: { v: DocView }): JSX.Element | null {
+  if (!v.o.showTotalQty || v.isChallan) return null
+  return (
+    <div className="avoid-break mt-1.5 text-right text-[10.5px]">
+      Total quantity: <b>{pq(v.d.lines.reduce((a: number, l: any) => a + l.qty, 0))}</b>
+    </div>
+  )
+}
+
 function ChallanSummary({ v }: { v: DocView }): JSX.Element {
   const d = v.d
   return (
@@ -295,8 +326,8 @@ function ChallanSummary({ v }: { v: DocView }): JSX.Element {
 function ClassicLayout({ v, ctx }: { v: DocView; ctx: PrintContext }): JSX.Element {
   const d = v.d
   return (
-    <Sheet ctx={ctx} watermark={v.watermark} accent={v.o.accentColor}>
-      <Letterhead ctx={ctx} title={v.title} meta={v.meta} showLogo={v.o.showLogo} />
+    <Sheet ctx={ctx} watermark={v.watermark} accent={v.o.accentColor} topSpaceMm={v.o.topSpaceMm}>
+      <Letterhead ctx={ctx} title={v.title} meta={v.meta} showLogo={v.o.showLogo} info={infoOf(v.o)} />
       <div className="mb-3 grid grid-cols-2 gap-3">
         <InfoBox title={v.partyLabel}>
           <PartyLines v={v} />
@@ -312,6 +343,7 @@ function ClassicLayout({ v, ctx }: { v: DocView; ctx: PrintContext }): JSX.Eleme
         )}
       </div>
       <ItemsTable v={v} ctx={ctx} variant="classic" />
+      <TotalQty v={v} />
       {v.isChallan ? (
         <ChallanSummary v={v} />
       ) : (
@@ -390,8 +422,8 @@ function DetailsGrid({ v }: { v: DocView }): JSX.Element {
 function ModernLayout({ v, ctx }: { v: DocView; ctx: PrintContext }): JSX.Element {
   const d = v.d
   return (
-    <Sheet ctx={ctx} watermark={v.watermark} accent={v.o.accentColor}>
-      <ModernHeader ctx={ctx} title={v.title} number={d.number} date={pd(d.date)} showLogo={v.o.showLogo} />
+    <Sheet ctx={ctx} watermark={v.watermark} accent={v.o.accentColor} topSpaceMm={v.o.topSpaceMm}>
+      <ModernHeader ctx={ctx} title={v.title} number={d.number} date={pd(d.date)} showLogo={v.o.showLogo} info={infoOf(v.o)} />
 
       <div className="avoid-break mb-4 grid grid-cols-[1.3fr_1fr_1fr] gap-5 text-[10.5px] leading-snug">
         <div>
@@ -413,6 +445,7 @@ function ModernLayout({ v, ctx }: { v: DocView; ctx: PrintContext }): JSX.Elemen
       </div>
 
       <ItemsTable v={v} ctx={ctx} variant="modern" />
+      <TotalQty v={v} />
 
       {v.isChallan ? (
         <ChallanSummary v={v} />
@@ -450,8 +483,8 @@ function FragmentRow({ k, v }: { k: string; v: string }): JSX.Element {
 function CompactLayout({ v, ctx }: { v: DocView; ctx: PrintContext }): JSX.Element {
   const d = v.d
   return (
-    <Sheet ctx={ctx} watermark={v.watermark} accent={v.o.accentColor} className="!text-[10px]">
-      <CompactHeader ctx={ctx} title={v.title} number={d.number} date={pd(d.date)} showLogo={v.o.showLogo} />
+    <Sheet ctx={ctx} watermark={v.watermark} accent={v.o.accentColor} className="!text-[10px]" topSpaceMm={v.o.topSpaceMm}>
+      <CompactHeader ctx={ctx} title={v.title} number={d.number} date={pd(d.date)} showLogo={v.o.showLogo} info={infoOf(v.o)} />
       <div className="avoid-break my-2 grid grid-cols-[1.4fr_1fr] gap-4 text-[9.5px] leading-snug">
         <div>
           <span className="font-bold tracking-wider text-[#718096] uppercase">{v.partyLabel}: </span>
@@ -480,6 +513,7 @@ function CompactLayout({ v, ctx }: { v: DocView; ctx: PrintContext }): JSX.Eleme
         </div>
       </div>
       <ItemsTable v={v} ctx={ctx} variant="compact" />
+      <TotalQty v={v} />
       {v.isChallan ? (
         <ChallanSummary v={v} />
       ) : (

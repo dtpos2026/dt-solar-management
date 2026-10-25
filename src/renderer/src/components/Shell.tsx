@@ -22,7 +22,7 @@ const NAV: Array<{ to: string; label: string; icon: ReactNode; perm?: string | s
   { to: '/sales', label: 'Sales', icon: <ShoppingCart />, perm: 'sales.view', section: 'Trading' },
   { to: '/quotations', label: 'Quotations', icon: <FileText />, perm: 'quotations.view', opt: 'mod.quotations' },
   { to: '/purchases', label: 'Purchases', icon: <ShoppingBag />, perm: 'purchases.view', opt: 'mod.purchases' },
-  { to: '/inventory', label: 'Inventory', icon: <Boxes />, perm: 'inventory.view' },
+  { to: '/inventory', label: 'Inventory', icon: <Boxes />, perm: 'inventory.view', opt: 'item.enabled' },
   { to: '/customers', label: 'Customers', icon: <Users />, perm: 'customers.view', section: 'Parties' },
   { to: '/suppliers', label: 'Suppliers', icon: <Truck />, perm: 'suppliers.view' },
   { to: '/crm', label: 'CRM & Leads', icon: <Target />, perm: 'crm.view', opt: 'mod.crm' },

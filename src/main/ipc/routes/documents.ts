@@ -10,6 +10,7 @@ export const documentRoutes: RouteMap = {
   // Permanent delete: invoices / bills / returns follow the delete rules (permission, nothing settled or referencing it,
   // open period, stock reversible); quotations / orders / challans keep the draft rules.
   'docs.delete': { write: true, handler: (c, a) => docs.deleteDocument(c.ctx, Number(a.id)) },
+  'docs.lastPrices': { perm: 'sales.view', handler: (c, a) => docs.lastSalePrices(c.ctx, { productId: Number(a.productId), partyId: a.partyId ? Number(a.partyId) : null }) },
   'docs.copy': { handler: (c, a) => docs.prepareCopy(c.ctx, Number(a.id)) },
   'docs.productDetails': { perm: PRODUCT_READERS, handler: (c, a) => docs.productDetails(c.ctx, a.ids) },
 

@@ -6,7 +6,7 @@ import { useOptions } from '../lib/options'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export function PartyForm({ open, onClose, onSaved, type, party, initialName }: { open: boolean; onClose: () => void; onSaved: (id: number) => void; type: 'customer' | 'supplier'; party?: any; initialName?: string }): JSX.Element {
-  const blank = { type, name: initialName ?? '', contactPerson: '', phone: '', phone2: '', email: '', address: '', city: '', cnic: '', ntn: '', strn: '', openingBalance: 0, openingType: type === 'supplier' ? 'payable' : 'receivable', openingDate: '', creditLimit: 0, paymentTermsDays: 0, notes: '', isActive: true }
+  const blank = { type, name: initialName ?? '', contactPerson: '', phone: '', phone2: '', email: '', address: '', city: '', billingName: '', cnic: '', ntn: '', strn: '', openingBalance: 0, openingType: type === 'supplier' ? 'payable' : 'receivable', openingDate: '', creditLimit: 0, paymentTermsDays: 0, notes: '', isActive: true }
   const [f, setF] = useState<any>(blank)
   const opt = useOptions()
   const [busy, setBusy] = useState(false)
@@ -23,6 +23,7 @@ export function PartyForm({ open, onClose, onSaved, type, party, initialName }: 
         email: party.email ?? '',
         address: party.address ?? '',
         city: party.city ?? '',
+        billingName: party.billing_name ?? '',
         cnic: party.cnic ?? '',
         ntn: party.ntn ?? '',
         strn: party.strn ?? '',
@@ -88,6 +89,11 @@ export function PartyForm({ open, onClose, onSaved, type, party, initialName }: 
         {opt('party.contact_extra') && (
         <Field label="Alternate phone">
           <Input value={f.phone2} onChange={(e) => set('phone2', e.target.value)} />
+        </Field>
+        )}
+        {opt('txn.billing_name') && (
+        <Field label="Billing name" className="col-span-3" hint="Printed on documents instead of the name above, for example the registered company name.">
+          <Input value={f.billingName} onChange={(e) => set('billingName', e.target.value)} />
         </Field>
         )}
         <Field label="Address" className="col-span-2">

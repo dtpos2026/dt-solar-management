@@ -57,12 +57,12 @@ function Header({ ctx, o, title, lines }: { ctx: PrintContext; o: TemplateOption
   return (
     <div className="text-center">
       {o.showLogo && f.logo && <img src={f.logo} alt="" className="mx-auto mb-1 max-h-[46px] max-w-[46mm] object-contain grayscale" />}
-      <div className="text-[14px] leading-tight font-extrabold">{f.name}</div>
+      {o.showCompanyName !== false && <div className="text-[14px] leading-tight font-extrabold">{f.name}</div>}
       {f.tagline && <div className="text-[9px]">{f.tagline}</div>}
       <div className="text-[9.5px] leading-snug">
-        {[f.address, f.city].filter(Boolean).join(', ')}
-        {contact && <div>Ph: {contact}</div>}
-        {(f.ntn || f.strn) && <div>{[f.ntn && `NTN: ${f.ntn}`, f.strn && `STRN: ${f.strn}`].filter(Boolean).join(', ')}</div>}
+        {o.showAddress === false ? null : [f.address, f.city].filter(Boolean).join(', ')}
+        {contact && o.showPhone !== false && <div>Ph: {contact}</div>}
+        {o.showTaxId !== false && (f.ntn || f.strn) && <div>{[f.ntn && `NTN: ${f.ntn}`, f.strn && `STRN: ${f.strn}`].filter(Boolean).join(', ')}</div>}
       </div>
       <Rule strong />
       <div className="text-[12.5px] font-black tracking-[0.12em] uppercase">{title}</div>

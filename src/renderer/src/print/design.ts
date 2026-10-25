@@ -4,6 +4,7 @@
  * changes how a document looks on paper - never the document data.
  */
 import type { PrintSettings } from './PrintKit'
+import { printOverrides } from '@shared/options'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export type Layout = 'classic' | 'modern' | 'compact' | 'thermal80'
@@ -75,6 +76,28 @@ export interface TemplateOptions {
   accentColor: string
   titleOverride: string
   footerNote: string
+  // Invoice Print settings (Editable mode). Every default below equals the standard print.
+  showCompanyName: boolean
+  companyNameSize: 'small' | 'medium' | 'large'
+  showAddress: boolean
+  showEmail: boolean
+  showPhone: boolean
+  showTaxId: boolean
+  /** Empty space at the top of the page, for pre-printed letterhead paper */
+  topSpaceMm: number
+  /** Empty rows are added until the item table has at least this many rows (classic and modern) */
+  minRows: number
+  showTotalQty: boolean
+  showDecimals: boolean
+  groupDigits: boolean
+  showReceived: boolean
+  showBalance: boolean
+  showYouSaved: boolean
+  showPayments: boolean
+  wordsFormat: 'south_asia' | 'international'
+  signatureText: string
+  /** Printed name of a document type, by document type */
+  titles: Record<string, string>
 }
 
 export type BoolOption = { [K in keyof TemplateOptions]: TemplateOptions[K] extends boolean ? K : never }[keyof TemplateOptions]
@@ -158,8 +181,32 @@ export function firmOptions(ps: Partial<PrintSettings> | undefined): TemplateOpt
     showPreviousBalance: p.showPreviousBalance !== false,
     accentColor: p.accentColor || '#0b5cad',
     titleOverride: '',
-    footerNote: ''
+    footerNote: '',
+    showCompanyName: true,
+    companyNameSize: 'large',
+    showAddress: true,
+    showEmail: true,
+    showPhone: true,
+    showTaxId: true,
+    topSpaceMm: 0,
+    minRows: 4,
+    showTotalQty: false,
+    showDecimals: true,
+    groupDigits: true,
+    showReceived: true,
+    showBalance: true,
+    showYouSaved: false,
+    showPayments: true,
+    wordsFormat: 'south_asia',
+    signatureText: '',
+    titles: {}
   }
+}
+
+/** Editable mode: the "Invoice Print" settings laid over a design (they apply to every template and built-in layout). */
+export function withPrintSettings(design: PrintDesign, settings: Record<string, any> | undefined): PrintDesign {
+  const over = printOverrides(settings)
+  return Object.keys(over).length ? { ...design, options: { ...design.options, ...over } as TemplateOptions } : design
 }
 
 export function builtinDesign(layout: Layout, ps: Partial<PrintSettings> | undefined): PrintDesign {

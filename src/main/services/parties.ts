@@ -70,6 +70,7 @@ export interface PartyInput {
   email?: string
   address?: string
   city?: string
+  billingName?: string | null
   cnic?: string
   ntn?: string
   strn?: string
@@ -153,6 +154,7 @@ export function saveParty(ctx: Ctx, input: PartyInput): number {
     email: optText(input.email, 120),
     address: optText(input.address, 500),
     city: optText(input.city, 80),
+    billing_name: optText(input.billingName, 150),
     cnic: optText(input.cnic, 20),
     ntn: optText(input.ntn, 30),
     strn: optText(input.strn, 30),
@@ -170,11 +172,11 @@ export function saveParty(ctx: Ctx, input: PartyInput): number {
     if (!existing) throw new AppError('Customer/supplier not found.', 'NOT_FOUND')
     db.prepare(
       `UPDATE parties SET type=@type, name=@name, contact_person=@contact_person, phone=@phone, phone2=@phone2, email=@email,
-         address=@address, city=@city, cnic=@cnic, ntn=@ntn, strn=@strn, opening_balance=@opening_balance,
+         address=@address, city=@city, billing_name=CASE WHEN @has_billing = 1 THEN @billing_name ELSE billing_name END, cnic=@cnic, ntn=@ntn, strn=@strn, opening_balance=@opening_balance,
          opening_firm_id=COALESCE(opening_firm_id, @firmId), opening_date=@opening_date, credit_limit=@credit_limit,
          payment_terms_days=@payment_terms_days, notes=@notes, is_active=@is_active, updated_at=datetime('now','localtime')
        WHERE id=@id`
-    ).run({ ...vals, id: input.id, firmId: ctx.firmId })
+    ).run({ ...vals, has_billing: input.billingName === undefined ? 0 : 1, id: input.id, firmId: ctx.firmId })
     audit(ctx, 'update', 'party', input.id, `Updated ${type} ${name}`, {
       openingBefore: existing.opening_balance,
       openingAfter: signedOpening
@@ -185,9 +187,9 @@ export function saveParty(ctx: Ctx, input: PartyInput): number {
   const id = Number(
     db
       .prepare(
-        `INSERT INTO parties (firm_id, type, name, contact_person, phone, phone2, email, address, city, cnic, ntn, strn,
+        `INSERT INTO parties (firm_id, type, name, contact_person, phone, phone2, email, address, city, billing_name, cnic, ntn, strn,
            opening_balance, opening_firm_id, opening_date, credit_limit, payment_terms_days, notes, is_active, created_by)
-         VALUES (@firm_id, @type, @name, @contact_person, @phone, @phone2, @email, @address, @city, @cnic, @ntn, @strn,
+         VALUES (@firm_id, @type, @name, @contact_person, @phone, @phone2, @email, @address, @city, @billing_name, @cnic, @ntn, @strn,
            @opening_balance, @firmId, @opening_date, @credit_limit, @payment_terms_days, @notes, @is_active, @created_by)`
       )
       .run({ ...vals, firm_id: shared ? null : ctx.firmId, firmId: ctx.firmId, created_by: ctx.user.id }).lastInsertRowid

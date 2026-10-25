@@ -3,7 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Ban, Copy, CopyPlus, FileDown, Info, HandCoins, Pencil, Printer, RefreshCcw, Trash2, Undo2, Truck, FileCheck2, CheckCircle2, XCircle, Send } from 'lucide-react'
 import { api } from '../../api'
 import { WhatsAppButton } from '../../components/WhatsAppButton'
-import { useCan } from '../../store'
+import { useApp, useCan } from '../../store'
+import { optionOn } from '@shared/options'
 import { Badge, Button, Card, IconButton, Kv, Loading, promptDialog, confirmDialog, toast } from '../../components/ui'
 import { PaymentModal } from '../../components/PaymentModal'
 import { useLoad } from '../../lib/hooks'
@@ -13,6 +14,7 @@ import { round2 } from '@shared/money'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export function DocumentView(): JSX.Element {
+  const settings = useApp((st) => st.settings)
   const { id } = useParams()
   const nav = useNavigate()
   const can = useCan()
@@ -185,6 +187,7 @@ export function DocumentView(): JSX.Element {
         </Card>
         <Card title="Details">
           <Kv label="Date">{date(d.date)}</Kv>
+          {optionOn(settings, 'txn.time') && /\d\d:\d\d/.test(d.created_at ?? '') && <Kv label="Time">{String(d.created_at).slice(11, 16)}</Kv>}
           {d.due_date && <Kv label="Due date">{date(d.due_date)}</Kv>}
           {d.valid_until && <Kv label="Valid until">{date(d.valid_until)}</Kv>}
           {d.project_id && (

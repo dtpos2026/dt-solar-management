@@ -11,6 +11,7 @@
  */
 import type { DB } from '../db'
 import { EPS, num, round2, round3, round4 } from '../../shared/money'
+import { optionOn } from '../../shared/options'
 import {
   AppError,
   Ctx,
@@ -166,7 +167,9 @@ export function stockOut(
   const qty = round3(m.qty)
   if (qty <= 0) throw new AppError(`Quantity must be greater than zero for ${p.name}.`, 'VALIDATION')
   const available = warehouseQty(db, p.id, m.warehouseId)
-  const allowNegative = opts.allowNegative ?? getSetting(db, 'allow_negative_stock', false)
+  // Editable mode with Stock maintenance off: stock never stops a sale (the movements are still recorded).
+  const stockOff = !optionOn({ ui_mode: getSetting(db, 'ui_mode', 'standard'), ui_options: getSetting(db, 'ui_options', {}) }, 'item.stock')
+  const allowNegative = opts.allowNegative ?? (stockOff || getSetting(db, 'allow_negative_stock', false))
   if (!allowNegative && available + EPS < qty) {
     throw new AppError(
       `Insufficient stock for "${p.name}" in ${wh.name}. Available: ${available} ${p.unit}, required: ${qty} ${p.unit}.`,

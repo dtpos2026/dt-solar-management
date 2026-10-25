@@ -1,7 +1,7 @@
 {
   "name": "dt-solar-pro",
   "productName": "DT Solar Pro",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Solar Business Management System by Digital Target",
   "main": "./out/main/index.js",
   "author": {

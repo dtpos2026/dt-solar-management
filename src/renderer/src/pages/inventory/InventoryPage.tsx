@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Boxes, Plus, Pencil, Trash2, ArrowLeftRight, ClipboardList, Search, Warehouse, Tags, ScanLine, Printer, Archive, ArchiveRestore } from 'lucide-react'
 import { api } from '../../api'
-import { useCan } from '../../store'
+import { useApp, useCan } from '../../store'
+import { optionValue } from '@shared/options'
 import { Badge, Button, Card, Checkbox, Empty, Field, IconButton, Input, Kv, Modal, NumberInput, PageHeader, PeriodPicker, Select, Tabs, Textarea, Toggle, toast } from '../../components/ui'
 import { DataTable, Column } from '../../components/DataTable'
 import { Combobox } from '../../components/Combobox'
@@ -17,8 +18,12 @@ type Tab = 'products' | 'stock' | 'movements' | 'adjustments' | 'warehouses' | '
 
 export function InventoryPage(): JSX.Element {
   const can = useCan()
+  const opt = useOptions()
   const [params, setParams] = useSearchParams()
-  const tab = (params.get('tab') as Tab) || 'products'
+  const stockOn = opt('item.stock')
+  const shown: Tab[] = ['products', ...(stockOn ? (['stock', 'movements', 'adjustments'] as Tab[]) : []), 'warehouses', ...(opt('item.category') ? (['categories'] as Tab[]) : []), ...(stockOn ? (['serials'] as Tab[]) : [])]
+  const asked = (params.get('tab') as Tab) || 'products'
+  const tab: Tab = shown.includes(asked) ? asked : 'products'
   const [productForm, setProductForm] = useState<{ open: boolean; product?: any }>({ open: false })
   const [adjust, setAdjust] = useState<{ open: boolean; kind: 'opening' | 'adjustment' }>({ open: false, kind: 'adjustment' })
   const [transfer, setTransfer] = useState(false)
@@ -32,9 +37,9 @@ export function InventoryPage(): JSX.Element {
         icon={<Boxes className="h-5 w-5" />}
         actions={
           <>
-            {can('inventory.adjust') && <Button icon={<ArrowLeftRight className="h-4 w-4" />} onClick={() => setTransfer(true)}>Transfer</Button>}
-            {can('inventory.adjust') && <Button icon={<ClipboardList className="h-4 w-4" />} onClick={() => setAdjust({ open: true, kind: 'adjustment' })}>Stock adjustment</Button>}
-            {can('inventory.adjust') && <Button onClick={() => setAdjust({ open: true, kind: 'opening' })}>Opening stock</Button>}
+            {stockOn && can('inventory.adjust') && <Button icon={<ArrowLeftRight className="h-4 w-4" />} onClick={() => setTransfer(true)}>Transfer</Button>}
+            {stockOn && can('inventory.adjust') && <Button icon={<ClipboardList className="h-4 w-4" />} onClick={() => setAdjust({ open: true, kind: 'adjustment' })}>Stock adjustment</Button>}
+            {stockOn && can('inventory.adjust') && <Button onClick={() => setAdjust({ open: true, kind: 'opening' })}>Opening stock</Button>}
             {can('inventory.manage') && <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setProductForm({ open: true })}>New product</Button>}
           </>
         }
@@ -50,7 +55,7 @@ export function InventoryPage(): JSX.Element {
           { key: 'warehouses', label: 'Warehouses' },
           { key: 'categories', label: 'Categories' },
           { key: 'serials', label: 'Serial / warranty lookup' }
-        ]}
+        ].filter((x) => shown.includes(x.key as Tab))}
       />
       {tab === 'products' && <ProductsTab tick={tick} onEdit={(p) => setProductForm({ open: true, product: p })} />}
       {tab === 'stock' && <StockTab key={tick} />}
@@ -285,12 +290,15 @@ export function ProductForm({ open, product, onClose, onSaved }: { open: boolean
   const warehouses = useWarehouses()
   const can = useCan()
   const opt = useOptions()
+  const settings = useApp((s) => s.settings)
+  const typeMode = String(optionValue(settings, 'item.type_mode'))
+  const defaultUnit = String(optionValue(settings, 'item.default_unit') || 'pcs')
   useEffect(() => {
     if (!open) return
     setF(
       product
         ? { id: product.id, name: product.name, categoryId: product.category_id, sku: product.sku ?? '', barcode: product.barcode ?? '', type: product.type, unit: product.unit, brand: product.brand ?? '', model: product.model ?? '', description: product.description ?? '', purchasePrice: product.purchase_price ?? 0, salePrice: product.sale_price, minSalePrice: product.min_sale_price ?? 0, taxRate: product.tax_rate, reorderLevel: product.reorder_level, trackSerial: !!product.track_serial, warrantyMonths: product.warranty_months, warrantyTerms: product.warranty_terms ?? '' }
-        : { name: '', categoryId: null, sku: '', barcode: '', type: 'goods', unit: 'pcs', brand: '', model: '', description: '', purchasePrice: 0, salePrice: 0, minSalePrice: 0, taxRate: 0, reorderLevel: 0, trackSerial: false, warrantyMonths: 0, warrantyTerms: '', openingQty: 0, openingCost: 0, openingWarehouseId: null, openingSerials: '' }
+        : { name: '', categoryId: null, sku: '', barcode: '', type: typeMode === 'service' ? 'service' : 'goods', unit: typeMode === 'service' ? 'job' : defaultUnit, brand: '', model: '', description: '', purchasePrice: 0, salePrice: 0, minSalePrice: 0, taxRate: 0, reorderLevel: 0, trackSerial: false, warrantyMonths: 0, warrantyTerms: '', openingQty: 0, openingCost: 0, openingWarehouseId: null, openingSerials: '' }
     )
   }, [open, product])
   const set = (k: string, v: unknown): void => setF((x: any) => ({ ...x, [k]: v }))
@@ -317,23 +325,25 @@ export function ProductForm({ open, product, onClose, onSaved }: { open: boolean
       )}
       <div className="grid grid-cols-4 gap-3">
         <Field label="Product / service name" required className="col-span-3"><Input autoFocus value={f.name ?? ''} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Longi 585W Mono PERC Solar Panel" /></Field>
+        {(typeMode === 'both' || (product && product.type !== (typeMode === 'goods' ? 'goods' : 'service'))) && (
         <Field label="Type">
           <Select value={f.type} onChange={(e) => set('type', e.target.value)}>
             <option value="goods">Goods (stock)</option>
             <option value="service">Service / labor</option>
           </Select>
         </Field>
-        <Field label="Category" className="col-span-2" hint={product ? 'Can be changed at any time - stock, costs and past documents are not affected.' : undefined}>
+        )}
+        {opt('item.category') && <Field label="Category" className="col-span-2" hint={product ? 'Can be changed at any time - stock, costs and past documents are not affected.' : undefined}>
           <Select value={f.categoryId ?? ''} onChange={(e) => set('categoryId', e.target.value ? Number(e.target.value) : null)}>
             <option value="">None</option>
             {(cats.data ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </Select>
-        </Field>
+        </Field>}
         {opt('item.codes') && <Field label="SKU / code"><Input value={f.sku ?? ''} onChange={(e) => set('sku', e.target.value)} /></Field>}
         {opt('item.codes') && <Field label="Barcode"><Input value={f.barcode ?? ''} onChange={(e) => set('barcode', e.target.value)} /></Field>}
         {opt('item.brand_model') && <Field label="Brand"><Input value={f.brand ?? ''} onChange={(e) => set('brand', e.target.value)} /></Field>}
         {opt('item.brand_model') && <Field label="Model / spec"><Input value={f.model ?? ''} onChange={(e) => set('model', e.target.value)} /></Field>}
-        <Field label="Unit" hint="pcs, m, kW, set, job…"><Input value={f.unit ?? ''} onChange={(e) => set('unit', e.target.value)} /></Field>
+        {opt('item.units') && <Field label="Unit" hint="pcs, m, kW, set, job…"><Input value={f.unit ?? ''} onChange={(e) => set('unit', e.target.value)} /></Field>}
         {opt('item.tax') && <Field label="Tax rate %"><NumberInput value={f.taxRate} onChange={(v) => set('taxRate', v)} /></Field>}
         {can('inventory.cost') && <Field label="Purchase price"><NumberInput value={f.purchasePrice} onChange={(v) => set('purchasePrice', v)} /></Field>}
         <Field label="Sale price"><NumberInput value={f.salePrice} onChange={(v) => set('salePrice', v)} /></Field>

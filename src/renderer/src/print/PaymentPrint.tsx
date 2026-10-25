@@ -73,16 +73,17 @@ export function PaymentPrint({ id, ctx, setTitle, design, onKind, data }: Templa
   if (p.project_id) details.push(['Project', [p.project_code, p.project_name].filter(Boolean).join(', ')])
   if (p.created_by_name) details.push(['Prepared by', p.created_by_name])
 
+  const info = { name: o.showCompanyName, nameSize: o.companyNameSize, address: o.showAddress, email: o.showEmail, phone: o.showPhone, taxId: o.showTaxId }
   return (
-    <Sheet ctx={ctx} watermark={cancelled ? { text: 'CANCELLED', color: '#c53030' } : null} accent={o.accentColor} className={compact ? '!text-[10px]' : undefined}>
+    <Sheet ctx={ctx} watermark={cancelled ? { text: 'CANCELLED', color: '#c53030' } : null} accent={o.accentColor} className={compact ? '!text-[10px]' : undefined} topSpaceMm={o.topSpaceMm}>
       {layout === 'modern' ? (
-        <ModernHeader ctx={ctx} title={title} subtitle={subtitle} number={p.number} date={pd(p.date)} showLogo={o.showLogo} />
+        <ModernHeader ctx={ctx} title={title} subtitle={subtitle} number={p.number} date={pd(p.date)} showLogo={o.showLogo} info={info} />
       ) : compact ? (
         <div className="mb-2">
-          <CompactHeader ctx={ctx} title={title} number={p.number} date={pd(p.date)} showLogo={o.showLogo} />
+          <CompactHeader ctx={ctx} title={title} number={p.number} date={pd(p.date)} showLogo={o.showLogo} info={info} />
         </div>
       ) : (
-        <Letterhead ctx={ctx} title={title} subtitle={subtitle} meta={meta} showLogo={o.showLogo} />
+        <Letterhead ctx={ctx} title={title} subtitle={subtitle} meta={meta} showLogo={o.showLogo} info={info} />
       )}
 
       <div className={`${compact ? 'mb-2' : 'mb-3'} grid grid-cols-[1fr_300px] gap-3`}>

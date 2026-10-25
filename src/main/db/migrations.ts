@@ -760,6 +760,13 @@ CREATE TABLE lead_activities (
 );
 CREATE INDEX idx_lead_act ON lead_activities(lead_id, at);
 `
+  },
+  {
+    version: 11,
+    name: 'Billing name of a customer or supplier (printed instead of the usual name when the option is on)',
+    sql: /* sql */ `
+ALTER TABLE parties ADD COLUMN billing_name TEXT;
+`
   }
 ]
 

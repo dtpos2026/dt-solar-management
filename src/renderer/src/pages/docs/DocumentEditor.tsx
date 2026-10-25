@@ -13,6 +13,7 @@ import { amountInWords } from '@shared/money'
 import { DOC_TYPES, DocType, PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from '@shared/docTypes'
 import { DateInput } from '../../components/DateInput'
 import { useOptions } from '../../lib/options'
+import { autoRoundOff, optionValue } from '@shared/options'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 interface Line {
@@ -77,6 +78,8 @@ export function DocumentEditor(): JSX.Element {
   const [applyAdvance, setApplyAdvance] = useState(true)
   const [busy, setBusy] = useState(false)
   const [number, setNumber] = useState<string | null>(null)
+  const [cashSale, setCashSale] = useState(false)
+  const [scanText, setScanText] = useState('')
   const [partyModal, setPartyModal] = useState<{ open: boolean; name?: string }>({ open: false })
   const [productModal, setProductModal] = useState<{ open: boolean; name?: string; lineKey?: string }>({ open: false })
 
@@ -134,6 +137,7 @@ export function DocumentEditor(): JSX.Element {
             setH({ ...c, dueDate: c.dueDate ?? '', validUntil: c.validUntil ?? '', partyRef: '', notes: c.notes ?? '', terms: c.terms ?? defaultTerms(t), deductStock: c.deductStock ?? true, directToProject: false })
             setLines(c.lines.length ? c.lines.map(fromInput) : [newLine()])
           } else {
+            setCashSale(opt('txn.cash_sale') && t === 'sale_invoice')
             const projectId = params.get('project') ? Number(params.get('project')) : null
             const partyId = params.get('party') ? Number(params.get('party')) : null
             setH({
@@ -184,6 +188,17 @@ export function DocumentEditor(): JSX.Element {
 
   const computed = useMemo(() => computeTotals(lines, h.docDiscount, h.otherCharges, h.roundOff), [lines, h.docDiscount, h.otherCharges, h.roundOff])
   const t = computed.totals
+  const roundMode = String(optionValue(settings, 'txn.round_mode'))
+  const roundStep = Number(optionValue(settings, 'txn.round_to'))
+  const autoRound = opt('txn.round_off') && roundMode !== 'manual'
+  const preTotal = useMemo(() => computeTotals(lines, h.docDiscount, h.otherCharges, 0).totals.grandTotal, [lines, h.docDiscount, h.otherCharges])
+  const autoRoundValue = autoRound ? autoRoundOff(preTotal, roundMode, roundStep) : 0
+  useEffect(() => {
+    if (loaded && autoRound && Number(h.roundOff) !== autoRoundValue) setH((x: any) => ({ ...x, roundOff: autoRoundValue }))
+  }, [loaded, autoRound, autoRoundValue]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (cashSale) setPayment((p: any) => (p.amount === t.grandTotal ? p : { ...p, amount: t.grandTotal }))
+  }, [cashSale, t.grandTotal])
 
   const setLine = (key: string, patch: Partial<Line>): void => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)))
 
@@ -218,6 +233,21 @@ export function DocumentEditor(): JSX.Element {
     void fillDetails(key, p.id)
   }
 
+  /** A scanned or typed barcode / item code adds the item (or one more of it). */
+  const scan = (raw: string): void => {
+    const code = raw.trim().toLowerCase()
+    if (!code) return
+    const p = products.find((x) => (x.barcode ?? '').toLowerCase() === code || (x.sku ?? '').toLowerCase() === code)
+    if (!p) return toast.error(`No item has the barcode or code "${raw.trim()}".`)
+    const same = lines.find((l) => l.productId === p.id)
+    if (same) return setLine(same.key, { qty: same.qty + 1 })
+    const empty = lines.find((l) => !l.productId && !l.description.trim())
+    if (empty) return pickProduct(empty.key, p)
+    const nl = newLine()
+    setLines((ls) => [...ls, nl])
+    pickProduct(nl.key, p)
+  }
+
   const stockAffecting = meta.stock !== 0 && !((docType === 'sale_invoice' || docType === 'sale_return') && !h.deductStock) && !(docType === 'purchase_invoice' && h.directToProject)
 
   const save = async (andPrint = false): Promise<void> => {
@@ -237,7 +267,7 @@ export function DocumentEditor(): JSX.Element {
       }
       const savedId = await api<number>(h.id ? 'docs.update' : 'docs.create', payload)
       toast.ok(`${meta.label} saved.`)
-      if (andPrint) api('print.open', { kind: 'doc', id: savedId }).catch(toast.error)
+      if (andPrint || (!h.id && opt('txn.preview') && (docType === 'sale_invoice' || docType === 'quotation'))) api('print.open', { kind: 'doc', id: savedId }).catch(toast.error)
       nav(`/doc/${savedId}`, { replace: true })
     } catch (e) {
       toast.error(e)
@@ -261,8 +291,10 @@ export function DocumentEditor(): JSX.Element {
 
   if (!loaded || !meta) return <Loading />
 
-  const showTax = lines.some((l) => l.taxRate > 0) || h.isTaxInvoice || (opt('doc.tax') && taxRates.some((r) => r.rate > 0))
-  const canDiscount = (!isSales || can('sales.discount')) && (opt('doc.discount') || lines.some((l) => l.discountPct > 0) || Number(h.docDiscount) > 0)
+  const showTax = lines.some((l) => l.taxRate > 0) || h.isTaxInvoice || (opt('item.tax') && taxRates.some((r) => r.rate > 0))
+  const mayDiscount = !isSales || can('sales.discount')
+  const lineDiscount = mayDiscount && (opt('item.discount') || lines.some((l) => l.discountPct > 0))
+  const docDiscount = mayDiscount && (opt('txn.discount') || Number(h.docDiscount) > 0)
   const sym = settings.currency_symbol ?? 'Rs.'
 
   return (
@@ -310,7 +342,7 @@ export function DocumentEditor(): JSX.Element {
             <Field label="Valid until">
               <DateInput clearable value={h.validUntil} onChange={(e) => setH({ ...h, validUntil: e.target.value })} />
             </Field>
-          ) : meta.financial && !docType.includes('return') && (opt('doc.due_date') || h.dueDate) ? (
+          ) : meta.financial && !docType.includes('return') && (opt('txn.due_date') || h.dueDate) ? (
             <Field label="Due date">
               <DateInput clearable value={h.dueDate} onChange={(e) => setH({ ...h, dueDate: e.target.value })} />
             </Field>
@@ -330,7 +362,7 @@ export function DocumentEditor(): JSX.Element {
               </Field>
             </>
           )}
-          {(opt('doc.project_link') || h.projectId) && (
+          {(opt('txn.project_link') || h.projectId) && (
           <Field label="Solar project (optional)" className="col-span-2">
             <Combobox
               options={projectOptions}
@@ -344,7 +376,7 @@ export function DocumentEditor(): JSX.Element {
             />
           </Field>
           )}
-          {meta.stock !== 0 && opt('doc.warehouse') && (
+          {meta.stock !== 0 && opt('txn.warehouse') && (
             <Field label="Warehouse">
               <Select value={h.warehouseId ?? ''} onChange={(e) => setH({ ...h, warehouseId: Number(e.target.value) })}>
                 {warehouses.map((w) => (
@@ -356,15 +388,18 @@ export function DocumentEditor(): JSX.Element {
               </Select>
             </Field>
           )}
-          {(opt('doc.party_ref') || h.partyRef) && (
+          {(opt('txn.po_details') || h.partyRef) && (
           <Field label={isSales ? 'Customer PO / reference' : 'Supplier invoice no.'}>
             <Input value={h.partyRef ?? ''} onChange={(e) => setH({ ...h, partyRef: e.target.value })} />
           </Field>
           )}
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-line pt-3 text-[13px]">
-          {(docType === 'sale_invoice' || docType === 'quotation' || docType === 'sale_order') && (opt('doc.tax') || h.isTaxInvoice) && (
+          {(docType === 'sale_invoice' || docType === 'quotation' || docType === 'sale_order') && (opt('item.tax') || h.isTaxInvoice) && (
             <Checkbox checked={!!h.isTaxInvoice} onChange={(v) => setH({ ...h, isTaxInvoice: v })} label="Sales Tax Invoice format" />
+          )}
+          {docType === 'sale_invoice' && !h.id && opt('txn.cash_sale') && (
+            <Checkbox checked={cashSale} onChange={(v) => { setCashSale(v); if (!v) setPayment((p: any) => ({ ...p, amount: 0 })) }} label="Cash sale (full amount received now)" />
           )}
           {docType === 'sale_invoice' && (
             <Checkbox checked={!!h.deductStock} onChange={(v) => setH({ ...h, deductStock: v })} label="Deduct items from stock" />
@@ -395,6 +430,23 @@ export function DocumentEditor(): JSX.Element {
       </Card>
 
       <Card pad={false} className="mb-4">
+        {opt('item.barcode') && opt('item.enabled') && (
+          <div className="border-b border-line px-4 py-2.5">
+            <Input
+              sm
+              aria-label="Scan barcode"
+              value={scanText}
+              onChange={(e) => setScanText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return
+                e.preventDefault()
+                scan(scanText)
+                setScanText('')
+              }}
+              placeholder="Scan a barcode or type an item code, then press Enter"
+            />
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="tbl">
             <thead>
@@ -402,9 +454,9 @@ export function DocumentEditor(): JSX.Element {
                 <th style={{ width: 34 }}>#</th>
                 <th style={{ minWidth: 300 }}>Item / description</th>
                 <th style={{ width: 90 }} className="text-right">Qty</th>
-                <th style={{ width: 70 }}>Unit</th>
+                {opt('item.units') && <th style={{ width: 70 }}>Unit</th>}
                 <th style={{ width: 120 }} className="text-right">Rate</th>
-                {canDiscount && <th style={{ width: 80 }} className="text-right">Disc %</th>}
+                {lineDiscount && <th style={{ width: 80 }} className="text-right">Disc %</th>}
                 {showTax && <th style={{ width: 80 }} className="text-right">Tax %</th>}
                 <th style={{ width: 130 }} className="text-right">Amount</th>
                 <th style={{ width: 40 }} />
@@ -414,13 +466,14 @@ export function DocumentEditor(): JSX.Element {
               {lines.map((l, i) => {
                 const p = l.productId ? productMap.get(l.productId) : undefined
                 const c = computed.lines[i]
-                const short = isSales && stockAffecting && p && p.type === 'goods' && l.qty > p.stock
+                const short = opt('item.stock') && isSales && stockAffecting && p && p.type === 'goods' && l.qty > p.stock
                 const belowCost = isSales && p && p.avg_cost !== null && p.avg_cost > 0 && l.rate > 0 && l.rate < p.avg_cost
                 return (
                   <tr key={l.key} className="align-top">
                     <td className="pt-3 text-muted">{i + 1}</td>
                     <td>
                       <div className="space-y-1.5">
+                        {opt('item.enabled') && (
                         <Combobox
                           sm
                           options={productOptions}
@@ -431,6 +484,7 @@ export function DocumentEditor(): JSX.Element {
                           onCreate={can('inventory.manage') ? (name) => setProductModal({ open: true, name, lineKey: l.key }) : undefined}
                           createLabel="New product"
                         />
+                        )}
                         <Input sm aria-label="Item name" className="font-medium" value={l.description} onChange={(e) => setLine(l.key, { description: e.target.value })} placeholder="Item name printed on the document (bold)" />
                         {l.showDetails || l.details ? (
                           <Textarea
@@ -441,7 +495,7 @@ export function DocumentEditor(): JSX.Element {
                             onChange={(e) => setLine(l.key, { details: e.target.value })}
                             placeholder="Item description (optional)"
                           />
-                        ) : !opt('doc.item_details') ? null : (
+                        ) : !opt('txn.item_description') ? null : (
                           <button type="button" className="flex items-center gap-1 text-[12px] font-medium text-brand hover:underline cursor-pointer" onClick={() => setLine(l.key, { showDetails: true })}>
                             <Plus className="h-3.5 w-3.5" /> Add item description
                           </button>
@@ -449,22 +503,23 @@ export function DocumentEditor(): JSX.Element {
                         {(p?.track_serial || l.serials) && stockAffecting ? (
                           <Input sm value={l.serials} onChange={(e) => setLine(l.key, { serials: e.target.value })} placeholder={`Serial numbers (comma separated)${p?.track_serial ? ` - ${l.qty} required` : ''}`} />
                         ) : null}
-                        {isSales && (l.warranty || p?.warranty_months) && (opt('doc.serial_warranty') || l.warranty) ? (
+                        {isSales && (l.warranty || p?.warranty_months) && (opt('txn.warranty') || l.warranty) ? (
                           <Input sm value={l.warranty} onChange={(e) => setLine(l.key, { warranty: e.target.value })} placeholder="Warranty (e.g. 12 Years)" />
                         ) : null}
-                        {p && (opt('doc.stock_hints') || short) && (
+                        {p && (opt('item.stock') || opt('txn.purchase_price')) && (
                           <div className="flex flex-wrap gap-3 text-[12px] text-muted">
-                            {p.type === 'goods' && <span className={short ? 'font-semibold text-bad' : ''}>In stock: {fmtQty(p.stock)} {p.unit}{short && ' - not enough stock'}</span>}
-                            {opt('doc.stock_hints') && p.avg_cost !== null && p.type === 'goods' && <span>Avg cost: {money(p.avg_cost)}</span>}
-                            {opt('doc.stock_hints') && belowCost && <span className="font-semibold text-warn"><AlertTriangle className="inline h-3 w-3" /> Below cost</span>}
+                            {opt('item.stock') && p.type === 'goods' && <span className={short ? 'font-semibold text-bad' : ''}>In stock: {fmtQty(p.stock)} {p.unit}{short && ' - not enough stock'}</span>}
+                            {opt('txn.purchase_price') && p.avg_cost !== null && p.type === 'goods' && <span>Avg cost: {money(p.avg_cost)}</span>}
+                            {opt('txn.purchase_price') && belowCost && <span className="font-semibold text-warn"><AlertTriangle className="inline h-3 w-3" /> Below cost</span>}
                           </div>
                         )}
+                        {isSales && docType !== 'quotation' && opt('txn.last_prices') && p && <LastPrices productId={p.id} partyId={h.partyId} onPick={(rate) => setLine(l.key, { rate })} />}
                       </div>
                     </td>
                     <td><NumberInput sm value={l.qty} onChange={(v) => setLine(l.key, { qty: v })} /></td>
-                    <td><Input sm value={l.unit} onChange={(e) => setLine(l.key, { unit: e.target.value })} /></td>
+                    {opt('item.units') && <td><Input sm value={l.unit} onChange={(e) => setLine(l.key, { unit: e.target.value })} /></td>}
                     <td><NumberInput sm value={l.rate} onChange={(v) => setLine(l.key, { rate: v })} /></td>
-                    {canDiscount && <td><NumberInput sm value={l.discountPct} onChange={(v) => setLine(l.key, { discountPct: v })} /></td>}
+                    {lineDiscount && <td><NumberInput sm value={l.discountPct} onChange={(v) => setLine(l.key, { discountPct: v })} /></td>}
                     {showTax && (
                       <td>
                         <Select sm value={String(l.taxRate)} onChange={(e) => setLine(l.key, { taxRate: Number(e.target.value) })}>
@@ -499,24 +554,28 @@ export function DocumentEditor(): JSX.Element {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="space-y-4">
-          {(opt('doc.notes_terms') || h.notes) && (
+          {(opt('txn.notes') || opt('txn.terms') || h.notes) && (
           <Card title="Notes & terms">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {(opt('txn.notes') || h.notes) && (
               <Field label="Notes (printed)">
                 <Textarea rows={4} value={h.notes ?? ''} onChange={(e) => setH({ ...h, notes: e.target.value })} />
               </Field>
+              )}
+              {(opt('txn.terms') || h.terms) && (
               <Field label="Terms & conditions (printed)">
                 <Textarea rows={4} value={h.terms ?? ''} onChange={(e) => setH({ ...h, terms: e.target.value })} />
               </Field>
+              )}
             </div>
           </Card>
           )}
-          {meta.financial && can('accounts.manage') && opt('doc.payment_now') && (
+          {meta.financial && can('accounts.manage') && opt('txn.payment_now') && (
             <Card title={docType === 'sale_invoice' || docType === 'purchase_return' ? 'Payment received now' : 'Payment made now'}>
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 <Field label="Amount">
                   <div className="flex gap-1">
-                    <NumberInput value={payment.amount} onChange={(v) => setPayment({ ...payment, amount: v })} />
+                    <NumberInput value={payment.amount} onChange={(v) => { setCashSale(false); setPayment({ ...payment, amount: v }) }} />
                     <Button size="sm" className="h-9" onClick={() => setPayment({ ...payment, amount: t.grandTotal })}>Full</Button>
                   </div>
                 </Field>
@@ -550,31 +609,35 @@ export function DocumentEditor(): JSX.Element {
           <div className="space-y-1 text-[13.5px]">
             <Row label="Subtotal" value={money(t.subtotal)} />
             {t.lineDiscountTotal > 0 && <Row label="Line discounts" value={`- ${money(t.lineDiscountTotal)}`} />}
-            {canDiscount && (
+            {docDiscount && (
               <div className="flex items-center justify-between gap-3 py-1">
                 <span className="text-muted">Discount ({sym})</span>
                 <NumberInput sm className="w-32" value={h.docDiscount} onChange={(v) => setH({ ...h, docDiscount: v })} />
               </div>
             )}
-            {(opt('doc.other_charges') || Number(h.otherCharges) > 0) && (
+            {(opt('txn.other_charges') || Number(h.otherCharges) > 0) && (
             <div className="flex items-center justify-between gap-2 py-1">
               <Input sm className="w-40" value={h.otherChargesLabel ?? ''} onChange={(e) => setH({ ...h, otherChargesLabel: e.target.value })} placeholder={isSales ? 'Freight / other charges' : 'Freight / loading'} />
               <NumberInput sm className="w-32" value={h.otherCharges} onChange={(v) => setH({ ...h, otherCharges: v })} />
             </div>
             )}
             {t.taxTotal !== 0 && <Row label="Sales tax" value={money(t.taxTotal, { decimals: 2 })} />}
-            {(opt('doc.round_off') || Number(h.roundOff) !== 0) && (
-            <div className="flex items-center justify-between gap-3 py-1">
-              <span className="text-muted">Round off</span>
-              <NumberInput sm className="w-32" value={h.roundOff} onChange={(v) => setH({ ...h, roundOff: v })} />
-            </div>
+            {autoRound ? (
+              <Row label={`Round off (${roundMode === 'up' ? 'up' : roundMode === 'down' ? 'down' : 'nearest'} ${roundStep})`} value={money(autoRoundValue, { decimals: 2 })} />
+            ) : (
+              (opt('txn.round_off') || Number(h.roundOff) !== 0) && (
+                <div className="flex items-center justify-between gap-3 py-1">
+                  <span className="text-muted">Round off</span>
+                  <NumberInput sm className="w-32" value={h.roundOff} onChange={(v) => setH({ ...h, roundOff: v })} />
+                </div>
+              )
             )}
             <div className="my-2 border-t border-line" />
             <div className="flex items-baseline justify-between">
               <span className="font-semibold">Grand total</span>
               <span className="num text-[22px] font-bold text-brand">{money(t.grandTotal)}</span>
             </div>
-            {opt('doc.amount_words') && <div className="text-[12px] text-muted">{amountInWords(t.grandTotal, settings.currency_word ?? 'Rupees')}</div>}
+            {opt('txn.amount_words') && <div className="text-[12px] text-muted">{amountInWords(t.grandTotal, settings.currency_word ?? 'Rupees')}</div>}
             {meta.financial && payment.amount > 0 && (
               <>
                 <Row label="Paid now" value={money(payment.amount)} />
@@ -621,6 +684,29 @@ export function DocumentEditor(): JSX.Element {
           }
         }}
       />
+    </div>
+  )
+}
+
+/** The last five prices this item was sold at (to this customer first); a click puts the price on the line. */
+function LastPrices({ productId, partyId, onPick }: { productId: number; partyId: number | null; onPick: (rate: number) => void }): JSX.Element | null {
+  const [rows, setRows] = useState<Array<{ rate: number; date: string; party_name: string | null; same_party: number }>>([])
+  useEffect(() => {
+    let alive = true
+    api<any[]>('docs.lastPrices', { productId, partyId }).then((r) => alive && setRows(r)).catch(() => alive && setRows([]))
+    return () => {
+      alive = false
+    }
+  }, [productId, partyId])
+  if (!rows.length) return null
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-muted">
+      <span>Last prices:</span>
+      {rows.map((r, i) => (
+        <button key={i} type="button" onClick={() => onPick(r.rate)} title={`${r.party_name ?? 'Walk-in'}, ${r.date}`} className={cx('rounded-md border px-1.5 py-0.5 hover:border-brand hover:text-brand cursor-pointer', r.same_party ? 'border-brand/50 text-ink' : 'border-line')}>
+          {money(r.rate)}
+        </button>
+      ))}
     </div>
   )
 }

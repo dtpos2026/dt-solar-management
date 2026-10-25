@@ -31,6 +31,7 @@ export interface ProductLite {
   id: number
   name: string
   sku: string | null
+  barcode: string | null
   type: 'goods' | 'service'
   unit: string
   sale_price: number

@@ -106,7 +106,7 @@ function Boot(): JSX.Element {
         <Route path="/doc/new/:type" element={<DocumentEditor />} />
         <Route path="/doc/:id" element={<DocumentView />} />
         <Route path="/doc/:id/edit" element={<DocumentEditor />} />
-        <Route path="/inventory" element={<InventoryPage />} />
+        <Route path="/inventory" element={<Gate opt="item.enabled"><InventoryPage /></Gate>} />
         <Route path="/customers" element={<PartiesPage type="customer" />} />
         <Route path="/suppliers" element={<PartiesPage type="supplier" />} />
         <Route path="/party/:id" element={<PartyDetail />} />

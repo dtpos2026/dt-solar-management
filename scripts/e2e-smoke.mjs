@@ -233,25 +233,85 @@ for (const [name, args] of prints) {
   console.log('CRM OK: summary, timeline, lost needs a reason, won creates the customer')
 }
 
-// ---- Customizable mode: Simple shop setup hides modules and fields, Standard brings everything back ----
+// ---- Editable mode (Vyapar-style settings): Standard by default, Simple shop, scan box, invoice print settings ----
 {
   const call = (m, a) => page.evaluate(([m, a]) => window.dt.call(m, a), [m, a])
   const navHas = (text) => page.locator('aside a', { hasText: text }).count()
   if ((await call('settings.get')).ui_mode !== 'standard') throw new Error('a new installation must start in Standard mode')
   await page.evaluate(() => (window.location.hash = '#/settings?tab=customize'))
   await page.waitForSelector('text=Software mode', { timeout: 10000 })
+  for (const t of ['Transaction Header', 'Items Table', 'Taxes, Discount & Total', 'More Transaction Features', 'Cash Sale by default', 'Round Off Transaction amount']) {
+    if (!(await page.getByText(t, { exact: true }).count())) throw new Error(`Transaction screen lacks "${t}"`)
+  }
+  await page.getByText('More Transaction Features', { exact: true }).scrollIntoViewIfNeeded()
+  await page.screenshot({ path: join(out, '31a1-customize-transaction.png') })
+  await page.getByRole('button', { name: 'Invoice Print', exact: true }).click()
+  for (const t of ['Print Company Info/Header', 'Totals & Taxes', 'Footer', 'Company Name Text Size', 'Total Item Quantity', 'Amount Grouping']) {
+    if (!(await page.getByText(t, { exact: true }).count())) throw new Error(`Invoice Print screen lacks "${t}"`)
+  }
+  await page.getByText('Footer', { exact: true }).scrollIntoViewIfNeeded()
+  await page.screenshot({ path: join(out, '31a2-customize-print.png') })
+  await page.getByRole('button', { name: 'Item', exact: true }).click()
+  for (const t of ['Enable Item', 'Stock maintenance', 'Update Sale Price from TXN']) if (!(await page.getByText(t, { exact: true }).count())) throw new Error(`Item screen lacks "${t}"`)
   await page.screenshot({ path: join(out, '31a-customize.png') })
   await page.getByRole('button', { name: /Simple shop/ }).click()
   await page.waitForFunction(() => !document.querySelector('aside a[href="#/crm"]'), null, { timeout: 10000 })
-  if ((await call('settings.get')).ui_mode !== 'custom') throw new Error('Simple shop did not switch to Customizable mode')
+  if ((await call('settings.get')).ui_mode !== 'custom') throw new Error('Simple shop did not switch to Editable mode')
   for (const t of ['CRM & Leads', 'Solar Projects', 'Day Closing']) if (await navHas(t)) throw new Error(`${t} is still in the menu after Simple shop`)
   for (const t of ['Sales', 'Quotations', 'Purchases', 'Inventory', 'Customers', 'Accounts', 'Expenses', 'Reports']) if (!(await navHas(t))) throw new Error(`${t} vanished from the menu after Simple shop`)
+  // the barcode scan box is a switch of its own
+  await page.evaluate(() => (window.location.hash = '#/settings?tab=customize'))
+  await page.getByLabel('Search settings').fill('Barcode scanning')
+  await page.locator('[role=switch]').first().click()
+  await page.waitForFunction(() => window.dt.call('settings.get').then((s) => s.ui_options['item.barcode'] === true), null, { timeout: 10000 })
+  // automatic round off: nearest 100
+  await page.getByLabel('Search settings').fill('Round off')
+  await page.locator('[role=switch]').first().click()
+  await page.waitForFunction(() => window.dt.call('settings.get').then((s) => s.ui_options['txn.round_off'] === true), null, { timeout: 10000 })
+  await page.locator('select').nth(0).selectOption('nearest')
+  await page.waitForFunction(() => window.dt.call('settings.get').then((s) => s.ui_options['txn.round_mode'] === 'nearest'), null, { timeout: 10000 })
+  await page.locator('select').nth(1).selectOption('100')
+  await page.waitForFunction(() => window.dt.call('settings.get').then((s) => s.ui_options['txn.round_to'] === '100'), null, { timeout: 10000 })
+  const pid = await call('products.save', { name: 'E2E Scan Item', type: 'goods', unit: 'pcs', salePrice: 1234, barcode: '8901234567890' })
   await page.evaluate(() => (window.location.hash = '#/doc/new/sale_invoice'))
   await page.waitForSelector('text=Notes & terms', { timeout: 10000 })
   for (const t of ['Solar project (optional)', 'Warehouse', 'Customer PO / reference']) if (await page.getByText(t, { exact: true }).count()) throw new Error(`"${t}" is still on the invoice after Simple shop`)
+  if (!(await page.getByText('Cash sale (full amount received now)').count())) throw new Error('Cash Sale by default did not add the cash sale box')
+  await page.getByLabel('Scan barcode').fill('8901234567890')
+  await page.getByLabel('Scan barcode').press('Enter')
+  await page.waitForFunction(() => [...document.querySelectorAll('input[aria-label="Item name"]')].some((i) => i.value === 'E2E Scan Item'), null, { timeout: 5000 })
+  await page.getByLabel('Scan barcode').fill('8901234567890')
+  await page.getByLabel('Scan barcode').press('Enter')
+  await page.waitForTimeout(300)
+  const rowText = await page.locator('table.tbl tbody tr').first().innerText()
+  if (!/2,468/.test(rowText)) throw new Error('scanning the same barcode twice did not make quantity 2 (line total 2,468): ' + rowText.replace(/\s+/g, ' ').slice(0, 200))
+  const summary = await page.locator('text=Round off (nearest 100)').count()
+  if (!summary) throw new Error('automatic round off did not show on the invoice')
+  const body = await page.locator('body').innerText()
+  if (!/Grand total\s+Rs\.\s*2,500/.test(body)) throw new Error('automatic round off nearest 100 did not make the grand total 2,500: ' + (body.match(/Grand total[^\n]*\n?[^\n]*/) ?? [''])[0])
   await page.screenshot({ path: join(out, '31b-simple-invoice.png') })
+  await call('products.delete', { id: pid }).catch(() => undefined)
   await page.evaluate(() => (window.location.hash = '#/crm'))
   await page.waitForFunction(() => window.location.hash === '#/', null, { timeout: 5000 })
+
+  // Invoice Print settings reach the printed document: no company name, another title, total quantity, no thousands separators
+  await call('settings.update', { patch: { ui_options: { 'print.company_name': false, 'print.address': false, 'print.total_qty': true, 'print.grouping': false, 'print.min_rows': 0, 'print.title.sale_invoice': 'Tax Invoice', 'print.signature_text': 'Managing Director' } } })
+  const printable = (await call('docs.list', { docType: 'sale_invoice' }))[0]
+  const waitWin = app.waitForEvent('window', { timeout: 15000 })
+  await call('print.open', { kind: 'doc', id: printable.id })
+  const pw = await waitWin
+  await pw.waitForLoadState('domcontentloaded')
+  await pw.waitForSelector('.sheet', { timeout: 15000 })
+  await pw.waitForTimeout(1500)
+  const sheet = await pw.locator('.sheet').first().innerText()
+  await pw.screenshot({ path: join(out, '31c-print-editable.png'), fullPage: true })
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((x) => x.webContents.getURL().includes('/print/'))?.close())
+  if (sheet.slice(0, 400).includes('WETCO SOLAR SOLUTIONS')) throw new Error('the company name is still printed in the header')
+  if (!/tax invoice/i.test(sheet)) throw new Error('the printed name of the invoice did not change')
+  if (!/Total quantity:/.test(sheet)) throw new Error('Total Item Quantity did not print')
+  if (!/Managing Director/.test(sheet)) throw new Error('the custom signature text did not print')
+  if (/\d,\d{3}/.test(sheet.replace(/\d{4}-\d{2}/g, ''))) throw new Error('Amount Grouping off still printed thousands separators: ' + (sheet.match(/\S*\d,\d{3}\S*/) ?? [''])[0])
+
   // Standard mode: everything is back, the switches are kept for later
   await page.evaluate(() => (window.location.hash = '#/settings?tab=customize'))
   await page.waitForSelector('text=Software mode', { timeout: 10000 })
@@ -260,8 +320,9 @@ for (const [name, args] of prints) {
   if ((await call('settings.get')).ui_mode !== 'standard') throw new Error('Standard mode was not saved')
   await page.evaluate(() => (window.location.hash = '#/doc/new/sale_invoice'))
   await page.waitForSelector('text=Solar project (optional)', { timeout: 10000 })
+  if (await page.getByLabel('Scan barcode').count()) throw new Error('the scan box shows in Standard mode')
   await page.evaluate(() => (window.location.hash = '#/'))
-  console.log('CUSTOMIZE OK: Standard by default, Simple shop hides CRM, projects, closing and invoice fields, Standard restores them')
+  console.log('EDITABLE OK: Vyapar screens and labels, Simple shop menu and invoice, cash sale box, barcode scan twice gives quantity 2, Invoice Print settings in the printed document, Standard restores')
 }
 
 // ---- Administrator password reset sent by Digital Target (signed, device-bound, one-time) ----

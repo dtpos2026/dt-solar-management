@@ -43,7 +43,7 @@ export function formatQty(n: number): string {
 }
 
 /** Convert a number to words (South-Asian numbering: lakh, crore) for invoices. */
-export function amountInWords(amount: number, currencyWord = 'Rupees'): string {
+export function amountInWords(amount: number, currencyWord = 'Rupees', style: 'south_asia' | 'international' = 'south_asia'): string {
   const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve',
     'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen']
   const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']
@@ -58,6 +58,22 @@ export function amountInWords(amount: number, currencyWord = 'Rupees'): string {
   const paisa = Math.round((v - whole) * 100)
   if (whole === 0 && paisa === 0) return `Zero ${currencyWord} Only`
   const parts: string[] = []
+  if (style === 'international') {
+    const billion = Math.floor(whole / 1000000000)
+    whole %= 1000000000
+    const million = Math.floor(whole / 1000000)
+    whole %= 1000000
+    const thou = Math.floor(whole / 1000)
+    whole %= 1000
+    if (billion) parts.push(three(billion) + ' Billion')
+    if (million) parts.push(three(million) + ' Million')
+    if (thou) parts.push(three(thou) + ' Thousand')
+    if (whole) parts.push(three(whole))
+    let w = parts.join(' ')
+    if (w) w += ' ' + currencyWord
+    if (paisa) w += (w ? ' and ' : '') + two(paisa) + ' Paisa'
+    return w + ' Only'
+  }
   const crore = Math.floor(whole / 10000000)
   whole %= 10000000
   const lakh = Math.floor(whole / 100000)

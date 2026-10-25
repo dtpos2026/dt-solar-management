@@ -13,7 +13,7 @@ import { MaterialPrint } from './MaterialPrint'
 import { StockPrint } from './StockPrint'
 import { ReportPrint } from './ReportPrint'
 import { DesignControls, DesignValue } from './DesignControls'
-import { KIND_LABELS, LAYOUT_LABEL, PrintDesign, SavedTemplate, TemplateKind, THERMAL_KINDS, builtinLayouts, resolveDesign, sameOptions } from './design'
+import { KIND_LABELS, LAYOUT_LABEL, PrintDesign, SavedTemplate, TemplateKind, THERMAL_KINDS, builtinLayouts, resolveDesign, sameOptions, withPrintSettings } from './design'
 import { ClosingPrint } from './ClosingPrint'
 import { SHEET_MM, sheetPageCss, type Orientation, type SheetPaper } from './pageRules'
 
@@ -76,7 +76,7 @@ export function PrintView(): JSX.Element {
     document.title = title
   }, [title])
 
-  const base = useMemo(() => (ctx && kt ? resolveDesign(ref, kt.templates, kt.kind, ctx.ps) : null), [ctx, kt, ref])
+  const base = useMemo(() => (ctx && kt ? withPrintSettings(resolveDesign(ref, kt.templates, kt.kind, ctx.ps), ctx.settings) : null), [ctx, kt, ref])
 
   const loadTemplates = useCallback(
     async (k: TemplateKind, selectRef?: string): Promise<void> => {

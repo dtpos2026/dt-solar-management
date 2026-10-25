@@ -429,6 +429,37 @@ function insertLines(ctx: Ctx, docId: number, input: DocInput, lines: ComputedLi
       l.refLineId
     )
   })
+  updateSalePrices(ctx, input.docType, lines)
+}
+
+/** Editable mode, "Update Sale Price from TXN": a saved sales invoice makes its rate the item's sale price. */
+function updateSalePrices(ctx: Ctx, docType: DocType, lines: ComputedLine[]): void {
+  if (docType !== 'sale_invoice' || !uiOn(ctx, 'item.update_sale_price')) return
+  const upd = ctx.db.prepare('UPDATE products SET sale_price = ? WHERE id = ? AND sale_price <> ?')
+  for (const l of lines) {
+    if (!l.productId || !(l.rate > 0)) continue
+    const rate = round2(l.rate)
+    if (upd.run(rate, l.productId, rate).changes) audit(ctx, 'update', 'product', l.productId, `Sale price set to ${rate} from a sales invoice`)
+  }
+}
+
+/** Editable mode switches (Settings, Simple / Customize), read from the settings of this database. */
+function uiOn(ctx: Ctx, key: string): boolean {
+  return optionOn({ ui_mode: getSetting(ctx.db, 'ui_mode', 'standard'), ui_options: getSetting(ctx.db, 'ui_options', {}) }, key)
+}
+
+/** The last five prices an item was sold at, the ones to the given customer first. */
+export function lastSalePrices(ctx: Ctx, input: { productId: number; partyId?: number | null }): Array<{ rate: number; date: string; party_name: string | null; same_party: number }> {
+  requirePerm(ctx, 'sales.view')
+  return ctx.db
+    .prepare(
+      `SELECT dl.rate, d.date, COALESCE(pa.name, d.party_name) AS party_name,
+              CASE WHEN @partyId IS NOT NULL AND d.party_id = @partyId THEN 1 ELSE 0 END AS same_party
+         FROM document_lines dl JOIN documents d ON d.id = dl.document_id LEFT JOIN parties pa ON pa.id = d.party_id
+        WHERE d.firm_id = @firmId AND d.doc_type = 'sale_invoice' AND d.status <> 'cancelled' AND dl.product_id = @productId
+        ORDER BY same_party DESC, d.date DESC, d.id DESC LIMIT 5`
+    )
+    .all({ firmId: ctx.firmId, productId: Number(input.productId), partyId: input.partyId ? Number(input.partyId) : null }) as Array<{ rate: number; date: string; party_name: string | null; same_party: number }>
 }
 
 function headerValues(ctx: Ctx, input: DocInput, totals: ComputedTotals): Record<string, unknown> {
@@ -738,7 +769,7 @@ function blockReason(ctx: Ctx, d: DocRow): { message: string; code: string } | n
     .all(d.id) as Array<{ number: string }>
   // A paid purchase may be deleted: its payments are not lost, they become unallocated advance with the supplier (same as a cancel).
   // Customizable mode, "delete even after payments": the payment stays as the party's advance, exactly like a purchase.
-  const easy = optionOn({ ui_mode: getSetting(db, 'ui_mode', 'standard'), ui_options: getSetting(db, 'ui_options', {}) }, 'data.easy_delete')
+  const easy = uiOn(ctx, 'data.easy_delete')
   if (alloc.length && d.doc_type !== 'purchase_invoice' && !easy) {
     return {
       message: `${d.number} has payments allocated to it (${alloc.map((a) => a.number).join(', ')}), so it cannot be deleted. ${VOID_HINT}`,
@@ -872,7 +903,7 @@ export function listDocuments(
 export function getDocument(ctx: Ctx, id: number): Record<string, unknown> {
   const d = ctx.db
     .prepare(
-      `SELECT d.*, pa.name AS party_master_name, pa.phone AS party_master_phone, pa.address AS party_master_address, pa.city AS party_city,
+      `SELECT d.*, pa.name AS party_master_name, pa.billing_name AS party_billing_name, pa.phone AS party_master_phone, pa.address AS party_master_address, pa.city AS party_city,
          pa.ntn AS party_ntn, pa.strn AS party_strn, pa.cnic AS party_cnic, pa.email AS party_email,
          pr.name AS project_name, pr.code AS project_code, pr.capacity_kw AS project_capacity, pr.site_address AS project_site,
          w.name AS warehouse_name, u.full_name AS created_by_name, uu.full_name AS updated_by_name, rd.number AS ref_doc_number, rd.doc_type AS ref_doc_type,

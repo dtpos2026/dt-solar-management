@@ -381,6 +381,153 @@ for (const [name, args] of prints) {
   console.log('POS OK: module switch, shift, tile add, cash with change, shift closed with a printed Z report')
 }
 
+// ---- ERP modules: switch on from Settings, then cheque, service ticket, salary sheet, reorder and barcode labels ----
+{
+  const call = (m, a) => page.evaluate(([m, a]) => window.dt.call(m, a), [m, a])
+  for (const label of ['Staff & Salary', 'Cheques', 'Service & Warranty', 'Reorder Planning']) {
+    if ((await page.locator('aside a', { hasText: label }).count()) !== 0) throw new Error(`${label} shows in the menu before it is switched on`)
+  }
+  await page.evaluate(() => (window.location.hash = '#/settings?tab=customize'))
+  await page.waitForSelector('text=POS and ERP modules', { timeout: 10000 })
+  // module order in the card: pos, hr, cheques, service, reorder (one at a time so each save sees the previous one)
+  const sw = page.locator('[role=switch]')
+  for (const [i, label] of [[1, 'Staff & Salary'], [2, 'Cheques'], [3, 'Service & Warranty'], [4, 'Reorder Planning']]) {
+    await sw.nth(i).click()
+    await page.waitForSelector(`aside a:has-text("${label}")`, { timeout: 10000 })
+  }
+  await page.screenshot({ path: join(out, '33a-erp-modules-on.png') })
+
+  // --- Cheques: record a cheque received from a customer, then clear it into an account ---
+  const customer = (await call('parties.list', { type: 'customer' }))[0]
+  const accounts = await call('accounts.list')
+  const bank = accounts.find((a) => a.type === 'bank') ?? accounts[0]
+  await call('cheques.save', { direction: 'received', chequeNo: 'CHQ-E2E-1', bank: 'HBL', partyId: customer.id, amount: 15000, chequeDate: new Date(Date.now() - 86400000).toISOString().slice(0, 10) })
+  await page.evaluate(() => (window.location.hash = '#/cheques'))
+  await page.waitForSelector('text=CHQ-E2E-1', { timeout: 10000 })
+  if (!(await page.locator('text=Overdue').count())) throw new Error('a cheque past its date was not shown as overdue')
+  await page.screenshot({ path: join(out, '33b-cheques.png') })
+  await page.getByRole('button', { name: 'Cleared' }).first().click()
+  await page.waitForSelector('text=Book the payment', { timeout: 5000 })
+  await page.locator('select').last().selectOption(String(bank.id))
+  await page.getByRole('button', { name: 'Book the payment' }).click()
+  await page.waitForSelector('text=Payment received and booked', { timeout: 10000 })
+  const chq = (await call('cheques.list', {})).find((c) => c.cheque_no === 'CHQ-E2E-1')
+  if (chq.status !== 'cleared') throw new Error('the cheque was not cleared: ' + chq.status)
+
+  // --- Service: open a ticket, work it, resolve it ---
+  await page.evaluate(() => (window.location.hash = '#/service'))
+  await page.waitForSelector('text=Service and warranty', { timeout: 10000 })
+  await page.getByRole('button', { name: 'New ticket' }).click()
+  await page.getByLabel(/Or write the name/).fill('Walk-in Mr Tariq').catch(async () => {
+    await page.locator('input.input').nth(2).fill('Walk-in Mr Tariq')
+  })
+  await page.locator('textarea').first().fill('Inverter shows E04 and stops after ten minutes')
+  await page.getByRole('button', { name: 'Save ticket' }).click()
+  await page.waitForSelector('text=Start work', { timeout: 10000 })
+  await page.getByRole('button', { name: 'Start work' }).click()
+  await page.getByPlaceholder(/What happened/).fill('Called the customer, visit fixed for tomorrow')
+  await page.getByRole('button', { name: 'Add', exact: true }).click()
+  await page.waitForSelector('text=Called the customer', { timeout: 5000 })
+  await page.getByRole('button', { name: 'Mark resolved' }).click()
+  await page.waitForSelector('text=What was done to fix it', { timeout: 5000 })
+  await page.locator('textarea').last().fill('Replaced the cooling fan and updated the firmware')
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await page.waitForSelector('text=Marked resolved', { timeout: 10000 })
+  const ticket = (await call('service.list', {}))[0]
+  if (ticket.status !== 'resolved' || !ticket.resolution) throw new Error('the ticket was not resolved: ' + JSON.stringify(ticket))
+  await page.screenshot({ path: join(out, '33c-service.png') })
+  await page.keyboard.press('Escape')
+
+  // --- HR: add an employee in the screen, mark one absent day, prepare and pay the salary sheet ---
+  await page.evaluate(() => (window.location.hash = '#/hr'))
+  await page.waitForSelector('text=Staff and salary', { timeout: 10000 })
+  await page.getByRole('button', { name: 'New employee' }).click()
+  await page.getByRole('dialog').getByLabel('Name').fill('Bilal Ahmed')
+  await page.getByRole('dialog').getByLabel('Salary per month').fill('30000')
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await page.waitForSelector('td:has-text("Bilal Ahmed")', { timeout: 10000 })
+  const emp = (await call('hr.employees', {})).find((e) => e.name === 'Bilal Ahmed')
+  if (!emp || emp.salary !== 30000) throw new Error('the employee was not saved correctly: ' + JSON.stringify(emp))
+  const month = new Date().toISOString().slice(0, 7)
+  await call('hr.mark', { employeeId: emp.id, date: `${month}-01`, status: 'absent' })
+  await page.getByRole('button', { name: 'Attendance', exact: true }).click()
+  await page.waitForSelector('td:has-text("Bilal Ahmed")', { timeout: 10000 })
+  await page.screenshot({ path: join(out, '33d-attendance.png') })
+  await page.getByRole('button', { name: 'Salary sheet', exact: true }).click()
+  await page.getByRole('button', { name: 'Prepare salary sheet' }).click()
+  await page.waitForSelector('text=Pay the salaries', { timeout: 10000 })
+  const days = new Date(Number(month.slice(0, 4)), Number(month.slice(5)), 0).getDate()
+  const expectedNet = Math.round((30000 - 30000 / days) * 100) / 100
+  const sheet = (await call('hr.payrolls'))[0]
+  const detail = await call('hr.payroll', { id: sheet.id })
+  const mine = detail.lines.find((l) => l.name === 'Bilal Ahmed')
+  if (Math.abs(mine.net - expectedNet) > 0.01) throw new Error(`salary net is ${mine.net}, expected ${expectedNet}`)
+  await page.screenshot({ path: join(out, '33e-salary-sheet.png') })
+  await page.getByRole('button', { name: 'Pay the salaries' }).click()
+  await page.getByRole('button', { name: /^Pay .*\d/ }).click()
+  await page.waitForSelector('text=Salaries paid and booked', { timeout: 10000 })
+  if ((await call('hr.payroll', { id: sheet.id })).run.status !== 'posted') throw new Error('the salary sheet was not posted')
+  const waitPay = app.waitForEvent('window', { timeout: 15000 })
+  await call('print.open', { kind: 'payroll', id: sheet.id })
+  const payWin = await waitPay
+  await payWin.waitForLoadState('domcontentloaded')
+  await payWin.waitForSelector('.sheet', { timeout: 15000 })
+  const payText = await payWin.locator('.sheet').first().innerText()
+  await payWin.screenshot({ path: join(out, '33f-payroll-print.png'), fullPage: true })
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((x) => x.webContents.getURL().includes('/print/'))?.close())
+  if (!/Salary Sheet/i.test(payText) || !/Bilal Ahmed/.test(payText)) throw new Error('the salary sheet did not print: ' + payText.slice(0, 200))
+  await page.keyboard.press('Escape')
+
+  // --- Reorder: an item below its level shows with a supplier and becomes a purchase order ---
+  const supplier = (await call('parties.list', { type: 'supplier' }))[0]
+  const item = (await call('products.list', { limit: 500, active: 'active' })).rows.find((p) => p.type === 'goods' && p.sale_price > 0 && !p.track_serial)
+  const full = await call('products.get', { id: item.id })
+  const saveItem = (patch) => call('products.save', { id: item.id, name: full.name, type: full.type, unit: full.unit, categoryId: full.category_id, sku: full.sku ?? '', barcode: full.barcode ?? '', brand: full.brand ?? '', model: full.model ?? '', purchasePrice: full.purchase_price ?? 0, salePrice: full.sale_price, taxRate: full.tax_rate, warrantyMonths: full.warranty_months ?? 0, isActive: true, ...patch })
+  await saveItem({ reorderLevel: Math.ceil(item.stock) + 10 })
+  await page.evaluate(() => (window.location.hash = '#/reorder'))
+  await page.waitForSelector(`td:has-text("${item.name}")`, { timeout: 10000 })
+  await page.getByLabel(`Supplier for ${item.name}`).selectOption(String(supplier.id))
+  await page.screenshot({ path: join(out, '33g-reorder.png') })
+  const poBefore = (await call('docs.list', { docType: 'purchase_order' })).length
+  const pickedOthers = await page.locator('input[type=checkbox][aria-label^="Order "]').count()
+  for (let i = 0; i < pickedOthers; i++) {
+    const box = page.locator('input[type=checkbox][aria-label^="Order "]').nth(i)
+    if ((await box.getAttribute('aria-label')) !== `Order ${item.name}`) await box.uncheck()
+  }
+  await page.getByRole('button', { name: /Make purchase orders/ }).click()
+  await page.waitForSelector('text=Purchase orders made', { timeout: 10000 })
+  if ((await call('docs.list', { docType: 'purchase_order' })).length !== poBefore + 1) throw new Error('the purchase order was not made')
+
+  // --- Barcode labels: the POS module is on, so Inventory can give barcodes and print the label sheet ---
+  await saveItem({ barcode: '', reorderLevel: 0 })
+  await page.evaluate(() => (window.location.hash = '#/inventory'))
+  await page.getByLabel(`Select ${item.name}`).check({ timeout: 10000 })
+  await page.getByRole('button', { name: 'Assign barcodes' }).click()
+  await page.waitForSelector('text=got a barcode', { timeout: 10000 })
+  const waitLab = app.waitForEvent('window', { timeout: 15000 })
+  await page.getByLabel(`Select ${item.name}`).check().catch(() => undefined)
+  await page.getByRole('button', { name: 'Print labels' }).click()
+  const labWin = await waitLab
+  await labWin.waitForLoadState('domcontentloaded')
+  await labWin.waitForSelector('.sheet svg rect', { timeout: 15000 })
+  await labWin.screenshot({ path: join(out, '33h-barcode-labels.png'), fullPage: true })
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((x) => x.webContents.getURL().includes('/print/'))?.close())
+
+  // --- switch every module off again: menu entries go, data stays ---
+  await page.evaluate(() => (window.location.hash = '#/settings?tab=customize'))
+  await page.waitForSelector('text=POS and ERP modules', { timeout: 10000 })
+  for (const [i, label] of [[1, 'Staff & Salary'], [2, 'Cheques'], [3, 'Service & Warranty'], [4, 'Reorder Planning']]) {
+    await page.locator('[role=switch]').nth(i).click()
+    await page.waitForSelector(`aside a:has-text("${label}")`, { state: 'detached', timeout: 10000 })
+  }
+  const off = await page.evaluate(() => window.dt.call('cheques.list', {}).then(() => 'open', (e) => String(e?.message ?? e)))
+  if (!/switched off/i.test(off)) throw new Error('the cheque screen still answers when the module is off: ' + off)
+  await page.locator('[role=switch]').first().click()
+  await page.waitForSelector('aside a:has-text("POS Counter")', { state: 'detached', timeout: 10000 })
+  await page.evaluate(() => (window.location.hash = '#/'))
+  console.log('ERP OK: modules switched on from Settings, cheque cleared into a bank account, service ticket opened and resolved, employee added, salary sheet paid and printed, reorder made a purchase order, barcode labels printed, all switched off again and refused by the server')
+}
+
 // ---- Administrator password reset sent by Digital Target (signed, device-bound, one-time) ----
 {
   const b64u = (b) => Buffer.from(b).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  ShoppingCart, ShoppingBag, TrendingUp, Wallet, Users, Landmark, Boxes, FilePlus2, UserPlus, Truck, SunMedium, HandCoins, Receipt, AlertTriangle, BadgeDollarSign, Zap, Leaf, Sun, ArrowRight
+  ShoppingCart, ShoppingBag, TrendingUp, Wallet, Users, Landmark, Boxes, FilePlus2, UserPlus, Truck, SunMedium, HandCoins, Receipt, AlertTriangle, BadgeDollarSign, Zap, Leaf, Sun, ArrowRight, Store
 } from 'lucide-react'
 import { api } from '../api'
 import { useApp, useCan } from '../store'
 import { optionOn } from '@shared/options'
+import { moduleOn } from '@shared/modules'
 import { Badge, Button, Card, Empty, Loading, PeriodPicker, Progress, Select, StatCard, toast } from '../components/ui'
 import { BarChart, Donut } from '../components/Charts'
 import { date, label, money, monthStart, pct, qty, statusTone, today } from '../lib/format'
@@ -45,6 +46,7 @@ export function Dashboard(): JSX.Element {
   const hour = new Date().getHours()
   const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
   const quick = [
+    { label: 'POS Counter', icon: <Store />, to: '/pos', perm: 'pos.use', tone: 'bg-indigo-500', mod: 'pos' },
     { label: 'New Sale', icon: <ShoppingCart />, to: '/doc/new/sale_invoice', perm: 'sales.create', tone: 'bg-blue-500' },
     { label: 'Create Quotation', icon: <FilePlus2 />, to: '/doc/new/quotation', perm: 'quotations.manage', tone: 'bg-emerald-500', opt: 'mod.quotations' },
     { label: 'Add Purchase', icon: <ShoppingBag />, to: '/doc/new/purchase_invoice', perm: 'purchases.create', tone: 'bg-orange-500', opt: 'mod.purchases' },
@@ -53,7 +55,7 @@ export function Dashboard(): JSX.Element {
     { label: 'Add Supplier', icon: <Truck />, to: '/suppliers?new=1', perm: 'suppliers.manage', tone: 'bg-sky-500' },
     { label: 'New Project', icon: <SunMedium />, to: '/projects?new=1', perm: 'projects.manage', tone: 'bg-amber-500', opt: 'mod.projects' },
     { label: 'Add Expense', icon: <Receipt />, to: '/expenses?new=1', perm: 'expenses.manage', tone: 'bg-rose-500', opt: 'mod.expenses' }
-  ].filter((q) => can(q.perm) && (!('opt' in q) || opt((q as { opt: string }).opt)))
+  ].filter((q) => can(q.perm) && (!('opt' in q) || opt((q as { opt: string }).opt)) && (!('mod' in q) || moduleOn(settings, (q as { mod: string }).mod)))
 
   return (
     <div className="space-y-5">

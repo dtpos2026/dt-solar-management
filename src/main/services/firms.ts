@@ -332,7 +332,11 @@ const FIRM_RECORD_TABLES: Array<[table: string, label: string]> = [
   ['day_closings', 'day / month closing'],
   ['products', 'product'],
   ['parties', 'customer / supplier'],
-  ['leads', 'CRM lead']
+  ['leads', 'CRM lead'],
+  ['pos_shifts', 'POS shift'],
+  ['cheques', 'cheque'],
+  ['service_tickets', 'service ticket'],
+  ['employees', 'employee']
 ]
 
 export function firmDeleteImpact(ctx: Ctx, id: number): { canDelete: boolean; blockedReason: string | null; records: Array<{ label: string; count: number }> } {
@@ -527,6 +531,10 @@ function numberExists(db: DB, firmId: number, type: SequenceType, number: string
       return q("SELECT 1 FROM material_moves WHERE firm_id = ? AND direction = 'return' AND number = ?", firmId, number)
     case 'party_adjustment':
       return q('SELECT 1 FROM party_adjustments WHERE firm_id = ? AND number = ?', firmId, number)
+    case 'service_ticket':
+      return q('SELECT 1 FROM service_tickets WHERE firm_id = ? AND number = ?', firmId, number)
+    case 'employee':
+      return q('SELECT 1 FROM employees WHERE firm_id = ? AND code = ?', firmId, number)
     default:
       return q('SELECT 1 FROM documents WHERE firm_id = ? AND doc_type = ? AND number = ?', firmId, type, number)
   }

@@ -15,6 +15,7 @@ import { ReportPrint } from './ReportPrint'
 import { DesignControls, DesignValue } from './DesignControls'
 import { KIND_LABELS, LAYOUT_LABEL, PrintDesign, SavedTemplate, TemplateKind, THERMAL_KINDS, builtinLayouts, resolveDesign, sameOptions, withPrintSettings } from './design'
 import { ClosingPrint } from './ClosingPrint'
+import { PosShiftPrint } from './PosShiftPrint'
 import { SHEET_MM, sheetPageCss, type Orientation, type SheetPaper } from './pageRules'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -26,7 +27,8 @@ const TEMPLATES: Record<string, ComponentType<TemplateProps>> = {
   material: MaterialPrint,
   stock: StockPrint,
   report: ReportPrint,
-  closing: ClosingPrint
+  closing: ClosingPrint,
+  posshift: PosShiftPrint
 }
 
 /** Print routes whose look comes from a print template (customer documents and payment receipts). */
@@ -120,7 +122,7 @@ export function PrintView(): JSX.Element {
   const orient: Orientation = thermal ? 'portrait' : orientation
 
   const Template = TEMPLATES[kind]
-  const run = async (what: 'print' | 'pdf' | 'view'): Promise<void> => {
+  const run = async (what: 'print' | 'pdf' | 'view'): Promise<boolean> => {
     setBusy(what)
     try {
       if (what === 'print') await api('print.run', { kind, paper, orientation: orient })
@@ -130,14 +132,28 @@ export function PrintView(): JSX.Element {
         const r = await api<{ pages: number }>('print.pdf', { filename: title, kind, paper, orientation: orient, view: true })
         if (r?.pages) setPages(r.pages)
       }
+      return true
     } catch (e) {
       setError((e as Error).message)
+      return false
     } finally {
       setBusy(null)
     }
   }
 
   const ready = !!ctx && title !== 'Document' && (!designable || !!design)
+
+  // POS receipts: print as soon as the document is ready (to the receipt printer when one is set), then close this window.
+  const autoprinted = useRef(false)
+  useEffect(() => {
+    if (params.autoprint !== '1' || !ready) return
+    const t = setTimeout(() => {
+      if (autoprinted.current) return
+      autoprinted.current = true
+      void run('print').then((ok) => ok && window.close())
+    }, 800)
+    return () => clearTimeout(t)
+  }, [ready]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Wide reports: when a portrait sheet cannot hold its content (a table wider than the page), turn it sideways
   // automatically - unless the user picked the orientation.

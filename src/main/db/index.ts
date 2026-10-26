@@ -99,6 +99,9 @@ export const DEFAULT_SETTINGS: Record<string, unknown> = {
   // v1.7: Standard (as before) or Customizable (on/off options, see shared/options.ts)
   ui_mode: 'standard',
   ui_options: {},
+  // v1.9: POS and ERP modules, all off until the owner switches them on
+  erp_modules: {},
+  pos_settings: {},
   default_invoice_terms:
     'Goods once sold will not be taken back without prior approval.\nWarranty is subject to manufacturer terms and conditions.\nPayment is due as per agreed terms.',
   default_quotation_terms:

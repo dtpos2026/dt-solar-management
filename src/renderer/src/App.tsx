@@ -29,6 +29,8 @@ import { HelpPage } from './pages/help/HelpPage'
 import { WhatsAppPage } from './pages/whatsapp/WhatsAppPage'
 import { ClosingPage } from './pages/closing/ClosingPage'
 import { useOption } from './lib/options'
+import { moduleOn } from '@shared/modules'
+import { PosPage } from './pages/pos/PosPage'
 import { LicenseBlockedScreen } from './pages/license/LicenseBlockedScreen'
 import { isFullyBlocked } from '@shared/licenseBlock'
 
@@ -43,6 +45,12 @@ interface AppInfo {
 /** A module switched off in Customizable mode: its screen is not reachable (its data is kept). */
 function Gate({ opt, children }: { opt: string; children: ReactNode }): JSX.Element {
   return useOption(opt) ? <>{children}</> : <Navigate to="/" replace />
+}
+
+/** A POS / ERP module that is switched off (Settings, Simple / Customize): no screen, the data is kept. */
+function ModGate({ mod, children }: { mod: string; children: ReactNode }): JSX.Element {
+  const on = useApp((s) => moduleOn(s.settings, mod))
+  return on ? <>{children}</> : <Navigate to="/" replace />
 }
 
 function Boot(): JSX.Element {
@@ -124,6 +132,7 @@ function Boot(): JSX.Element {
         <Route path="/help" element={<HelpPage />} />
         <Route path="/whatsapp" element={<Gate opt="mod.whatsapp"><WhatsAppPage /></Gate>} />
         <Route path="/crm" element={<Gate opt="mod.crm"><CrmPage /></Gate>} />
+        <Route path="/pos" element={<ModGate mod="pos"><PosPage /></ModGate>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Shell>

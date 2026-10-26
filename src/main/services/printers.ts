@@ -43,7 +43,7 @@ export function isThermal(p: PaperSize): boolean {
 /** 'doc' → invoice printer (quotation printer for quotations), 'payment' → receipt printer, reports → report printer. */
 export function printerRoleFor(kind: string, docType?: string | null): PrinterRole | null {
   if (kind === 'doc') return docType === 'quotation' ? 'quotation' : 'invoice'
-  if (kind === 'payment' || kind === 'receipt') return 'receipt'
+  if (kind === 'payment' || kind === 'receipt' || kind === 'posshift') return 'receipt'
   if (REPORT_KINDS.has(kind)) return 'report'
   return null
 }
@@ -107,7 +107,9 @@ const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '')
  */
 export function resolvePrintJob(input: PrintJobInput): PrintJob {
   const s = input.settings ?? {}
-  const role = printerRoleFor(input.kind, input.docType)
+  let role = printerRoleFor(input.kind, input.docType)
+  // A document asked for on a thermal roll goes to the receipt printer when one is set (an A4 printer cannot print a roll).
+  if (role === 'invoice' && isPaperSize(input.paper) && isThermal(input.paper) && str(input.settings?.printer_receipt)) role = 'receipt'
   const roleKey = role ? PRINTER_SETTING[role] : null
   let printer: string | null = null
   let source: string | null = null

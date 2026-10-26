@@ -767,6 +767,193 @@ CREATE INDEX idx_lead_act ON lead_activities(lead_id, at);
     sql: /* sql */ `
 ALTER TABLE parties ADD COLUMN billing_name TEXT;
 `
+  },
+  {
+    version: 12,
+    name: 'POS (shifts, counter sales, held bills), cheques, service tickets, HR and payroll',
+    sql: /* sql */ `
+-- Point of sale: one cash drawer shift per cashier, the counter sales made in it, drawer cash in and out, parked bills.
+CREATE TABLE pos_shifts (
+  id INTEGER PRIMARY KEY,
+  firm_id INTEGER NOT NULL REFERENCES firms(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  opened_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  opening_cash REAL NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'open',
+  closed_at TEXT,
+  expected_cash REAL,
+  counted_cash REAL,
+  difference REAL,
+  notes TEXT
+);
+CREATE INDEX idx_pos_shifts ON pos_shifts(firm_id, user_id, status);
+CREATE TABLE pos_sales (
+  document_id INTEGER PRIMARY KEY REFERENCES documents(id),
+  shift_id INTEGER REFERENCES pos_shifts(id),
+  cashier_id INTEGER REFERENCES users(id),
+  tendered REAL NOT NULL DEFAULT 0,
+  change_given REAL NOT NULL DEFAULT 0,
+  cash_in REAL NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_pos_sales_shift ON pos_sales(shift_id);
+CREATE TABLE pos_cash_moves (
+  id INTEGER PRIMARY KEY,
+  shift_id INTEGER NOT NULL REFERENCES pos_shifts(id),
+  kind TEXT NOT NULL,
+  amount REAL NOT NULL,
+  reason TEXT,
+  at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  user_id INTEGER
+);
+CREATE TABLE pos_holds (
+  id INTEGER PRIMARY KEY,
+  firm_id INTEGER NOT NULL REFERENCES firms(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  label TEXT,
+  cart TEXT NOT NULL,
+  total REAL NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- Cheque register: received (post-dated) and issued cheques; clearing one books the payment.
+CREATE TABLE cheques (
+  id INTEGER PRIMARY KEY,
+  firm_id INTEGER NOT NULL REFERENCES firms(id),
+  direction TEXT NOT NULL,
+  cheque_no TEXT NOT NULL,
+  bank TEXT,
+  party_id INTEGER REFERENCES parties(id),
+  amount REAL NOT NULL,
+  cheque_date TEXT NOT NULL,
+  received_date TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  account_id INTEGER REFERENCES accounts(id),
+  payment_id INTEGER REFERENCES payments(id),
+  document_id INTEGER REFERENCES documents(id),
+  notes TEXT,
+  cleared_at TEXT,
+  bounce_reason TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  created_by INTEGER,
+  updated_at TEXT
+);
+CREATE INDEX idx_cheques ON cheques(firm_id, status, cheque_date);
+
+-- After-sales service and warranty tickets with their activity timeline.
+CREATE TABLE service_tickets (
+  id INTEGER PRIMARY KEY,
+  firm_id INTEGER NOT NULL REFERENCES firms(id),
+  number TEXT NOT NULL,
+  party_id INTEGER REFERENCES parties(id),
+  customer_name TEXT,
+  phone TEXT,
+  product_id INTEGER REFERENCES products(id),
+  item_name TEXT,
+  serial TEXT,
+  document_id INTEGER REFERENCES documents(id),
+  project_id INTEGER REFERENCES projects(id),
+  issue TEXT NOT NULL,
+  priority TEXT NOT NULL DEFAULT 'normal',
+  status TEXT NOT NULL DEFAULT 'new',
+  under_warranty INTEGER NOT NULL DEFAULT 0,
+  assigned_to INTEGER REFERENCES users(id),
+  received_date TEXT NOT NULL,
+  promised_date TEXT,
+  resolved_date TEXT,
+  charges REAL NOT NULL DEFAULT 0,
+  resolution TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  created_by INTEGER,
+  updated_at TEXT,
+  UNIQUE (firm_id, number)
+);
+CREATE INDEX idx_service_status ON service_tickets(firm_id, status);
+CREATE TABLE service_activities (
+  id INTEGER PRIMARY KEY,
+  ticket_id INTEGER NOT NULL REFERENCES service_tickets(id),
+  kind TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  user_id INTEGER,
+  username TEXT
+);
+CREATE INDEX idx_service_act ON service_activities(ticket_id, at);
+
+-- HR and payroll: employees, daily attendance, advances and recoveries, monthly salary sheets.
+CREATE TABLE employees (
+  id INTEGER PRIMARY KEY,
+  firm_id INTEGER NOT NULL REFERENCES firms(id),
+  code TEXT NOT NULL,
+  name TEXT NOT NULL,
+  phone TEXT,
+  cnic TEXT,
+  designation TEXT,
+  department TEXT,
+  join_date TEXT,
+  salary REAL NOT NULL DEFAULT 0,
+  pay_type TEXT NOT NULL DEFAULT 'monthly',
+  status TEXT NOT NULL DEFAULT 'active',
+  left_date TEXT,
+  notes TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  created_by INTEGER,
+  updated_at TEXT,
+  UNIQUE (firm_id, code)
+);
+CREATE TABLE attendance (
+  id INTEGER PRIMARY KEY,
+  employee_id INTEGER NOT NULL REFERENCES employees(id),
+  date TEXT NOT NULL,
+  status TEXT NOT NULL,
+  overtime_hours REAL NOT NULL DEFAULT 0,
+  note TEXT,
+  UNIQUE (employee_id, date)
+);
+CREATE INDEX idx_attendance_date ON attendance(date);
+CREATE TABLE employee_ledger (
+  id INTEGER PRIMARY KEY,
+  firm_id INTEGER NOT NULL REFERENCES firms(id),
+  employee_id INTEGER NOT NULL REFERENCES employees(id),
+  date TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  amount REAL NOT NULL,
+  notes TEXT,
+  expense_id INTEGER REFERENCES expenses(id),
+  run_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  created_by INTEGER
+);
+CREATE INDEX idx_employee_ledger ON employee_ledger(employee_id, date);
+CREATE TABLE payroll_runs (
+  id INTEGER PRIMARY KEY,
+  firm_id INTEGER NOT NULL REFERENCES firms(id),
+  month TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft',
+  account_id INTEGER REFERENCES accounts(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  created_by INTEGER,
+  posted_at TEXT,
+  posted_by INTEGER,
+  UNIQUE (firm_id, month)
+);
+CREATE TABLE payroll_lines (
+  id INTEGER PRIMARY KEY,
+  run_id INTEGER NOT NULL REFERENCES payroll_runs(id),
+  employee_id INTEGER NOT NULL REFERENCES employees(id),
+  base REAL NOT NULL DEFAULT 0,
+  paid_days REAL NOT NULL DEFAULT 0,
+  absent_days REAL NOT NULL DEFAULT 0,
+  overtime_hours REAL NOT NULL DEFAULT 0,
+  overtime_pay REAL NOT NULL DEFAULT 0,
+  bonus REAL NOT NULL DEFAULT 0,
+  deductions REAL NOT NULL DEFAULT 0,
+  advance_recovery REAL NOT NULL DEFAULT 0,
+  net REAL NOT NULL DEFAULT 0,
+  expense_id INTEGER REFERENCES expenses(id),
+  notes TEXT,
+  UNIQUE (run_id, employee_id)
+);
+`
   }
 ]
 

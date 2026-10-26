@@ -3,11 +3,12 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   BarChart3, CalendarCheck, LifeBuoy, MessageCircle, Bell, Boxes, Building2, CalendarDays, ChevronDown, DatabaseBackup, FileText, KeyRound, Landmark,
   LayoutDashboard, Lock, LogOut, Palette, Receipt, Search, Settings, ShieldCheck, ShoppingBag, ShoppingCart, SunMedium, Truck, Users, Check, AlertTriangle,
-  RectangleEllipsis, Target
+  RectangleEllipsis, Target, Store
 } from 'lucide-react'
 import { api } from '../api'
 import { useApp, useCan } from '../store'
 import { optionOn } from '@shared/options'
+import { moduleOn } from '@shared/modules'
 import { Button, Field, Input, Modal, confirmDialog, cx, toast } from './ui'
 import { THEMES, applyTheme, getTheme } from '../lib/theme'
 import { date, label as nice } from '../lib/format'
@@ -17,9 +18,10 @@ import { SETTINGS_ENTRY_PERMS } from '../pages/settings/sections'
 import { PIN_RE, PinInput } from '../pages/users/PinInput'
 import { LocationConsent } from './LocationConsent'
 
-const NAV: Array<{ to: string; label: string; icon: ReactNode; perm?: string | string[]; section?: string; opt?: string }> = [
+const NAV: Array<{ to: string; label: string; icon: ReactNode; perm?: string | string[]; section?: string; opt?: string; mod?: string }> = [
   { to: '/', label: 'Dashboard', icon: <LayoutDashboard />, perm: 'dashboard.view' },
   { to: '/sales', label: 'Sales', icon: <ShoppingCart />, perm: 'sales.view', section: 'Trading' },
+  { to: '/pos', label: 'POS Counter', icon: <Store />, perm: 'pos.use', mod: 'pos' },
   { to: '/quotations', label: 'Quotations', icon: <FileText />, perm: 'quotations.view', opt: 'mod.quotations' },
   { to: '/purchases', label: 'Purchases', icon: <ShoppingBag />, perm: 'purchases.view', opt: 'mod.purchases' },
   { to: '/inventory', label: 'Inventory', icon: <Boxes />, perm: 'inventory.view', opt: 'item.enabled' },
@@ -48,7 +50,7 @@ function Sidebar(): JSX.Element {
   const items = NAV.map((n) => {
     if (n.section) carry = n.section
     return { ...n, sec: carry }
-  }).filter((n) => (!n.perm || (Array.isArray(n.perm) ? n.perm.some(can) : can(n.perm))) && (!n.opt || optionOn(settings, n.opt)))
+  }).filter((n) => (!n.perm || (Array.isArray(n.perm) ? n.perm.some(can) : can(n.perm))) && (!n.opt || optionOn(settings, n.opt)) && (!n.mod || moduleOn(settings, n.mod)))
   let lastSection = ''
   return (
     <aside className="no-print flex w-[232px] shrink-0 flex-col bg-side text-side-ink max-lg:w-[68px]">

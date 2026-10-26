@@ -15,6 +15,8 @@ export type SequenceType =
   | 'material_issue'
   | 'material_return'
   | 'party_adjustment'
+  | 'service_ticket'
+  | 'employee'
 
 export interface DocTypeMeta {
   type: DocType
@@ -58,7 +60,9 @@ export const DEFAULT_PREFIXES: Record<SequenceType, string> = {
   project: 'PRJ-',
   material_issue: 'MI-',
   material_return: 'MR-',
-  party_adjustment: 'JV-'
+  party_adjustment: 'JV-',
+  service_ticket: 'SRV-',
+  employee: 'EMP-'
 }
 
 export const SEQUENCE_LABELS: Record<SequenceType, string> = {
@@ -78,7 +82,9 @@ export const SEQUENCE_LABELS: Record<SequenceType, string> = {
   project: 'Solar Project',
   material_issue: 'Material Issue',
   material_return: 'Material Return',
-  party_adjustment: 'Party Adjustment (Journal)'
+  party_adjustment: 'Party Adjustment (Journal)',
+  service_ticket: 'Service Ticket',
+  employee: 'Employee Code'
 }
 
 export const PROJECT_STATUSES = ['planning', 'quoted', 'in_progress', 'on_hold', 'completed', 'cancelled'] as const

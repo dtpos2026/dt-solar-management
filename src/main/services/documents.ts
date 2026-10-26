@@ -92,6 +92,8 @@ export interface DocInput {
   status?: string
   lines: DocLineInput[]
   payment?: { amount: number; accountId: number; method?: string; reference?: string } | null
+  /** Several payments at billing (the POS counter: cash plus card and so on). Needs accounts.manage or pos.use. */
+  payments?: Array<{ amount: number; accountId: number; method?: string; reference?: string }>
   applyAdvance?: boolean
 }
 
@@ -552,20 +554,22 @@ function handlePaymentAtBilling(ctx: Ctx, docId: number, input: DocInput): void 
   if (!meta.financial) return
   const d = getDocRow(ctx, docId)
   if (input.applyAdvance && d.party_id) applyAdvances(ctx, docId)
-  const amt = round2(num(input.payment?.amount))
-  if (amt > 0) {
+  const pays = input.payments?.length ? input.payments : input.payment ? [input.payment] : []
+  for (const pay of pays) {
+    const amt = round2(num(pay.amount))
+    if (amt <= 0) continue
     const due = docDue(ctx.db, docId)
     if (amt > due + EPS) throw new AppError(`Amount paid (${amt}) is more than the document balance (${due}).`, 'VALIDATION')
-    requirePerm(ctx, 'accounts.manage')
+    if (!(input.payments?.length && can(ctx, 'pos.use'))) requirePerm(ctx, 'accounts.manage')
     const direction = input.docType === 'sale_invoice' || input.docType === 'purchase_return' ? 'in' : 'out'
     insertPayment(ctx, {
       date: d.date,
       direction,
       partyId: d.party_id,
-      accountId: input.payment!.accountId,
+      accountId: pay.accountId,
       amount: amt,
-      method: input.payment!.method,
-      reference: input.payment!.reference,
+      method: pay.method,
+      reference: pay.reference,
       projectId: d.project_id,
       notes: `Against ${d.number}`,
       allocations: [{ documentId: docId, amount: amt }]

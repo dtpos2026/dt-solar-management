@@ -9,6 +9,8 @@ import { api } from '../../api'
 import { useApp, useCan } from '../../store'
 import { Badge, Card, Input, Select, Tabs, Toggle, cx, toast } from '../../components/ui'
 import { OPTIONS, OPTION_PRESETS, OPTION_SCREENS, OptionDef, OptionScreen, optionOn, optionValue } from '@shared/options'
+import { MODULES, POS_METHODS, POS_OPTIONS, moduleOn, posAccountFor, posOption } from '@shared/modules'
+import { useAccounts } from '../../lib/hooks'
 
 /** Rows that open another Settings screen (the Vyapar "more settings" rows). */
 const LINKS: Array<{ screen: OptionScreen; section: string; label: string; hint: string; tab: string }> = [
@@ -102,6 +104,7 @@ export function CustomizeSection(): JSX.Element {
 
   return (
     <div className="space-y-4">
+      <ModulesCard settings={settings} disabled={disabled} save={save} />
       <Card title="Software mode" actions={<SlidersHorizontal className="h-4 w-4 text-muted" />}>
         <div className="flex flex-wrap gap-3">
           {modeCard('standard', 'Standard', 'The software exactly as it has always been. The switches below are ignored.')}
@@ -181,4 +184,72 @@ function TextBox({ def, value, disabled, onSave }: { def: Extract<OptionDef, { k
     if (t !== value) onSave(t)
   }
   return <Input sm className="w-56" maxLength={60} disabled={disabled} value={text ?? value} placeholder={def.placeholder} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} />
+}
+
+const METHOD_LABEL: Record<string, string> = { cash: 'Cash', card: 'Card', bank_transfer: 'Bank transfer', online: 'Online / wallet' }
+
+/** POS and ERP modules: each is switched on or off as a whole (all off at first), independent of Standard / Editable mode. */
+function ModulesCard({ settings, disabled, save }: { settings: Record<string, any>; disabled: boolean; save: (patch: Record<string, unknown>) => Promise<void> }): JSX.Element { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const accounts = useAccounts()
+  const posOn = moduleOn(settings, 'pos')
+  const setModule = (key: string, v: boolean): void => void save({ erp_modules: { ...(settings.erp_modules ?? {}), [key]: v } })
+  const setPos = (key: string, v: boolean | string): void => void save({ pos_settings: { ...(settings.pos_settings ?? {}), [key]: v } })
+  const setPosAccount = (method: string, id: string): void => {
+    const accs = { ...((settings.pos_settings ?? {}).accounts ?? {}) }
+    if (id) accs[method] = Number(id)
+    else delete accs[method]
+    void save({ pos_settings: { ...(settings.pos_settings ?? {}), accounts: accs } })
+  }
+  return (
+    <>
+      <Card title="POS and ERP modules" actions={<Badge tone="info">Independent of the mode below</Badge>}>
+        <div className="mb-2 text-[12.5px] text-muted">Each module is off until you switch it on, so a business that does not need it sees nothing of it. Its data is kept when it is switched off again.</div>
+        <div className="divide-y divide-line">
+          {MODULES.map((m) => (
+            <div key={m.key} className="py-2.5">
+              <Toggle checked={moduleOn(settings, m.key)} disabled={disabled} onChange={(v) => setModule(m.key, v)} label={m.label} description={m.hint} />
+            </div>
+          ))}
+        </div>
+      </Card>
+      {posOn && (
+        <Card title="POS counter settings">
+          <div className="divide-y divide-line">
+            {POS_OPTIONS.map((o) => (
+              <div key={o.key} className="flex items-center justify-between gap-6 py-2.5">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="font-medium">{o.label}</span>
+                  <span title={o.hint} className="cursor-help text-muted"><Info className="h-3.5 w-3.5" /></span>
+                </div>
+                {o.kind === 'toggle' ? (
+                  <Toggle checked={posOption(settings, o.key) === true} disabled={disabled} onChange={(v) => setPos(o.key, v)} />
+                ) : (
+                  <Select sm className="w-56" disabled={disabled} value={String(posOption(settings, o.key))} onChange={(e) => setPos(o.key, e.target.value)}>
+                    {o.choices!.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </Select>
+                )}
+              </div>
+            ))}
+            <div className="py-2.5">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="font-medium">Account that takes each payment method</span>
+                <span title="Cash goes to a cash account; card, bank transfer and online go to a bank or wallet account. Leave on Automatic to pick by account type." className="cursor-help text-muted"><Info className="h-3.5 w-3.5" /></span>
+              </div>
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                {POS_METHODS.map((m) => (
+                  <label key={m} className="flex items-center justify-between gap-3 text-[13px]">
+                    {METHOD_LABEL[m]}
+                    <Select sm className="w-56" disabled={disabled} value={String(posAccountFor(settings, m) ?? '')} onChange={(e) => setPosAccount(m, e.target.value)}>
+                      <option value="">Automatic</option>
+                      {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                    </Select>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+    </>
+  )
 }

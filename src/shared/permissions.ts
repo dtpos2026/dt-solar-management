@@ -36,6 +36,36 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     ]
   },
   {
+    group: 'Point of Sale',
+    items: [
+      { key: 'pos.use', label: 'Sell at the POS counter (cart, hold bills, take payment, print receipts)' },
+      { key: 'pos.shift', label: 'Open and close the cash drawer shift, cash in / out' },
+      { key: 'pos.reports', label: 'See the sales and shift reports of every cashier' }
+    ]
+  },
+  {
+    group: 'Cheques',
+    items: [
+      { key: 'cheques.view', label: 'View the cheque register' },
+      { key: 'cheques.manage', label: 'Record cheques, mark them deposited, cleared or bounced' }
+    ]
+  },
+  {
+    group: 'Service & Warranty',
+    items: [
+      { key: 'service.view', label: 'View service and warranty tickets' },
+      { key: 'service.manage', label: 'Open, update and close service tickets' }
+    ]
+  },
+  {
+    group: 'HR & Payroll',
+    items: [
+      { key: 'hr.view', label: 'View employees and attendance' },
+      { key: 'hr.manage', label: 'Add / edit employees, mark attendance, give salary advances' },
+      { key: 'hr.payroll', label: 'Prepare and pay the monthly salary sheet' }
+    ]
+  },
+  {
     group: 'Quotations',
     items: [
       { key: 'quotations.view', label: 'View quotations' },
@@ -143,7 +173,7 @@ export const DEFAULT_ROLES: DefaultRole[] = [
       'dashboard.view', 'dashboard.financials', 'sales.view', 'quotations.view', 'purchases.view', 'inventory.view',
       'inventory.cost', 'customers.view', 'customers.manage', 'suppliers.view', 'suppliers.manage', 'projects.view',
       'projects.financials', 'accounts.view', 'accounts.manage', 'expenses.view', 'expenses.manage', 'reports.view',
-      'reports.profit', 'license.view', 'closing.manage', 'whatsapp.send'
+      'reports.profit', 'license.view', 'closing.manage', 'whatsapp.send', 'pos.reports', 'cheques.view', 'cheques.manage', 'hr.view', 'hr.payroll'
     ]
   },
   {
@@ -151,7 +181,8 @@ export const DEFAULT_ROLES: DefaultRole[] = [
     description: 'Quotations, sales invoices and customers.',
     permissions: [
       'dashboard.view', 'sales.view', 'sales.create', 'sales.edit', 'quotations.view', 'quotations.manage',
-      'inventory.view', 'customers.view', 'customers.manage', 'projects.view', 'accounts.view', 'whatsapp.send', 'crm.view', 'crm.manage'
+      'inventory.view', 'customers.view', 'customers.manage', 'projects.view', 'accounts.view', 'whatsapp.send', 'crm.view', 'crm.manage',
+      'pos.use', 'pos.shift', 'service.view', 'service.manage'
     ]
   },
   {
@@ -167,7 +198,7 @@ export const DEFAULT_ROLES: DefaultRole[] = [
     description: 'Solar projects, material issues and project costs.',
     permissions: [
       'dashboard.view', 'projects.view', 'projects.manage', 'projects.financials', 'inventory.view', 'customers.view',
-      'quotations.view', 'quotations.manage', 'sales.view', 'expenses.view', 'expenses.manage', 'reports.view', 'whatsapp.send', 'crm.view'
+      'quotations.view', 'quotations.manage', 'sales.view', 'expenses.view', 'expenses.manage', 'reports.view', 'whatsapp.send', 'crm.view', 'service.view'
     ]
   }
 ]
@@ -186,6 +217,7 @@ export const PERMISSION_UPGRADES: Array<{ version: number; perms: string[] }> = 
       'import.manage', 'printers.manage', 'templates.manage', 'whatsapp.send', 'support.use'
     ]
   },
-  { version: 3, perms: ['crm.view', 'crm.manage'] }
+  { version: 3, perms: ['crm.view', 'crm.manage'] },
+  { version: 4, perms: ['pos.use', 'pos.shift', 'pos.reports', 'cheques.view', 'cheques.manage', 'service.view', 'service.manage', 'hr.view', 'hr.manage', 'hr.payroll'] }
 ]
-export const PERMISSION_CATALOGUE_VERSION = 3
+export const PERMISSION_CATALOGUE_VERSION = 4

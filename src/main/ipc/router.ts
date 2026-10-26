@@ -11,6 +11,7 @@ import { dataRoutes } from './routes/data'
 import { accessRoutes, sessionGate } from './routes/access'
 import { cloudRoutes } from './routes/cloud'
 import { crmRoutes } from './routes/crm'
+import { posRoutes } from './routes/pos'
 import { assistRoutes } from './routes/assist'
 import { legacyRoutes } from './routes/legacy'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
@@ -471,6 +472,7 @@ export const routes: Record<string, Route> = {
   ...cloudRoutes,
   ...assistRoutes,
   ...crmRoutes,
+  ...posRoutes,
   ...legacyRoutes
 }
 

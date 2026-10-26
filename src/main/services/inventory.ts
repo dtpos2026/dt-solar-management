@@ -1034,3 +1034,23 @@ export function stockReport(ctx: Ctx, f: { warehouseId?: number; categoryId?: nu
   const totalSaleValue = round2(out.reduce((a, r) => a + r.sale_value, 0))
   return { rows: out, totalValue, totalSaleValue, method: 'Moving weighted average cost' }
 }
+
+/** Gives each chosen product that has no barcode its own code (P and 8 digits), so shelf labels can be printed. Returns how many were given one. */
+export function assignBarcodes(ctx: Ctx, ids: number[]): number {
+  requirePerm(ctx, 'inventory.manage')
+  const sel = ctx.db.prepare(`SELECT p.id, p.barcode FROM products p WHERE p.id = @id AND ${visibleTo('p')}`)
+  const upd = ctx.db.prepare('UPDATE products SET barcode = ? WHERE id = ?')
+  let n = 0
+  ctx.db.transaction(() => {
+    for (const raw of ids ?? []) {
+      const p = sel.get({ id: Number(raw), firmId: ctx.firmId }) as { id: number; barcode: string | null } | undefined
+      if (!p || (p.barcode && p.barcode.trim())) continue
+      const code = `P${String(p.id).padStart(8, '0')}`
+      if (ctx.db.prepare('SELECT 1 FROM products WHERE barcode = ? AND id <> ?').get(code, p.id)) continue
+      upd.run(code, p.id)
+      n++
+    }
+  })()
+  if (n) audit(ctx, 'update', 'product', null, `Gave ${n} product(s) a barcode`)
+  return n
+}

@@ -67,6 +67,11 @@ function validate(ctx: Ctx, input: ExpenseInput): Record<string, unknown> {
 
 export function createExpense(ctx: Ctx, input: ExpenseInput): number {
   requirePerm(ctx, 'expenses.manage')
+  return insertExpense(ctx, input)
+}
+
+/** Books an expense without the expenses permission: for modules that post their own expenses (payroll). */
+export function insertExpense(ctx: Ctx, input: ExpenseInput): number {
   const v = validate(ctx, input)
   return ctx.db.transaction(() => {
     const number = nextNumber(ctx.db, ctx.firmId, 'expense')
@@ -111,6 +116,10 @@ export function updateExpense(ctx: Ctx, input: ExpenseInput): number {
 
 export function cancelExpense(ctx: Ctx, id: number, reason?: string): void {
   requirePerm(ctx, 'expenses.manage')
+  voidExpense(ctx, id, reason)
+}
+
+export function voidExpense(ctx: Ctx, id: number, reason?: string): void {
   const e = ctx.db.prepare('SELECT * FROM expenses WHERE id = ? AND firm_id = ?').get(id, ctx.firmId) as
     | { number: string; status: string; date: string }
     | undefined

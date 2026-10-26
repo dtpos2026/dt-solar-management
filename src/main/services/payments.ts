@@ -470,6 +470,11 @@ export function createPayment(ctx: Ctx, input: PaymentInput): number {
 
 export function cancelPayment(ctx: Ctx, id: number, reason?: string): void {
   requirePerm(ctx, 'accounts.manage')
+  voidPayment(ctx, id, reason)
+}
+
+/** Cancels a payment without a permission check: for modules that book payments on their own (a bounced cheque). */
+export function voidPayment(ctx: Ctx, id: number, reason?: string): void {
   const db = ctx.db
   const p = db.prepare('SELECT * FROM payments WHERE id = ? AND firm_id = ?').get(id, ctx.firmId) as
     | { number: string; status: string; amount: number; date: string }

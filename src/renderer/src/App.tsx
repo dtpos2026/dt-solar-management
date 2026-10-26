@@ -31,6 +31,10 @@ import { ClosingPage } from './pages/closing/ClosingPage'
 import { useOption } from './lib/options'
 import { moduleOn } from '@shared/modules'
 import { PosPage } from './pages/pos/PosPage'
+import { ChequesPage } from './pages/cheques/ChequesPage'
+import { ServicePage } from './pages/service/ServicePage'
+import { HrPage } from './pages/hr/HrPage'
+import { ReorderPage } from './pages/reorder/ReorderPage'
 import { LicenseBlockedScreen } from './pages/license/LicenseBlockedScreen'
 import { isFullyBlocked } from '@shared/licenseBlock'
 
@@ -133,6 +137,10 @@ function Boot(): JSX.Element {
         <Route path="/whatsapp" element={<Gate opt="mod.whatsapp"><WhatsAppPage /></Gate>} />
         <Route path="/crm" element={<Gate opt="mod.crm"><CrmPage /></Gate>} />
         <Route path="/pos" element={<ModGate mod="pos"><PosPage /></ModGate>} />
+        <Route path="/cheques" element={<ModGate mod="cheques"><ChequesPage /></ModGate>} />
+        <Route path="/service" element={<ModGate mod="service"><ServicePage /></ModGate>} />
+        <Route path="/hr" element={<ModGate mod="hr"><HrPage /></ModGate>} />
+        <Route path="/reorder" element={<ModGate mod="reorder"><ReorderPage /></ModGate>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Shell>

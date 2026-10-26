@@ -16,6 +16,8 @@ import { DesignControls, DesignValue } from './DesignControls'
 import { KIND_LABELS, LAYOUT_LABEL, PrintDesign, SavedTemplate, TemplateKind, THERMAL_KINDS, builtinLayouts, resolveDesign, sameOptions, withPrintSettings } from './design'
 import { ClosingPrint } from './ClosingPrint'
 import { PosShiftPrint } from './PosShiftPrint'
+import { PayrollPrint } from './PayrollPrint'
+import { LabelsPrint } from './LabelsPrint'
 import { SHEET_MM, sheetPageCss, type Orientation, type SheetPaper } from './pageRules'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -28,7 +30,9 @@ const TEMPLATES: Record<string, ComponentType<TemplateProps>> = {
   stock: StockPrint,
   report: ReportPrint,
   closing: ClosingPrint,
-  posshift: PosShiftPrint
+  posshift: PosShiftPrint,
+  payroll: PayrollPrint,
+  labels: LabelsPrint
 }
 
 /** Print routes whose look comes from a print template (customer documents and payment receipts). */

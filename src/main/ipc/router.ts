@@ -12,6 +12,7 @@ import { accessRoutes, sessionGate } from './routes/access'
 import { cloudRoutes } from './routes/cloud'
 import { crmRoutes } from './routes/crm'
 import { posRoutes } from './routes/pos'
+import { erpRoutes } from './routes/erp'
 import { assistRoutes } from './routes/assist'
 import { legacyRoutes } from './routes/legacy'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
@@ -473,6 +474,7 @@ export const routes: Record<string, Route> = {
   ...assistRoutes,
   ...crmRoutes,
   ...posRoutes,
+  ...erpRoutes,
   ...legacyRoutes
 }
 

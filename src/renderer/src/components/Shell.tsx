@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   BarChart3, CalendarCheck, LifeBuoy, MessageCircle, Bell, Boxes, Building2, CalendarDays, ChevronDown, DatabaseBackup, FileText, KeyRound, Landmark,
   LayoutDashboard, Lock, LogOut, Palette, Receipt, Search, Settings, ShieldCheck, ShoppingBag, ShoppingCart, SunMedium, Truck, Users, Check, AlertTriangle,
-  RectangleEllipsis, Target, Store
+  RectangleEllipsis, Target, Store, Wrench, UserCog, FileCheck2, PackageSearch
 } from 'lucide-react'
 import { api } from '../api'
 import { useApp, useCan } from '../store'
@@ -25,12 +25,16 @@ const NAV: Array<{ to: string; label: string; icon: ReactNode; perm?: string | s
   { to: '/quotations', label: 'Quotations', icon: <FileText />, perm: 'quotations.view', opt: 'mod.quotations' },
   { to: '/purchases', label: 'Purchases', icon: <ShoppingBag />, perm: 'purchases.view', opt: 'mod.purchases' },
   { to: '/inventory', label: 'Inventory', icon: <Boxes />, perm: 'inventory.view', opt: 'item.enabled' },
+  { to: '/reorder', label: 'Reorder Planning', icon: <PackageSearch />, perm: 'inventory.view', mod: 'reorder' },
   { to: '/customers', label: 'Customers', icon: <Users />, perm: 'customers.view', section: 'Parties' },
   { to: '/suppliers', label: 'Suppliers', icon: <Truck />, perm: 'suppliers.view' },
   { to: '/crm', label: 'CRM & Leads', icon: <Target />, perm: 'crm.view', opt: 'mod.crm' },
+  { to: '/service', label: 'Service & Warranty', icon: <Wrench />, perm: 'service.view', mod: 'service' },
   { to: '/projects', label: 'Solar Projects', icon: <SunMedium />, perm: 'projects.view', section: 'Projects & Money', opt: 'mod.projects' },
   { to: '/accounts', label: 'Accounts', icon: <Landmark />, perm: 'accounts.view', opt: 'mod.accounts' },
+  { to: '/cheques', label: 'Cheques', icon: <FileCheck2 />, perm: 'cheques.view', mod: 'cheques' },
   { to: '/expenses', label: 'Expenses', icon: <Receipt />, perm: 'expenses.view', opt: 'mod.expenses' },
+  { to: '/hr', label: 'Staff & Salary', icon: <UserCog />, perm: 'hr.view', mod: 'hr' },
   { to: '/closing', label: 'Day Closing', icon: <CalendarCheck />, perm: 'closing.manage', opt: 'mod.closing' },
   { to: '/reports', label: 'Reports', icon: <BarChart3 />, perm: ['reports.view', 'reports.profit'], opt: 'mod.reports' },
   { to: '/whatsapp', label: 'WhatsApp', icon: <MessageCircle />, perm: 'whatsapp.send', opt: 'mod.whatsapp' },
@@ -239,6 +243,7 @@ function Notifications(): JSX.Element {
   const can = useCan()
   const license = useApp((s) => s.license)
   const firm = useApp((s) => s.firm)
+  const chequesOn = useApp((s) => moduleOn(s.settings, 'cheques'))
   const [items, setItems] = useState<Array<{ text: string; to: string; tone: string }>>([])
   const [open, setOpen] = useState(false)
   const nav = useNavigate()
@@ -265,12 +270,21 @@ function Notifications(): JSX.Element {
           /* ignore */
         }
       }
+      if (chequesOn && can('cheques.view')) {
+        try {
+          const c = await api<{ overdue: number; today: number }>('cheques.alerts')
+          if (c.overdue) out.push({ text: `${c.overdue} cheque(s) are past their date and not cleared`, to: '/cheques', tone: 'bad' })
+          if (c.today) out.push({ text: `${c.today} cheque(s) are due today`, to: '/cheques', tone: 'warn' })
+        } catch {
+          /* ignore */
+        }
+      }
       setItems(out)
     }
     load()
     const t = setInterval(load, 120000)
     return () => clearInterval(t)
-  }, [license, firm?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [license, firm?.id, chequesOn]) // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="relative">
       <button type="button" className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-line bg-surface hover:border-brand cursor-pointer" onClick={() => setOpen(!open)} onBlur={() => setTimeout(() => setOpen(false), 150)} title="Notifications">

@@ -4,6 +4,7 @@ import { Boxes, Plus, Pencil, Trash2, ArrowLeftRight, ClipboardList, Search, War
 import { api } from '../../api'
 import { useApp, useCan } from '../../store'
 import { optionValue } from '@shared/options'
+import { moduleOn } from '@shared/modules'
 import { Badge, Button, Card, Checkbox, Empty, Field, IconButton, Input, Kv, Modal, NumberInput, PageHeader, PeriodPicker, Select, Tabs, Textarea, Toggle, toast } from '../../components/ui'
 import { DataTable, Column } from '../../components/DataTable'
 import { Combobox } from '../../components/Combobox'
@@ -97,6 +98,7 @@ function ProductsTab({ onEdit, tick }: { onEdit: (p: any) => void; tick: number 
   const canDelete = can('inventory.delete')
   const canManage = can('inventory.manage')
   const canSelect = canDelete || canManage
+  const labelsOn = moduleOn(useApp((st) => st.settings), 'pos')
   const selRows = rows.filter((r) => selected.has(r.id))
   const allSelected = rows.length > 0 && selRows.length === rows.length
   const toggle = (id: number): void =>
@@ -165,6 +167,8 @@ function ProductsTab({ onEdit, tick }: { onEdit: (p: any) => void; tick: number 
         <div className="mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-brand/40 bg-brand-soft px-3 py-2 text-[13px]" role="region" aria-label="Bulk actions">
           <span className="font-semibold text-brand">{selRows.length} selected</span>
           {canManage && <Button size="sm" icon={<Tags className="h-4 w-4" />} onClick={() => setCatPick(true)}>Change category</Button>}
+          {labelsOn && canManage && <Button size="sm" icon={<ScanLine className="h-4 w-4" />} onClick={async () => { try { const n = await api<number>('products.assignBarcodes', { ids: selRows.map((r) => r.id) }); toast.ok(n ? `${n} item(s) got a barcode.` : 'All of them already have a barcode.'); await refresh() } catch (e) { toast.error(e) } }}>Assign barcodes</Button>}
+          {labelsOn && <Button size="sm" icon={<Printer className="h-4 w-4" />} onClick={() => api('print.open', { kind: 'labels', id: 0, params: { ids: selRows.map((r) => r.id).join(','), copies: 1 } }).catch(toast.error)}>Print labels</Button>}
           {canDelete && selActive.length > 0 && <Button size="sm" icon={<Archive className="h-4 w-4" />} onClick={async () => { if (await archiveProductsFlow(selActive, `${selActive.length} product${selActive.length === 1 ? '' : 's'}`)) refresh() }}>Archive{selArchived.length ? ` (${selActive.length})` : ''}</Button>}
           {canDelete && selArchived.length > 0 && <Button size="sm" icon={<ArchiveRestore className="h-4 w-4" />} onClick={async () => { if (await restoreProductsFlow(selArchived)) refresh() }}>Restore{selActive.length ? ` (${selArchived.length})` : ''}</Button>}
           <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Clear selection</Button>
